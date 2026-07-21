@@ -1,0 +1,38 @@
+<html><body style="margin:0;padding:0">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<div class="mermaid" style="display:flex;justify-content:center;align-items:center;min-height:600px;min-width:1400px;font-family:Inter,sans-serif">
+flowchart LR
+    subgraph Local["💻 Your Machine"]
+        DEV["npm run dev<br/>Local Development"]
+        DEPLOY["python deploy.py"]
+        DIST["dist/ build output"]
+    end
+
+    subgraph Git["📦 GitHub Repository"]
+        PUSH["git push origin main"]
+    end
+
+    subgraph CF["☁️ Cloudflare"]
+        PAGES["Pages Project<br/>vijaykrsha-website"]
+        CDN["Global CDN<br/>vijaykrsha.online"]
+        DASH["Dashboard<br/>Workers & Pages"]
+    end
+
+    DEV --> DIST
+    DEPLOY --> DIST
+    DIST -->|"wrangler pages deploy<br/>Direct Upload"| PAGES
+    PUSH -->|"Auto-build trigger"| PAGES
+    PAGES --> CDN
+    PAGES --> DASH
+
+    classDef local fill:#f7f3eb,stroke:#a78bfa,stroke-width:2px,color:#0f1219
+    classDef git fill:#e8eaf0,stroke:#6b8299,stroke-width:2px,color:#0f1219
+    classDef cf fill:#fff4e6,stroke:#f6a700,stroke-width:2px,color:#0f1219
+    class Local local
+    class Git git
+    class CF cf
+</div>
+<script>
+mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:{primaryColor:'#a78bfa',primaryTextColor:'#0f1219',primaryBorderColor:'#7c5cf0',lineColor:'#6b8299',background:'#fdfbf7'}});
+</script>
+</body></html>

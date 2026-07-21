@@ -7,3 +7,4 @@ __pycache__/
 *.zip
 tsconfig.tsbuildinfo
 .DS_Store
+cloudflare.yml
