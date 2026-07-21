@@ -8,3 +8,4 @@ __pycache__/
 tsconfig.tsbuildinfo
 .DS_Store
 cloudflare.yml
+wrangler.toml
