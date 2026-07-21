@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vijay Kumar Sharma — Legal &amp; Tech Freelancer</title>
+    <meta name="description" content="Vijay Kumar Sharma — Legal researcher, contract drafter, and data analyst offering freelance services in law and technology. Based in India." />
+    <meta name="author" content="Vijay Kumar Sharma" />
+    <!-- FOUC prevention: set theme before paint -->
+    <script>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        if (stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

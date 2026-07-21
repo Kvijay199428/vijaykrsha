@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-cream-50: #fdfbf7;
+  --color-cream-100: #f7f3eb;
+  --color-cream-200: #ede7d9;
+  --color-cream-300: #ddd4c0;
+
+  --color-night-900: #0f1219;
+  --color-night-800: #161b26;
+  --color-night-700: #1e2536;
+  --color-night-600: #2a3348;
+
+  --color-glow-500: #a78bfa;
+  --color-glow-400: #c4b5fd;
+  --color-glow-600: #7c5cf0;
+
+  --color-sage-500: #7a9168;
+  --color-sage-400: #96ad85;
+
+  --color-mist-500: #6b8299;
+  --color-mist-400: #8ba3b8;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-cream-50 text-night-800 dark:bg-night-900 dark:text-cream-100 transition-colors duration-300;
+}

@@ -1,0 +1,4 @@
+ingress:
+  - hostname: api.vijaykrsha.online
+    service: http://localhost:8000
+  - service: http_status:404

@@ -1,0 +1,48 @@
+<html><body style="margin:0;padding:0">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<div class="mermaid" style="display:flex;justify-content:center;align-items:center;min-height:900px;min-width:1200px;font-family:Inter,sans-serif">
+flowchart TB
+    subgraph Repo["📁 vijaykrsha-website/"]
+        direction TB
+        SRC["src/ — React App"]
+        DOCK["Dockerfile + nginx.conf"]
+        CF[".cloudflare/ — Tunnel + Pages config"]
+        VITE["vite.config.ts + package.json"]
+        SRC --- VITE
+    end
+
+    subgraph Build["🔨 Build & Deploy"]
+        direction LR
+        LOCAL["Local Dev<br/>npm run dev :5173"]
+        DOCKER["Docker<br/>nginx :8080"]
+        PAGES["Cloudflare Pages<br/>vijaykrsha.online"]
+        TUNNEL["Cloudflare Tunnel<br/>api.vijaykrsha.online → :8000"]
+    end
+
+    Repo ==> LOCAL
+    Repo ==> DOCKER
+    Repo ==> PAGES
+    Repo ==> TUNNEL
+
+    subgraph App["🖥️ Website Pages"]
+        direction LR
+        HOME["🏠 Home"]
+        ABOUT["👤 About"]
+        FREE["💼 Freelance"]
+        PORT["📂 Portfolio"]
+        CONTACT["📞 Contact"]
+    end
+
+    SRC ==> App
+
+    classDef repo fill:#f7f3eb,stroke:#a78bfa,stroke-width:2px,color:#0f1219
+    classDef build fill:#e8eaf0,stroke:#6b8299,stroke-width:2px,color:#0f1219
+    classDef app fill:#f0ebe5,stroke:#7a9168,stroke-width:2px,color:#0f1219
+    class Repo repo
+    class Build build
+    class App app
+</div>
+<script>
+mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:{primaryColor:'#a78bfa',primaryTextColor:'#0f1219',primaryBorderColor:'#7c5cf0',lineColor:'#6b8299',background:'#fdfbf7'}});
+</script>
+</body></html>
