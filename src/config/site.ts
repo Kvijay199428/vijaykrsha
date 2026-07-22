@@ -17,6 +17,7 @@ export const site = {
     { label: "About", path: "/about" },
     { label: "Freelance", path: "/freelance" },
     { label: "Portfolio", path: "/portfolio" },
+    { label: "Apps", path: "/apps" },
     { label: "Contact", path: "/contact" },
   ],
 
@@ -134,6 +135,39 @@ export const site = {
       description:
         "Automated document generation and case tracking workflows for a legal department, saving 20+ hours weekly.",
       tags: ["Automation", "Workflow", "Productivity"],
+    },
+  ],
+
+  apps: [
+    {
+      title: "Vega Share",
+      category: "Android",
+      icon: "share",
+      description:
+        "WiFi-based file transfer app for Android. Share files from your phone to any device on the same network using just a browser — no app installation needed on the receiving end.",
+      features: [
+        "Transfer files over same WiFi network via any browser",
+        "Preview documents, images, video, and audio directly in the browser",
+        "Upload files from any device back to your phone via browser URL",
+        "No app installation required on the receiving device",
+      ],
+      link: { label: "Coming Soon", url: "#" },
+      tags: ["Android", "WiFi", "File Transfer", "Browser"],
+    },
+    {
+      title: "Rent App Management",
+      category: "Web",
+      icon: "building",
+      description:
+        "Web app for landlords to manage tenant-landlord rent transactions. Track monthly rent status, view lifetime earnings, and get a clear financial overview at a glance.",
+      features: [
+        "Track monthly rent payments — paid, unpaid, or partial",
+        "Lifetime earnings dashboard for landlords",
+        "Tenant management with full payment history",
+        "Clean dashboard for quick financial overview",
+      ],
+      link: { label: "Visit App", url: "https://rent.vijaykrsha.online" },
+      tags: ["Web App", "Rent", "Tenant Management", "Dashboard"],
     },
   ],
 } as const;
