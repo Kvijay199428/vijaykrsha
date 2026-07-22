@@ -98,6 +98,7 @@ import Home from "@/pages/Home";
 import About from "@/pages/About";
 import Freelance from "@/pages/Freelance";
 import Portfolio from "@/pages/Portfolio";
+import Apps from "@/pages/Apps";
 import Contact from "@/pages/Contact";
 import NotFound from "@/pages/NotFound";
 
@@ -109,6 +110,7 @@ export default function App() {
         <Route path="/about" element={<About />} />
         <Route path="/freelance" element={<Freelance />} />
         <Route path="/portfolio" element={<Portfolio />} />
+        <Route path="/apps" element={<Apps />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
@@ -267,6 +269,7 @@ export const site = {
     { label: "About", path: "/about" },
     { label: "Freelance", path: "/freelance" },
     { label: "Portfolio", path: "/portfolio" },
+    { label: "Apps", path: "/apps" },
     { label: "Contact", path: "/contact" },
   ],
 
@@ -384,6 +387,39 @@ export const site = {
       description:
         "Automated document generation and case tracking workflows for a legal department, saving 20+ hours weekly.",
       tags: ["Automation", "Workflow", "Productivity"],
+    },
+  ],
+
+  apps: [
+    {
+      title: "Vega Share",
+      category: "Android",
+      icon: "share",
+      description:
+        "WiFi-based file transfer app for Android. Share files from your phone to any device on the same network using just a browser — no app installation needed on the receiving end.",
+      features: [
+        "Transfer files over same WiFi network via any browser",
+        "Preview documents, images, video, and audio directly in the browser",
+        "Upload files from any device back to your phone via browser URL",
+        "No app installation required on the receiving device",
+      ],
+      link: { label: "Coming Soon", url: "#" },
+      tags: ["Android", "WiFi", "File Transfer", "Browser"],
+    },
+    {
+      title: "Rent App Management",
+      category: "Web",
+      icon: "building",
+      description:
+        "Web app for landlords to manage tenant-landlord rent transactions. Track monthly rent status, view lifetime earnings, and get a clear financial overview at a glance.",
+      features: [
+        "Track monthly rent payments — paid, unpaid, or partial",
+        "Lifetime earnings dashboard for landlords",
+        "Tenant management with full payment history",
+        "Clean dashboard for quick financial overview",
+      ],
+      link: { label: "Visit App", url: "https://rent.vijaykrsha.online" },
+      tags: ["Web App", "Rent", "Tenant Management", "Dashboard"],
     },
   ],
 } as const;
@@ -538,6 +574,133 @@ export default function About() {
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\Apps.tsx
+import { site } from "@/config/site";
+
+const categoryColors: Record<string, string> = {
+  Android: "bg-glow-500",
+  Web: "bg-mist-500",
+};
+
+function ShareIcon() {
+  return (
+    <svg
+      className="h-7 w-7 text-glow-500"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z"
+      />
+    </svg>
+  );
+}
+
+function BuildingIcon() {
+  return (
+    <svg
+      className="h-7 w-7 text-mist-500"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+      />
+    </svg>
+  );
+}
+
+const iconMap: Record<string, React.FC> = {
+  share: ShareIcon,
+  building: BuildingIcon,
+};
+
+export default function Apps() {
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-20">
+      <h1 className="text-3xl md:text-4xl font-bold text-night-800 dark:text-cream-50 mb-4">
+        Apps
+      </h1>
+      <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
+        Applications I have developed — from mobile utilities to web management
+        tools.
+      </p>
+
+      <div className="grid sm:grid-cols-2 gap-6">
+        {site.apps.map((app) => {
+          const Icon = iconMap[app.icon ?? ""] ?? ShareIcon;
+          return (
+            <div
+              key={app.title}
+              className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 flex flex-col"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <Icon />
+                <span
+                  className={`h-2 w-2 rounded-full ${categoryColors[app.category] ?? "bg-glow-500"}`}
+                />
+                <span className="text-xs font-medium text-night-800/50 dark:text-cream-100/50 uppercase tracking-wide">
+                  {app.category}
+                </span>
+              </div>
+
+              <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-2">
+                {app.title}
+              </h3>
+              <p className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4">
+                {app.description}
+              </p>
+
+              <ul className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4 space-y-1.5 flex-1">
+                {app.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2">
+                    <span className="mt-1.5 h-1 w-1 rounded-full bg-glow-500 shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="flex flex-wrap gap-2 mb-4">
+                {app.tags.map((t) => (
+                  <span
+                    key={t}
+                    className="text-xs px-2.5 py-1 rounded-full bg-cream-200 dark:bg-night-700 text-night-800/70 dark:text-cream-100/70"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+
+              <a
+                href={app.link.url}
+                target={app.link.url !== "#" ? "_blank" : undefined}
+                rel={app.link.url !== "#" ? "noopener noreferrer" : undefined}
+                className={`inline-block text-center px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  app.link.url !== "#"
+                    ? "bg-glow-500 text-white hover:bg-glow-600"
+                    : "border border-cream-300 dark:border-night-600 text-night-800/70 dark:text-cream-100/70 hover:bg-cream-200 dark:hover:bg-night-700"
+                }`}
+              >
+                {app.link.label}
+              </a>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
