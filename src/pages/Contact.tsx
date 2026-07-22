@@ -33,8 +33,24 @@ function MapPinIcon() {
   );
 }
 
+function ClockIcon() {
+  return (
+    <svg className="h-5 w-5 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="checklist-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>
+  );
+}
+
 export default function Contact() {
-  const { contact } = site;
+  const { contact, workingStyle, beforeContacting } = site;
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
       <h1 className="text-3xl md:text-4xl font-bold text-night-800 dark:text-cream-50 mb-4">
@@ -42,69 +58,221 @@ export default function Contact() {
       </h1>
       <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
         Ready to start a project? Reach out through any of the channels below.
+        I typically respond within 24 hours.
       </p>
 
-      <div className="grid sm:grid-cols-2 gap-6 max-w-xl">
-        <a
-          href={`tel:${contact.phone}`}
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <PhoneIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Phone</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.phone}</p>
-          </div>
-        </a>
+      <div className="grid lg:grid-cols-5 gap-8">
+        {/* ── Left Column (3 cols) ──────────────── */}
+        <div className="lg:col-span-3 space-y-8">
+          {/* Contact Cards */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <a
+              href={`tel:${contact.phone}`}
+              className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
+            >
+              <PhoneIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Phone</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.phone}</p>
+              </div>
+            </a>
 
-        <a
-          href={`mailto:${contact.email}`}
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <MailIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Email</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.email}</p>
-          </div>
-        </a>
+            <a
+              href={`mailto:${contact.email}`}
+              className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
+            >
+              <MailIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Email</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.email}</p>
+              </div>
+            </a>
 
-        <a
-          href={`mailto:${contact.emailAlt}`}
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <MailIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Alt Email</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.emailAlt}</p>
-          </div>
-        </a>
+            <a
+              href={contact.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
+            >
+              <GlobeIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Website</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.website}</p>
+              </div>
+            </a>
 
-        <a
-          href={contact.website}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <GlobeIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Website</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.website}</p>
+            <div className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+              <MapPinIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Location</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.location}</p>
+              </div>
+            </div>
           </div>
-        </a>
 
-        <div className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 sm:col-span-2">
-          <MapPinIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Location</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.location}</p>
+          {/* Before You Contact */}
+          <div className="reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
+              Before You Contact
+            </h2>
+            <p className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4">
+              Having these ready helps us scope your project faster and give you a more accurate quote.
+            </p>
+            <ul className="space-y-3">
+              {beforeContacting.map((item) => (
+                <li key={item} className="checklist-item">
+                  <CheckIcon />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Contact Form */}
+          <div className="reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
+              Send a Message
+            </h2>
+            <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                    placeholder="Your name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                    placeholder="you@example.com"
+                  />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Project Type
+                  </label>
+                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
+                    <option>Legal Research</option>
+                    <option>Contract Drafting</option>
+                    <option>Data Analysis</option>
+                    <option>Legal-Tech Integration</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Budget Range
+                  </label>
+                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
+                    <option>Under ₹10,000</option>
+                    <option>₹10,000 - ₹50,000</option>
+                    <option>₹50,000 - ₹1,00,000</option>
+                    <option>₹1,00,000+</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                  Priority
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
+                    <input type="radio" name="priority" value="standard" defaultChecked className="accent-glow-500" />
+                    Standard
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
+                    <input type="radio" name="priority" value="urgent" className="accent-glow-500" />
+                    Urgent
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                  Message
+                </label>
+                <textarea
+                  rows={4}
+                  className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors resize-none"
+                  placeholder="Tell me about your project..."
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn-primary px-6 py-2.5 rounded-xl bg-glow-500 text-white font-medium text-sm hover:bg-glow-600"
+              >
+                Send Message
+              </button>
+            </form>
           </div>
         </div>
-      </div>
 
-      <div className="mt-10 p-5 rounded-2xl bg-glow-500/10 border border-glow-500/30 max-w-xl">
-        <p className="text-sm text-night-800 dark:text-cream-100">
-          <strong className="text-glow-600 dark:text-glow-400">Confidentiality guaranteed.</strong>{" "}
-          All communications and project details are handled under strict NDA. Your privacy is paramount.
-        </p>
+        {/* ── Right Column (2 cols) ─────────────── */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Response Time */}
+          <div className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <div className="flex items-center gap-3 mb-3">
+              <ClockIcon />
+              <h3 className="font-semibold text-night-800 dark:text-cream-50">
+                Response Time
+              </h3>
+            </div>
+            <p className="text-2xl font-bold text-glow-600 dark:text-glow-400 mb-1">
+              {workingStyle.responseTime}
+            </p>
+            <p className="text-sm text-night-800/60 dark:text-cream-100/60">
+              I check messages regularly and aim to get back to you within one business day.
+            </p>
+          </div>
+
+          {/* Working Style */}
+          <div className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-4">
+              Working Style
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-0.5">
+                  Availability
+                </p>
+                <p className="text-sm text-night-800 dark:text-cream-100">{workingStyle.availability}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-0.5">
+                  Communication
+                </p>
+                <p className="text-sm text-night-800 dark:text-cream-100">{workingStyle.communication}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-0.5">
+                  Timezone
+                </p>
+                <p className="text-sm text-night-800 dark:text-cream-100">{workingStyle.timezone}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Confidentiality */}
+          <div className="reveal card-hover p-6 rounded-2xl bg-glow-500/10 border border-glow-500/30">
+            <p className="text-sm text-night-800 dark:text-cream-100">
+              <strong className="text-glow-600 dark:text-glow-400">Confidentiality guaranteed.</strong>{" "}
+              All communications and project details are handled under strict NDA. Your privacy is paramount.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

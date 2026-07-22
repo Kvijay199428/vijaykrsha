@@ -5,6 +5,11 @@ const categoryColors: Record<string, string> = {
   Tech: "bg-mist-500",
 };
 
+const categoryBorderColors: Record<string, string> = {
+  Legal: "border-l-sage-500",
+  Tech: "border-l-mist-500",
+};
+
 export default function Portfolio() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
@@ -12,14 +17,16 @@ export default function Portfolio() {
         Portfolio
       </h1>
       <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
-        Selected projects across legal research and technology.
+        Selected projects across legal research and technology. Each project follows
+        a structured approach: understand the problem, design the solution, deliver measurable outcomes.
       </p>
 
       <div className="grid sm:grid-cols-2 gap-6">
-        {site.projects.map((p) => (
+        {site.projects.map((p, i) => (
           <div
             key={p.title}
-            className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 flex flex-col"
+            className={`reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 border-l-4 ${categoryBorderColors[p.category] ?? "border-l-glow-500"} flex flex-col`}
+            style={{ transitionDelay: `${i * 80}ms` }}
           >
             <div className="flex items-center gap-2 mb-3">
               <span
@@ -29,13 +36,41 @@ export default function Portfolio() {
                 {p.category}
               </span>
             </div>
-            <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-2">
+
+            <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-4">
               {p.title}
             </h3>
-            <p className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4 flex-1">
-              {p.description}
-            </p>
-            <div className="flex flex-wrap gap-2">
+
+            <div className="space-y-3 flex-1">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-1">
+                  Problem
+                </p>
+                <p className="text-sm text-night-800/70 dark:text-cream-100/70 leading-relaxed">
+                  {p.problem}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-1">
+                  Solution
+                </p>
+                <p className="text-sm text-night-800/70 dark:text-cream-100/70 leading-relaxed">
+                  {p.solution}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-1">
+                  Outcome
+                </p>
+                <p className="text-sm text-night-800/70 dark:text-cream-100/70 leading-relaxed">
+                  {p.outcome}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-cream-200 dark:border-night-700">
               {p.tags.map((t) => (
                 <span
                   key={t}

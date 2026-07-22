@@ -31,3 +31,167 @@ html {
 body {
   @apply bg-cream-50 text-night-800 dark:bg-night-900 dark:text-cream-100 transition-colors duration-300;
 }
+
+/* ── Typing Animation ─────────────────────────────── */
+
+@keyframes typing-loop {
+  0% { width: 0 }
+  35% { width: 100% }
+  60% { width: 100% }
+  95% { width: 0 }
+  100% { width: 0 }
+}
+
+@keyframes typing-glow {
+  0% { text-shadow: 0 0 0 transparent; }
+  15% { text-shadow: 0 0 8px rgba(124, 92, 240, 0.4); }
+  35% { text-shadow: 0 0 12px rgba(124, 92, 240, 0.3); }
+  60% { text-shadow: 0 0 8px rgba(124, 92, 240, 0.2); }
+  95% { text-shadow: 0 0 0 transparent; }
+  100% { text-shadow: 0 0 0 transparent; }
+}
+
+.typing-text {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typing-loop 4s ease-in-out infinite, typing-glow 4s ease-in-out infinite;
+}
+
+/* ── Card & Button Interactions ───────────────────── */
+
+.card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 8px 30px rgba(124, 92, 240, 0.12);
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  transition: all 0.2s ease-out;
+}
+.btn-primary:hover {
+  box-shadow: 0 4px 20px rgba(124, 92, 240, 0.35);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 8px rgba(124, 92, 240, 0.25);
+}
+
+.btn-outline {
+  transition: all 0.2s ease-out;
+}
+.btn-outline:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+.btn-outline:active {
+  transform: scale(0.98);
+}
+
+.nav-link {
+  transition: background-color 150ms ease-out, color 150ms ease-out, transform 100ms ease-out;
+}
+.nav-link:hover {
+  transform: scale(1.05);
+}
+.nav-link:active {
+  transform: scale(0.95);
+}
+
+/* ── Scroll Reveal ────────────────────────────────── */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Back to Top ──────────────────────────────────── */
+
+.back-to-top {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: translateY(8px);
+}
+.back-to-top.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* ── Animated Logo ────────────────────────────────── */
+
+.animated-logo {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* ── Status Badges ────────────────────────────────── */
+
+.status-live {
+  @apply bg-sage-500 text-white;
+}
+.status-beta {
+  @apply bg-amber-500 text-white;
+}
+.status-coming-soon {
+  @apply bg-cream-300 text-night-800 dark:bg-night-600 dark:text-cream-100;
+}
+
+/* ── Checklist ────────────────────────────────────── */
+
+.checklist-item {
+  @apply flex items-start gap-3 text-sm text-night-800/70 dark:text-cream-100/70;
+}
+.checklist-icon {
+  @apply mt-0.5 h-4 w-4 text-glow-500 shrink-0;
+}
+
+/* ── Footer ───────────────────────────────────────── */
+
+.footer-heading {
+  @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-3;
+}
+
+/* ── Accessibility ────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-text {
+    animation: none;
+    width: 100%;
+    border-right: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .card-hover:hover,
+  .btn-primary:hover,
+  .btn-outline:hover,
+  .nav-link:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .btn-primary:active,
+  .btn-outline:active,
+  .nav-link:active {
+    transform: none;
+  }
+  .back-to-top {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+  .animated-logo canvas {
+    display: none;
+  }
+}

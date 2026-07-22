@@ -90,6 +90,19 @@ server {
 </svg>
 ```
 
+```json
+// File: public\logo\logo.json
+{
+  "fps": 10,
+  "frames": 10,
+  "frameWidth": 200,
+  "frameHeight": 200,
+  "scale": 0.6,
+  "opacity": 0.85,
+  "loop": true
+}
+```
+
 ```tsx
 // File: src\App.tsx
 import { Routes, Route } from "react-router-dom";
@@ -120,10 +133,76 @@ export default function App() {
 ```
 
 ```tsx
+// File: src\components\AnimatedLogo.tsx
+import { useSpriteAnimation } from "@/hooks/useSpriteAnimation";
+
+interface AnimatedLogoConfig {
+  fps: number;
+  frames: number;
+  frameWidth: number;
+  frameHeight: number;
+  scale: number;
+  opacity: number;
+  loop: boolean;
+}
+
+interface AnimatedLogoProps {
+  config: AnimatedLogoConfig;
+  spriteSrc?: string;
+  className?: string;
+  alt?: string;
+}
+
+export default function AnimatedLogo({
+  config,
+  spriteSrc = "/logo/sprite.webp",
+  className = "",
+  alt = "Vijay Kumar Sharma",
+}: AnimatedLogoProps) {
+  const { canvasRef, isLoaded, prefersReducedMotion } = useSpriteAnimation({
+    src: spriteSrc,
+    config,
+    enabled: true,
+  });
+
+  const scaledWidth = config.frameWidth * config.scale;
+  const scaledHeight = config.frameHeight * config.scale;
+
+  if (prefersReducedMotion || !isLoaded) {
+    return (
+      <div
+        className={`animated-logo flex items-center justify-center ${className}`}
+        style={{ width: scaledWidth, height: scaledHeight }}
+      >
+        {isLoaded && !prefersReducedMotion ? null : (
+          <div className="flex items-center justify-center w-full h-full rounded-2xl bg-glow-500/10 border border-glow-500/20">
+            <span className="text-3xl font-bold text-glow-600 dark:text-glow-400">VK</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={`animated-logo ${className}`}
+      aria-label={alt}
+      role="img"
+      style={{ width: scaledWidth, height: scaledHeight }}
+    />
+  );
+}
+```
+
+```tsx
 // File: src\components\Layout.tsx
 import { Link, useLocation } from "react-router-dom";
 import { useTheme } from "@/context/ThemeContext";
 import { site } from "@/config/site";
+import { useState, useEffect, useRef } from "react";
+import AnimatedLogo from "./AnimatedLogo";
+import logoConfig from "../../public/logo/logo.json";
 
 function SunIcon() {
   return (
@@ -157,33 +236,66 @@ function CloseIcon() {
   );
 }
 
-import { useState } from "react";
+function ArrowUpIcon() {
+  return (
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+    </svg>
+  );
+}
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Back to top visibility
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 300);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Scroll reveal
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("visible");
+          }
+        });
+      },
+      { threshold: 0.1 }
+    );
+
+    const elements = document.querySelectorAll(".reveal");
+    elements.forEach((el) => observer.observe(el));
+
+    return () => observer.disconnect();
+  }, [location.pathname]);
+
+  const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-50 bg-cream-50/80 dark:bg-night-900/80 backdrop-blur-md border-b border-cream-200 dark:border-night-700">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="font-bold text-lg text-glow-600 dark:text-glow-400">
-            {site.name.split(" ")[0]}
-            <span className="text-night-800 dark:text-cream-100">
-              {site.name.slice(site.name.indexOf(" ") + 1)}
-            </span>
+            <span className="typing-text">VIJAYKRSHA.ONLINE</span>
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden md:flex items-center gap-1">
             {site.nav.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
-                className={`text-sm font-medium transition-colors ${
+                className={`nav-link text-sm font-medium rounded-lg px-3 py-1.5 ${
                   location.pathname === item.path
-                    ? "text-glow-600 dark:text-glow-400"
-                    : "text-night-800/70 dark:text-cream-100/70 hover:text-night-800 dark:hover:text-cream-100"
+                    ? "text-glow-600 dark:text-glow-400 bg-glow-500/10 dark:bg-glow-400/10"
+                    : "text-night-800/70 dark:text-cream-100/70 hover:text-night-800 dark:hover:text-cream-100 hover:bg-cream-200/50 dark:hover:bg-night-700/50"
                 }`}
               >
                 {item.label}
@@ -223,9 +335,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 key={item.path}
                 to={item.path}
                 onClick={() => setMobileOpen(false)}
-                className={`block py-3 text-sm font-medium transition-colors ${
+                className={`nav-link block py-3 text-sm font-medium rounded-lg px-3 ${
                   location.pathname === item.path
-                    ? "text-glow-600 dark:text-glow-400"
+                    ? "text-glow-600 dark:text-glow-400 bg-glow-500/10 dark:bg-glow-400/10"
                     : "text-night-800/70 dark:text-cream-100/70"
                 }`}
               >
@@ -236,13 +348,107 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         )}
       </header>
 
-      <main className="flex-1">{children}</main>
+      <main ref={mainRef} className="flex-1 pb-12">
+        {children}
+      </main>
 
+      {/* ── Footer ──────────────────────────────── */}
       <footer className="border-t border-cream-200 dark:border-night-700 bg-cream-100 dark:bg-night-800">
-        <div className="max-w-6xl mx-auto px-4 py-8 text-center text-sm text-night-800/60 dark:text-cream-100/60">
-          <p>&copy; {new Date().getFullYear()} {site.name}. All rights reserved.</p>
+        <div className="max-w-6xl mx-auto px-4 py-12">
+          {/* Centered Logo + Tagline */}
+          <div className="flex flex-col items-center mb-10">
+            <AnimatedLogo
+              config={logoConfig}
+              className="mb-4"
+            />
+            <p className="font-bold text-lg text-glow-600 dark:text-glow-400 mb-1">
+              {site.name}
+            </p>
+            <p className="text-sm text-night-800/50 dark:text-cream-100/50">
+              Legal Research &bull; Contract Drafting &bull; Legal Technology
+            </p>
+          </div>
+
+          {/* 4-Column Grid */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+            {/* Col 1: Quick Links */}
+            <div>
+              <p className="footer-heading">Quick Links</p>
+              <ul className="space-y-2">
+                {site.nav.map((item) => (
+                  <li key={item.path}>
+                    <Link
+                      to={item.path}
+                      className="text-sm text-night-800/60 dark:text-cream-100/60 hover:text-glow-500 dark:hover:text-glow-400 transition-colors"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Col 2: Services */}
+            <div>
+              <p className="footer-heading">Services</p>
+              <ul className="space-y-2">
+                {site.services.map((s) => (
+                  <li key={s.title}>
+                    <Link
+                      to="/freelance"
+                      className="text-sm text-night-800/60 dark:text-cream-100/60 hover:text-glow-500 dark:hover:text-glow-400 transition-colors"
+                    >
+                      {s.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Col 3: Contact */}
+            <div>
+              <p className="footer-heading">Contact</p>
+              <ul className="space-y-2 text-sm text-night-800/60 dark:text-cream-100/60">
+                <li>{site.contact.phone}</li>
+                <li>{site.contact.email}</li>
+                <li>{site.contact.location}</li>
+              </ul>
+            </div>
+
+            {/* Col 4: Trust */}
+            <div>
+              <p className="footer-heading">Trust</p>
+              <ul className="space-y-2 text-sm text-night-800/60 dark:text-cream-100/60">
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
+                  NDA by Default
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
+                  3+ Years Experience
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
+                  Remote Collaboration
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="border-t border-cream-200 dark:border-night-700 pt-6 text-center text-sm text-night-800/50 dark:text-cream-100/50">
+            <p>&copy; {new Date().getFullYear()} {site.name}. All rights reserved.</p>
+          </div>
         </div>
       </footer>
+
+      {/* ── Back to Top ─────────────────────────── */}
+      <button
+        onClick={scrollToTop}
+        aria-label="Back to top"
+        className={`back-to-top fixed bottom-6 right-6 z-50 p-3 rounded-full bg-glow-500 text-white shadow-lg hover:bg-glow-600 transition-colors ${showBackToTop ? "show" : ""}`}
+      >
+        <ArrowUpIcon />
+      </button>
     </div>
   );
 }
@@ -252,9 +458,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 // File: src\config\site.ts
 export const site = {
   name: "Vijay Kumar Sharma",
-  tagline: "Legal & Tech Freelancer",
+  tagline: "Legal & Technology Solutions for Businesses",
   description:
-    "Legal researcher, contract drafter, and data analyst offering freelance services in law and technology. Based in India.",
+    "Legal researcher, contract drafter, and data analyst helping businesses and startups navigate complex legal and technology challenges. Based in India.",
 
   contact: {
     phone: "+91-9599130381",
@@ -273,6 +479,45 @@ export const site = {
     { label: "Contact", path: "/contact" },
   ],
 
+  trustBadges: [
+    { label: "3+ Years Experience", icon: "calendar" },
+    { label: "NDA by Default", icon: "shield" },
+    { label: "Cross-Domain Expertise", icon: "diamond" },
+  ],
+
+  whyHireMe: [
+    {
+      title: "NDA First",
+      description:
+        "Every engagement begins with a non-disclosure agreement. Your data, matters, and communications stay strictly confidential.",
+      icon: "shield",
+    },
+    {
+      title: "3+ Years Experience",
+      description:
+        "Proven track record across legal research, contract management, and data analytics for clients in multiple industries.",
+      icon: "calendar",
+    },
+    {
+      title: "Cross-Domain Expertise",
+      description:
+        "Rare combination of legal knowledge and technical skill — bridging the gap between law and technology.",
+      icon: "diamond",
+    },
+    {
+      title: "Detail Oriented",
+      description:
+        "Meticulous attention to statutory references, contract clauses, and data accuracy. No shortcuts on quality.",
+      icon: "magnifier",
+    },
+    {
+      title: "Fast Turnaround",
+      description:
+        "Efficient workflows and legal-tech integration mean faster delivery without compromising thoroughness.",
+      icon: "bolt",
+    },
+  ],
+
   highlights: [
     {
       title: "Legal Research",
@@ -287,9 +532,9 @@ export const site = {
       icon: "chart",
     },
     {
-      title: "Confidentiality",
+      title: "Legal-Tech Solutions",
       description:
-        "NDA-first approach. Every engagement starts with a non-disclosure agreement.",
+        "Bridging law and technology — workflow automation, document management, and custom tools.",
       icon: "shield",
     },
   ],
@@ -320,24 +565,72 @@ export const site = {
       description:
         "Comprehensive legal research including case analysis, statutory interpretation, and regulatory compliance reviews.",
       icon: "scale",
+      idealFor: [
+        "Law firms needing case research support",
+        "Startups navigating regulatory requirements",
+        "Businesses entering new markets",
+      ],
+      deliverables: [
+        "Research memorandum with cited authorities",
+        "Case law analysis and summary",
+        "Regulatory compliance report",
+      ],
+      turnaround: "3-5 business days",
+      pricingModel: "Per project",
     },
     {
       title: "Contract Drafting",
       description:
         "Professional contract drafting, review, and negotiation support for businesses and individuals.",
       icon: "document",
+      idealFor: [
+        "Businesses needing standard contract templates",
+        "Startups drafting founding agreements",
+        "Parties negotiating complex deals",
+      ],
+      deliverables: [
+        "Custom-drafted agreements",
+        "Contract review with redline markup",
+        "Negotiation strategy brief",
+      ],
+      turnaround: "2-4 business days",
+      pricingModel: "Per document",
     },
     {
       title: "Data & Excel Dashboards",
       description:
         "Interactive dashboards, data visualization, and spreadsheet automation for smarter decisions.",
       icon: "chart",
+      idealFor: [
+        "Firms tracking compliance across regions",
+        "Businesses needing financial dashboards",
+        "Teams automating repetitive reporting",
+      ],
+      deliverables: [
+        "Interactive Excel/Google Sheets dashboard",
+        "Automated reporting templates",
+        "Data visualization and charts",
+      ],
+      turnaround: "3-7 business days",
+      pricingModel: "Per project",
     },
     {
       title: "Legal-Tech Integration",
       description:
         "Bridging law and technology — workflow automation, document management, and tech solutions for legal practice.",
       icon: "gear",
+      idealFor: [
+        "Legal departments digitizing workflows",
+        "Firms automating document generation",
+        "Practices needing custom tools",
+      ],
+      deliverables: [
+        "Workflow automation setup",
+        "Custom tool or script development",
+        "Integration documentation and training",
+      ],
+      turnaround: "1-2 weeks",
+      pricingModel: "Hourly / Retainer",
     },
   ],
 
@@ -357,35 +650,71 @@ export const site = {
       description:
         "Proven track record across legal research, contract management, and data analytics projects.",
     },
+    {
+      title: "Transparent Communication",
+      description:
+        "Regular updates, clear timelines, and no surprises. You always know the status of your project.",
+    },
+  ],
+
+  workingStyle: {
+    availability: "Monday - Saturday, 9 AM - 7 PM IST",
+    responseTime: "Within 24 hours",
+    communication: "Email, Phone, Video Call",
+    timezone: "IST (UTC +5:30)",
+  },
+
+  beforeContacting: [
+    "Have a clear description of your project or problem ready",
+    "Know your timeline and any hard deadlines",
+    "Budget range or ballpark figure helps us scope faster",
+    "If it involves legal work, having relevant documents on hand speeds up the process",
+    "For data projects, knowing your data source and format saves time",
   ],
 
   projects: [
     {
       title: "Multi-State Compliance Dashboard",
       category: "Legal",
-      description:
-        "Built a compliance tracking dashboard for a mid-size firm monitoring obligations across 8 Indian states.",
+      problem:
+        "A mid-size firm struggled to track compliance obligations across 8 Indian states, leading to missed filings and penalties.",
+      solution:
+        "Built a centralized compliance tracking dashboard with automated alerts, state-specific rule engines, and exportable reports.",
+      outcome:
+        "Reduced missed filings by 90% and cut compliance review time from 3 days to 2 hours per cycle.",
       tags: ["Compliance", "Excel", "Legal Research"],
     },
     {
       title: "Contract Analytics Platform",
       category: "Tech",
-      description:
-        "Developed an automated contract review tool that reduced clause analysis time by 60%.",
+      problem:
+        "A legal department spent excessive time manually reviewing contracts for risk clauses and non-standard terms.",
+      solution:
+        "Developed an automated contract review tool using NLP to flag risk clauses, extract key terms, and score contracts.",
+      outcome:
+        "Reduced clause analysis time by 60% and improved risk detection accuracy to 95%.",
       tags: ["NLP", "Python", "Legal-Tech"],
     },
     {
       title: "Regulatory Impact Assessment",
       category: "Legal",
-      description:
-        "Conducted a comprehensive regulatory impact assessment for a fintech client entering the Indian market.",
+      problem:
+        "A fintech client entering the Indian market needed to understand the regulatory landscape and compliance requirements.",
+      solution:
+        "Conducted comprehensive regulatory impact assessment covering RBI guidelines, IT Act, and state-level regulations.",
+      outcome:
+        "Client launched operations within 3 months with full regulatory compliance, avoiding potential penalties.",
       tags: ["Fintech", "Regulation", "Research"],
     },
     {
       title: "Legal Operations Automation",
       category: "Tech",
-      description:
-        "Automated document generation and case tracking workflows for a legal department, saving 20+ hours weekly.",
+      problem:
+        "A legal department was spending 20+ hours weekly on manual document generation and case tracking.",
+      solution:
+        "Automated document generation templates, case tracking workflows, and status reporting dashboards.",
+      outcome:
+        "Saved 20+ hours weekly, reduced document errors by 85%, and improved case turnaround time by 40%.",
       tags: ["Automation", "Workflow", "Productivity"],
     },
   ],
@@ -395,6 +724,7 @@ export const site = {
       title: "Vega Share",
       category: "Android",
       icon: "share",
+      status: "coming-soon" as const,
       description:
         "WiFi-based file transfer app for Android. Share files from your phone to any device on the same network using just a browser — no app installation needed on the receiving end.",
       features: [
@@ -403,6 +733,7 @@ export const site = {
         "Upload files from any device back to your phone via browser URL",
         "No app installation required on the receiving device",
       ],
+      techStack: ["Android", "Kotlin", "HTTP Server", "WebSocket"],
       link: { label: "Coming Soon", url: "#" },
       tags: ["Android", "WiFi", "File Transfer", "Browser"],
     },
@@ -410,6 +741,7 @@ export const site = {
       title: "Rent App Management",
       category: "Web",
       icon: "building",
+      status: "live" as const,
       description:
         "Web app for landlords to manage tenant-landlord rent transactions. Track monthly rent status, view lifetime earnings, and get a clear financial overview at a glance.",
       features: [
@@ -418,6 +750,7 @@ export const site = {
         "Tenant management with full payment history",
         "Clean dashboard for quick financial overview",
       ],
+      techStack: ["React", "Node.js", "MongoDB", "Tailwind CSS"],
       link: { label: "Visit App", url: "https://rent.vijaykrsha.online" },
       tags: ["Web App", "Rent", "Tenant Management", "Dashboard"],
     },
@@ -469,6 +802,141 @@ export function useTheme() {
 }
 ```
 
+```typescript
+// File: src\hooks\useSpriteAnimation.ts
+import { useRef, useEffect, useState, useCallback } from "react";
+
+interface SpriteConfig {
+  fps: number;
+  frames: number;
+  frameWidth: number;
+  frameHeight: number;
+  scale: number;
+  opacity: number;
+  loop: boolean;
+}
+
+interface UseSpriteAnimationOptions {
+  src: string;
+  config: SpriteConfig;
+  enabled?: boolean;
+}
+
+export function useSpriteAnimation({ src, config, enabled = true }: UseSpriteAnimationOptions) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const frameRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const rafRef = useRef<number>(0);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const prefersReducedMotion = typeof window !== "undefined"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+
+  const shouldAnimate = enabled && !prefersReducedMotion;
+
+  const drawFrame = useCallback((frameIndex: number) => {
+    const canvas = canvasRef.current;
+    const image = imageRef.current;
+    if (!canvas || !image) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const { frameWidth, frameHeight, scale, opacity } = config;
+    const scaledWidth = frameWidth * scale;
+    const scaledHeight = frameHeight * scale;
+
+    canvas.width = scaledWidth;
+    canvas.height = scaledHeight;
+
+    ctx.clearRect(0, 0, scaledWidth, scaledHeight);
+    ctx.globalAlpha = opacity;
+
+    const sx = frameIndex * frameWidth;
+    ctx.drawImage(
+      image,
+      sx, 0, frameWidth, frameHeight,
+      0, 0, scaledWidth, scaledHeight
+    );
+  }, [config]);
+
+  useEffect(() => {
+    const image = new Image();
+    image.src = src;
+    image.onload = () => {
+      imageRef.current = image;
+      setIsLoaded(true);
+      drawFrame(0);
+    };
+    return () => {
+      imageRef.current = null;
+    };
+  }, [src, drawFrame]);
+
+  useEffect(() => {
+    if (!isLoaded || !shouldAnimate) return;
+
+    const { fps, frames, loop } = config;
+    const interval = 1000 / fps;
+
+    const animate = (timestamp: number) => {
+      if (timestamp - lastTimeRef.current >= interval) {
+        lastTimeRef.current = timestamp;
+        frameRef.current = (frameRef.current + 1) % frames;
+
+        if (!loop && frameRef.current === 0) {
+          setIsPlaying(false);
+          return;
+        }
+
+        drawFrame(frameRef.current);
+      }
+      rafRef.current = requestAnimationFrame(animate);
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+    setIsPlaying(true);
+
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      setIsPlaying(false);
+    };
+  }, [isLoaded, shouldAnimate, config, drawFrame]);
+
+  // Pause when tab is hidden
+  useEffect(() => {
+    if (!shouldAnimate) return;
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(rafRef.current);
+        setIsPlaying(false);
+      } else if (isLoaded) {
+        const interval = 1000 / config.fps;
+        const animate = (timestamp: number) => {
+          if (timestamp - lastTimeRef.current >= interval) {
+            lastTimeRef.current = timestamp;
+            frameRef.current = (frameRef.current + 1) % config.frames;
+            drawFrame(frameRef.current);
+          }
+          rafRef.current = requestAnimationFrame(animate);
+        };
+        rafRef.current = requestAnimationFrame(animate);
+        setIsPlaying(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [shouldAnimate, isLoaded, config, drawFrame]);
+
+  return { canvasRef, isLoaded, isPlaying, prefersReducedMotion };
+}
+```
+
 ```css
 // File: src\index.css
 @import "tailwindcss";
@@ -504,6 +972,170 @@ html {
 body {
   @apply bg-cream-50 text-night-800 dark:bg-night-900 dark:text-cream-100 transition-colors duration-300;
 }
+
+/* ── Typing Animation ─────────────────────────────── */
+
+@keyframes typing-loop {
+  0% { width: 0 }
+  35% { width: 100% }
+  60% { width: 100% }
+  95% { width: 0 }
+  100% { width: 0 }
+}
+
+@keyframes typing-glow {
+  0% { text-shadow: 0 0 0 transparent; }
+  15% { text-shadow: 0 0 8px rgba(124, 92, 240, 0.4); }
+  35% { text-shadow: 0 0 12px rgba(124, 92, 240, 0.3); }
+  60% { text-shadow: 0 0 8px rgba(124, 92, 240, 0.2); }
+  95% { text-shadow: 0 0 0 transparent; }
+  100% { text-shadow: 0 0 0 transparent; }
+}
+
+.typing-text {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typing-loop 4s ease-in-out infinite, typing-glow 4s ease-in-out infinite;
+}
+
+/* ── Card & Button Interactions ───────────────────── */
+
+.card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 8px 30px rgba(124, 92, 240, 0.12);
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  transition: all 0.2s ease-out;
+}
+.btn-primary:hover {
+  box-shadow: 0 4px 20px rgba(124, 92, 240, 0.35);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: scale(0.98);
+  box-shadow: 0 2px 8px rgba(124, 92, 240, 0.25);
+}
+
+.btn-outline {
+  transition: all 0.2s ease-out;
+}
+.btn-outline:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+.btn-outline:active {
+  transform: scale(0.98);
+}
+
+.nav-link {
+  transition: background-color 150ms ease-out, color 150ms ease-out, transform 100ms ease-out;
+}
+.nav-link:hover {
+  transform: scale(1.05);
+}
+.nav-link:active {
+  transform: scale(0.95);
+}
+
+/* ── Scroll Reveal ────────────────────────────────── */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Back to Top ──────────────────────────────────── */
+
+.back-to-top {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: translateY(8px);
+}
+.back-to-top.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* ── Animated Logo ────────────────────────────────── */
+
+.animated-logo {
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+
+/* ── Status Badges ────────────────────────────────── */
+
+.status-live {
+  @apply bg-sage-500 text-white;
+}
+.status-beta {
+  @apply bg-amber-500 text-white;
+}
+.status-coming-soon {
+  @apply bg-cream-300 text-night-800 dark:bg-night-600 dark:text-cream-100;
+}
+
+/* ── Checklist ────────────────────────────────────── */
+
+.checklist-item {
+  @apply flex items-start gap-3 text-sm text-night-800/70 dark:text-cream-100/70;
+}
+.checklist-icon {
+  @apply mt-0.5 h-4 w-4 text-glow-500 shrink-0;
+}
+
+/* ── Footer ───────────────────────────────────────── */
+
+.footer-heading {
+  @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-3;
+}
+
+/* ── Accessibility ────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-text {
+    animation: none;
+    width: 100%;
+    border-right: none;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .card-hover:hover,
+  .btn-primary:hover,
+  .btn-outline:hover,
+  .nav-link:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .btn-primary:active,
+  .btn-outline:active,
+  .nav-link:active {
+    transform: none;
+  }
+  .back-to-top {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+  .animated-logo canvas {
+    display: none;
+  }
+}
 ```
 
 ```tsx
@@ -530,47 +1162,229 @@ createRoot(document.getElementById("root")!).render(
 // File: src\pages\About.tsx
 import { site } from "@/config/site";
 
+function ScaleIcon() {
+  return (
+    <svg className="h-6 w-6 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0012 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.589-1.202L18.75 4.971zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.589-1.202L5.25 4.971z" />
+    </svg>
+  );
+}
+
+function DocumentIcon() {
+  return (
+    <svg className="h-6 w-6 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+    </svg>
+  );
+}
+
+function ChartIcon() {
+  return (
+    <svg className="h-6 w-6 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg className="h-6 w-6 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg className="h-5 w-5 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+    </svg>
+  );
+}
+
+function DiamondIcon() {
+  return (
+    <svg className="h-5 w-5 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+    </svg>
+  );
+}
+
+function BoltIcon() {
+  return (
+    <svg className="h-5 w-5 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+    </svg>
+  );
+}
+
+function MagnifierIcon() {
+  return (
+    <svg className="h-5 w-5 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+    </svg>
+  );
+}
+
+const serviceIconMap: Record<string, React.FC> = {
+  scale: ScaleIcon,
+  document: DocumentIcon,
+  chart: ChartIcon,
+  gear: GearIcon,
+};
+
+const whyHireIconMap: Record<string, React.FC> = {
+  shield: ShieldIcon,
+  calendar: () => (
+    <svg className="h-5 w-5 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+    </svg>
+  ),
+  diamond: DiamondIcon,
+  magnifier: MagnifierIcon,
+  bolt: BoltIcon,
+};
+
 export default function About() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
-      <h1 className="text-3xl md:text-4xl font-bold text-night-800 dark:text-cream-50 mb-4">
-        About Me
-      </h1>
-      <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
-        Combining legal expertise with technology to deliver precise, efficient, and
-        confidential freelance solutions.
-      </p>
+      {/* ── Section 1: Who I Am ──────────────────── */}
+      <section className="mb-16 reveal">
+        <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50 mb-6">
+          Who I Am
+        </h2>
+        <div className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+          <div className="flex items-start gap-5">
+            <div className="hidden sm:flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-glow-500/10 border border-glow-500/20">
+              <span className="text-2xl font-bold text-glow-600 dark:text-glow-400">VK</span>
+            </div>
+            <div>
+              <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-1">
+                {site.name}
+              </h3>
+              <p className="text-sm text-glow-500 font-medium mb-3">
+                {site.tagline}
+              </p>
+              <p className="text-night-800 dark:text-cream-100 leading-relaxed">
+                {site.description}
+              </p>
+              <p className="text-night-800/60 dark:text-cream-100/60 leading-relaxed mt-3 text-sm">
+                I combine deep legal knowledge with technical proficiency to deliver solutions
+                that are accurate, efficient, and completely confidential. Whether you need
+                contract review, regulatory research, or data-driven insights, I bring a
+                cross-disciplinary approach that bridges the gap between law and technology.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
+      {/* ── Section 2: What I Do ─────────────────── */}
       <section className="mb-16">
-        <h2 className="text-xl font-semibold text-night-800 dark:text-cream-50 mb-6">
-          Qualifications
+        <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50 mb-6">
+          What I Do
         </h2>
         <div className="grid sm:grid-cols-2 gap-6">
-          {site.qualifications.map((q) => (
+          {site.services.map((s, i) => {
+            const Icon = serviceIconMap[s.icon] ?? ScaleIcon;
+            return (
+              <div
+                key={s.title}
+                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                style={{ transitionDelay: `${i * 80}ms` }}
+              >
+                <Icon />
+                <h3 className="mt-3 font-semibold text-night-800 dark:text-cream-50">
+                  {s.title}
+                </h3>
+                <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
+                  {s.description}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── Section 3: How I Work ────────────────── */}
+      <section className="mb-16">
+        <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50 mb-6">
+          How I Work
+        </h2>
+        <div className="grid sm:grid-cols-2 gap-6">
+          {site.principles.map((p, i) => (
+            <div
+              key={p.title}
+              className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              style={{ transitionDelay: `${i * 80}ms` }}
+            >
+              <h3 className="font-semibold text-glow-500 mb-2">{p.title}</h3>
+              <p className="text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
+                {p.description}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Section 4: Why Hire Me ───────────────── */}
+      <section className="mb-16">
+        <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50 mb-6">
+          Why Hire Me
+        </h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {site.whyHireMe.map((item, i) => {
+            const Icon = whyHireIconMap[item.icon] ?? ShieldIcon;
+            return (
+              <div
+                key={item.title}
+                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                style={{ transitionDelay: `${i * 80}ms` }}
+              >
+                <Icon />
+                <h3 className="mt-3 font-semibold text-night-800 dark:text-cream-50">
+                  {item.title}
+                </h3>
+                <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
+                  {item.description}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── Section 5: Education & Credentials ───── */}
+      <section>
+        <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50 mb-6">
+          Education & Credentials
+        </h2>
+
+        <div className="grid sm:grid-cols-2 gap-6 mb-8">
+          {site.qualifications.map((q, i) => (
             <div
               key={q.degree}
-              className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              style={{ transitionDelay: `${i * 80}ms` }}
             >
               <p className="text-sm text-glow-500 font-medium mb-1">{q.degree}</p>
               <p className="text-night-800/70 dark:text-cream-100/70 text-sm">{q.institution}</p>
             </div>
           ))}
         </div>
-      </section>
 
-      <section>
-        <h2 className="text-xl font-semibold text-night-800 dark:text-cream-50 mb-6">
+        <h3 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
           Areas of Expertise
-        </h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        </h3>
+        <div className="flex flex-wrap gap-3">
           {site.expertise.map((e) => (
-            <div
+            <span
               key={e}
-              className="flex items-center gap-3 p-4 rounded-xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              className="text-sm px-4 py-2 rounded-full bg-glow-500/10 border border-glow-500/20 text-glow-600 dark:text-glow-400 font-medium"
             >
-              <span className="h-2 w-2 rounded-full bg-glow-500 shrink-0" />
-              <span className="text-sm text-night-800 dark:text-cream-100">{e}</span>
-            </div>
+              {e}
+            </span>
           ))}
         </div>
       </section>
@@ -586,6 +1400,12 @@ import { site } from "@/config/site";
 const categoryColors: Record<string, string> = {
   Android: "bg-glow-500",
   Web: "bg-mist-500",
+};
+
+const statusConfig: Record<string, { label: string; className: string }> = {
+  live: { label: "Live", className: "status-live" },
+  beta: { label: "Beta", className: "status-beta" },
+  "coming-soon": { label: "Coming Soon", className: "status-coming-soon" },
 };
 
 function ShareIcon() {
@@ -637,17 +1457,20 @@ export default function Apps() {
       </h1>
       <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
         Applications I have developed — from mobile utilities to web management
-        tools.
+        tools. Each app solves a specific problem with a clean, focused solution.
       </p>
 
       <div className="grid sm:grid-cols-2 gap-6">
-        {site.apps.map((app) => {
+        {site.apps.map((app, i) => {
           const Icon = iconMap[app.icon ?? ""] ?? ShareIcon;
+          const status = statusConfig[app.status] ?? statusConfig["coming-soon"]!;
           return (
             <div
               key={app.title}
-              className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 flex flex-col"
+              className="reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 flex flex-col"
+              style={{ transitionDelay: `${i * 80}ms` }}
             >
+              {/* Header */}
               <div className="flex items-center gap-3 mb-3">
                 <Icon />
                 <span
@@ -656,8 +1479,12 @@ export default function Apps() {
                 <span className="text-xs font-medium text-night-800/50 dark:text-cream-100/50 uppercase tracking-wide">
                   {app.category}
                 </span>
+                <span className={`ml-auto text-xs px-2.5 py-0.5 rounded-full font-medium ${status.className}`}>
+                  {status.label}
+                </span>
               </div>
 
+              {/* Title + Description */}
               <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-2">
                 {app.title}
               </h3>
@@ -665,6 +1492,14 @@ export default function Apps() {
                 {app.description}
               </p>
 
+              {/* Screenshot Placeholder */}
+              <div className="h-36 rounded-xl bg-cream-200 dark:bg-night-700 flex items-center justify-center mb-4 border border-cream-300 dark:border-night-600">
+                <span className="text-xs text-night-800/30 dark:text-cream-100/30">
+                  Screenshot coming soon
+                </span>
+              </div>
+
+              {/* Features */}
               <ul className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4 space-y-1.5 flex-1">
                 {app.features.map((f) => (
                   <li key={f} className="flex items-start gap-2">
@@ -674,6 +1509,24 @@ export default function Apps() {
                 ))}
               </ul>
 
+              {/* Tech Stack */}
+              <div className="mb-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-2">
+                  Tech Stack
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {app.techStack.map((t) => (
+                    <span
+                      key={t}
+                      className="text-xs px-2.5 py-1 rounded-full bg-glow-500/10 border border-glow-500/20 text-glow-600 dark:text-glow-400"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tags */}
               <div className="flex flex-wrap gap-2 mb-4">
                 {app.tags.map((t) => (
                   <span
@@ -685,14 +1538,15 @@ export default function Apps() {
                 ))}
               </div>
 
+              {/* CTA */}
               <a
                 href={app.link.url}
                 target={app.link.url !== "#" ? "_blank" : undefined}
                 rel={app.link.url !== "#" ? "noopener noreferrer" : undefined}
                 className={`inline-block text-center px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   app.link.url !== "#"
-                    ? "bg-glow-500 text-white hover:bg-glow-600"
-                    : "border border-cream-300 dark:border-night-600 text-night-800/70 dark:text-cream-100/70 hover:bg-cream-200 dark:hover:bg-night-700"
+                    ? "btn-primary bg-glow-500 text-white hover:bg-glow-600"
+                    : "btn-outline border border-cream-300 dark:border-night-600 text-night-800/70 dark:text-cream-100/70 hover:bg-cream-200 dark:hover:bg-night-700"
                 }`}
               >
                 {app.link.label}
@@ -743,8 +1597,24 @@ function MapPinIcon() {
   );
 }
 
+function ClockIcon() {
+  return (
+    <svg className="h-5 w-5 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="checklist-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>
+  );
+}
+
 export default function Contact() {
-  const { contact } = site;
+  const { contact, workingStyle, beforeContacting } = site;
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
       <h1 className="text-3xl md:text-4xl font-bold text-night-800 dark:text-cream-50 mb-4">
@@ -752,69 +1622,221 @@ export default function Contact() {
       </h1>
       <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
         Ready to start a project? Reach out through any of the channels below.
+        I typically respond within 24 hours.
       </p>
 
-      <div className="grid sm:grid-cols-2 gap-6 max-w-xl">
-        <a
-          href={`tel:${contact.phone}`}
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <PhoneIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Phone</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.phone}</p>
-          </div>
-        </a>
+      <div className="grid lg:grid-cols-5 gap-8">
+        {/* ── Left Column (3 cols) ──────────────── */}
+        <div className="lg:col-span-3 space-y-8">
+          {/* Contact Cards */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <a
+              href={`tel:${contact.phone}`}
+              className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
+            >
+              <PhoneIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Phone</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.phone}</p>
+              </div>
+            </a>
 
-        <a
-          href={`mailto:${contact.email}`}
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <MailIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Email</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.email}</p>
-          </div>
-        </a>
+            <a
+              href={`mailto:${contact.email}`}
+              className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
+            >
+              <MailIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Email</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.email}</p>
+              </div>
+            </a>
 
-        <a
-          href={`mailto:${contact.emailAlt}`}
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <MailIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Alt Email</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.emailAlt}</p>
-          </div>
-        </a>
+            <a
+              href={contact.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
+            >
+              <GlobeIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Website</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.website}</p>
+              </div>
+            </a>
 
-        <a
-          href={contact.website}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
-        >
-          <GlobeIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Website</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.website}</p>
+            <div className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+              <MapPinIcon />
+              <div>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Location</p>
+                <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.location}</p>
+              </div>
+            </div>
           </div>
-        </a>
 
-        <div className="flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 sm:col-span-2">
-          <MapPinIcon />
-          <div>
-            <p className="text-xs text-night-800/50 dark:text-cream-100/50">Location</p>
-            <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.location}</p>
+          {/* Before You Contact */}
+          <div className="reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
+              Before You Contact
+            </h2>
+            <p className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4">
+              Having these ready helps us scope your project faster and give you a more accurate quote.
+            </p>
+            <ul className="space-y-3">
+              {beforeContacting.map((item) => (
+                <li key={item} className="checklist-item">
+                  <CheckIcon />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Contact Form */}
+          <div className="reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
+              Send a Message
+            </h2>
+            <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                    placeholder="Your name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                    placeholder="you@example.com"
+                  />
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Project Type
+                  </label>
+                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
+                    <option>Legal Research</option>
+                    <option>Contract Drafting</option>
+                    <option>Data Analysis</option>
+                    <option>Legal-Tech Integration</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Budget Range
+                  </label>
+                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
+                    <option>Under ₹10,000</option>
+                    <option>₹10,000 - ₹50,000</option>
+                    <option>₹50,000 - ₹1,00,000</option>
+                    <option>₹1,00,000+</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                  Priority
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
+                    <input type="radio" name="priority" value="standard" defaultChecked className="accent-glow-500" />
+                    Standard
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
+                    <input type="radio" name="priority" value="urgent" className="accent-glow-500" />
+                    Urgent
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                  Message
+                </label>
+                <textarea
+                  rows={4}
+                  className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors resize-none"
+                  placeholder="Tell me about your project..."
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="btn-primary px-6 py-2.5 rounded-xl bg-glow-500 text-white font-medium text-sm hover:bg-glow-600"
+              >
+                Send Message
+              </button>
+            </form>
           </div>
         </div>
-      </div>
 
-      <div className="mt-10 p-5 rounded-2xl bg-glow-500/10 border border-glow-500/30 max-w-xl">
-        <p className="text-sm text-night-800 dark:text-cream-100">
-          <strong className="text-glow-600 dark:text-glow-400">Confidentiality guaranteed.</strong>{" "}
-          All communications and project details are handled under strict NDA. Your privacy is paramount.
-        </p>
+        {/* ── Right Column (2 cols) ─────────────── */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Response Time */}
+          <div className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <div className="flex items-center gap-3 mb-3">
+              <ClockIcon />
+              <h3 className="font-semibold text-night-800 dark:text-cream-50">
+                Response Time
+              </h3>
+            </div>
+            <p className="text-2xl font-bold text-glow-600 dark:text-glow-400 mb-1">
+              {workingStyle.responseTime}
+            </p>
+            <p className="text-sm text-night-800/60 dark:text-cream-100/60">
+              I check messages regularly and aim to get back to you within one business day.
+            </p>
+          </div>
+
+          {/* Working Style */}
+          <div className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
+            <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-4">
+              Working Style
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-0.5">
+                  Availability
+                </p>
+                <p className="text-sm text-night-800 dark:text-cream-100">{workingStyle.availability}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-0.5">
+                  Communication
+                </p>
+                <p className="text-sm text-night-800 dark:text-cream-100">{workingStyle.communication}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-0.5">
+                  Timezone
+                </p>
+                <p className="text-sm text-night-800 dark:text-cream-100">{workingStyle.timezone}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Confidentiality */}
+          <div className="reveal card-hover p-6 rounded-2xl bg-glow-500/10 border border-glow-500/30">
+            <p className="text-sm text-night-800 dark:text-cream-100">
+              <strong className="text-glow-600 dark:text-glow-400">Confidentiality guaranteed.</strong>{" "}
+              All communications and project details are handled under strict NDA. Your privacy is paramount.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -872,43 +1894,90 @@ export default function Freelance() {
         Freelance Services
       </h1>
       <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
-        Professional legal and tech services tailored to your needs.
+        Professional legal and tech services tailored to your needs. Each engagement
+        starts with a clear scope, transparent pricing, and strict confidentiality.
       </p>
 
+      {/* ── Services ────────────────────────────── */}
       <section className="mb-16">
         <div className="grid sm:grid-cols-2 gap-6">
-          {site.services.map((s) => {
+          {site.services.map((s, i) => {
             const Icon = iconMap[s.icon] ?? ScaleIcon;
             return (
               <div
                 key={s.title}
-                className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 flex flex-col"
+                style={{ transitionDelay: `${i * 80}ms` }}
               >
                 <Icon />
                 <h3 className="mt-4 font-semibold text-night-800 dark:text-cream-50">
                   {s.title}
                 </h3>
-                <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60">
+                <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
                   {s.description}
                 </p>
+
+                <div className="mt-5 pt-4 border-t border-cream-200 dark:border-night-700 space-y-3 flex-1">
+                  {/* Ideal For */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-1.5">
+                      Ideal For
+                    </p>
+                    <ul className="space-y-1">
+                      {s.idealFor.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-night-800/70 dark:text-cream-100/70">
+                          <span className="mt-1.5 h-1 w-1 rounded-full bg-glow-500 shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Deliverables */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-1.5">
+                      Deliverables
+                    </p>
+                    <ul className="space-y-1">
+                      {s.deliverables.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-night-800/70 dark:text-cream-100/70">
+                          <span className="mt-1.5 h-1 w-1 rounded-full bg-glow-500 shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Turnaround + Pricing */}
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    <span className="text-xs px-3 py-1.5 rounded-full bg-cream-200 dark:bg-night-700 text-night-800/70 dark:text-cream-100/70 font-medium">
+                      {s.turnaround}
+                    </span>
+                    <span className="text-xs px-3 py-1.5 rounded-full bg-glow-500/10 border border-glow-500/20 text-glow-600 dark:text-glow-400 font-medium">
+                      {s.pricingModel}
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })}
         </div>
       </section>
 
+      {/* ── Working Principles ──────────────────── */}
       <section>
         <h2 className="text-xl font-semibold text-night-800 dark:text-cream-50 mb-6">
           Working Principles
         </h2>
-        <div className="grid sm:grid-cols-3 gap-6">
-          {site.principles.map((p) => (
+        <div className="grid sm:grid-cols-2 gap-6">
+          {site.principles.map((p, i) => (
             <div
               key={p.title}
-              className="p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              className="reveal card-hover p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              style={{ transitionDelay: `${i * 80}ms` }}
             >
               <h3 className="font-semibold text-glow-500 mb-2">{p.title}</h3>
-              <p className="text-sm text-night-800/60 dark:text-cream-100/60">
+              <p className="text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
                 {p.description}
               </p>
             </div>
@@ -925,69 +1994,163 @@ export default function Freelance() {
 import { Link } from "react-router-dom";
 import { site } from "@/config/site";
 
-function ScaleIcon() {
+function ScaleIcon({ className = "h-8 w-8" }: { className?: string }) {
   return (
-    <svg className="h-8 w-8 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0012 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.589-1.202L18.75 4.971zm-16.5.52c.99-.203 1.99-.377 3-.52m0 0l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.989 5.989 0 01-2.031.352 5.989 5.989 0 01-2.031-.352c-.483-.174-.711-.703-.589-1.202L5.25 4.971z" />
     </svg>
   );
 }
 
-function ChartIcon() {
+function ChartIcon({ className = "h-8 w-8" }: { className?: string }) {
   return (
-    <svg className="h-8 w-8 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
     </svg>
   );
 }
 
-function ShieldIcon() {
+function ShieldIcon({ className = "h-8 w-8" }: { className?: string }) {
   return (
-    <svg className="h-8 w-8 text-glow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
     </svg>
   );
 }
 
-const iconMap = { scale: ScaleIcon, chart: ChartIcon, shield: ShieldIcon };
+function CalendarIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+    </svg>
+  );
+}
+
+function DiamondIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+    </svg>
+  );
+}
+
+function MagnifierIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+    </svg>
+  );
+}
+
+function BoltIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+    </svg>
+  );
+}
+
+const highlightIconMap: Record<string, React.FC<{ className?: string }>> = {
+  scale: ScaleIcon,
+  chart: ChartIcon,
+  shield: ShieldIcon,
+};
+
+const trustBadgeIconMap: Record<string, React.FC<{ className?: string }>> = {
+  calendar: CalendarIcon,
+  shield: ShieldIcon,
+  diamond: DiamondIcon,
+};
+
+const whyHireIconMap: Record<string, React.FC<{ className?: string }>> = {
+  shield: ShieldIcon,
+  calendar: CalendarIcon,
+  diamond: DiamondIcon,
+  magnifier: MagnifierIcon,
+  bolt: BoltIcon,
+};
 
 export default function Home() {
   return (
     <div>
-      <section className="max-w-6xl mx-auto px-4 py-20 md:py-32 text-center">
-        <p className="text-sm font-medium text-glow-500 mb-4 tracking-wide uppercase">
-          {site.tagline}
-        </p>
-        <h1 className="text-4xl md:text-6xl font-bold text-night-800 dark:text-cream-50 mb-6">
-          {site.name}
-        </h1>
-        <p className="text-lg text-night-800/70 dark:text-cream-100/70 max-w-2xl mx-auto mb-10">
-          {site.description}
-        </p>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Link
-            to="/freelance"
-            className="inline-block px-6 py-3 rounded-xl bg-glow-500 text-white font-medium hover:bg-glow-600 transition-colors"
-          >
-            View Services
-          </Link>
-          <Link
-            to="/contact"
-            className="inline-block px-6 py-3 rounded-xl border border-cream-300 dark:border-night-600 font-medium hover:bg-cream-200 dark:hover:bg-night-700 transition-colors"
-          >
-            Get in Touch
-          </Link>
+      {/* ── Hero ──────────────────────────────────── */}
+      <section className="max-w-6xl mx-auto px-4 py-20 md:py-28">
+        <div className="grid md:grid-cols-5 gap-12 items-center">
+          <div className="md:col-span-3">
+            <p className="text-sm font-medium text-glow-500 mb-4 tracking-wide uppercase">
+              {site.tagline}
+            </p>
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-night-800 dark:text-cream-50 mb-6 leading-tight">
+              {site.name}
+            </h1>
+            <p className="text-lg text-night-800/70 dark:text-cream-100/70 max-w-xl mb-10 leading-relaxed">
+              {site.description}
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Link
+                to="/freelance"
+                className="btn-primary inline-block px-6 py-3 rounded-xl bg-glow-500 text-white font-medium hover:bg-glow-600 text-center"
+              >
+                View Services
+              </Link>
+              <Link
+                to="/contact"
+                className="btn-outline inline-block px-6 py-3 rounded-xl border border-cream-300 dark:border-night-600 font-medium hover:bg-cream-200 dark:hover:bg-night-700 text-center"
+              >
+                Get in Touch
+              </Link>
+            </div>
+          </div>
+
+          <div className="md:col-span-2 flex flex-col gap-4">
+            {site.trustBadges.map((badge) => {
+              const Icon = trustBadgeIconMap[badge.icon] ?? ShieldIcon;
+              return (
+                <div
+                  key={badge.label}
+                  className="card-hover flex items-center gap-4 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                >
+                  <Icon className="h-6 w-6" />
+                  <span className="text-sm font-medium text-night-800 dark:text-cream-100">
+                    {badge.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </section>
 
+      {/* ── Trust Badges Row (mobile) ─────────────── */}
+      <section className="md:hidden max-w-6xl mx-auto px-4 pb-12">
+        <div className="flex gap-3 overflow-x-auto">
+          {site.trustBadges.map((badge) => {
+            const Icon = trustBadgeIconMap[badge.icon] ?? ShieldIcon;
+            return (
+              <div
+                key={badge.label}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 shrink-0"
+              >
+                <Icon className="h-4 w-4" />
+                <span className="text-xs font-medium text-night-800 dark:text-cream-100 whitespace-nowrap">
+                  {badge.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── Highlights ────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-4 pb-20">
         <div className="grid md:grid-cols-3 gap-6">
-          {site.highlights.map((h) => {
-            const Icon = iconMap[h.icon as keyof typeof iconMap];
+          {site.highlights.map((h, i) => {
+            const Icon = highlightIconMap[h.icon] ?? ScaleIcon;
             return (
               <div
                 key={h.title}
-                className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                style={{ transitionDelay: `${i * 100}ms` }}
               >
                 <Icon />
                 <h3 className="mt-4 font-semibold text-night-800 dark:text-cream-50">
@@ -995,6 +2158,36 @@ export default function Home() {
                 </h3>
                 <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60">
                   {h.description}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── Why Hire Me ───────────────────────────── */}
+      <section className="max-w-6xl mx-auto px-4 pb-20">
+        <div className="text-center mb-10">
+          <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50">
+            Why Hire Me
+          </h2>
+          <div className="mt-3 h-1 w-12 mx-auto rounded-full bg-glow-500" />
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {site.whyHireMe.map((item, i) => {
+            const Icon = whyHireIconMap[item.icon] ?? ShieldIcon;
+            return (
+              <div
+                key={item.title}
+                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                style={{ transitionDelay: `${i * 80}ms` }}
+              >
+                <Icon className="h-6 w-6" />
+                <h3 className="mt-3 font-semibold text-night-800 dark:text-cream-50">
+                  {item.title}
+                </h3>
+                <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
+                  {item.description}
                 </p>
               </div>
             );
@@ -1040,6 +2233,11 @@ const categoryColors: Record<string, string> = {
   Tech: "bg-mist-500",
 };
 
+const categoryBorderColors: Record<string, string> = {
+  Legal: "border-l-sage-500",
+  Tech: "border-l-mist-500",
+};
+
 export default function Portfolio() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
@@ -1047,14 +2245,16 @@ export default function Portfolio() {
         Portfolio
       </h1>
       <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
-        Selected projects across legal research and technology.
+        Selected projects across legal research and technology. Each project follows
+        a structured approach: understand the problem, design the solution, deliver measurable outcomes.
       </p>
 
       <div className="grid sm:grid-cols-2 gap-6">
-        {site.projects.map((p) => (
+        {site.projects.map((p, i) => (
           <div
             key={p.title}
-            className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 flex flex-col"
+            className={`reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 border-l-4 ${categoryBorderColors[p.category] ?? "border-l-glow-500"} flex flex-col`}
+            style={{ transitionDelay: `${i * 80}ms` }}
           >
             <div className="flex items-center gap-2 mb-3">
               <span
@@ -1064,13 +2264,41 @@ export default function Portfolio() {
                 {p.category}
               </span>
             </div>
-            <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-2">
+
+            <h3 className="font-semibold text-night-800 dark:text-cream-50 mb-4">
               {p.title}
             </h3>
-            <p className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4 flex-1">
-              {p.description}
-            </p>
-            <div className="flex flex-wrap gap-2">
+
+            <div className="space-y-3 flex-1">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-1">
+                  Problem
+                </p>
+                <p className="text-sm text-night-800/70 dark:text-cream-100/70 leading-relaxed">
+                  {p.problem}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-1">
+                  Solution
+                </p>
+                <p className="text-sm text-night-800/70 dark:text-cream-100/70 leading-relaxed">
+                  {p.solution}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40 mb-1">
+                  Outcome
+                </p>
+                <p className="text-sm text-night-800/70 dark:text-cream-100/70 leading-relaxed">
+                  {p.outcome}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-cream-200 dark:border-night-700">
               {p.tags.map((t) => (
                 <span
                   key={t}

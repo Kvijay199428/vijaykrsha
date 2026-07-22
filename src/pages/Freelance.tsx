@@ -47,43 +47,90 @@ export default function Freelance() {
         Freelance Services
       </h1>
       <p className="text-night-800/70 dark:text-cream-100/70 max-w-2xl mb-12">
-        Professional legal and tech services tailored to your needs.
+        Professional legal and tech services tailored to your needs. Each engagement
+        starts with a clear scope, transparent pricing, and strict confidentiality.
       </p>
 
+      {/* ── Services ────────────────────────────── */}
       <section className="mb-16">
         <div className="grid sm:grid-cols-2 gap-6">
-          {site.services.map((s) => {
+          {site.services.map((s, i) => {
             const Icon = iconMap[s.icon] ?? ScaleIcon;
             return (
               <div
                 key={s.title}
-                className="p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 flex flex-col"
+                style={{ transitionDelay: `${i * 80}ms` }}
               >
                 <Icon />
                 <h3 className="mt-4 font-semibold text-night-800 dark:text-cream-50">
                   {s.title}
                 </h3>
-                <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60">
+                <p className="mt-2 text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
                   {s.description}
                 </p>
+
+                <div className="mt-5 pt-4 border-t border-cream-200 dark:border-night-700 space-y-3 flex-1">
+                  {/* Ideal For */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-1.5">
+                      Ideal For
+                    </p>
+                    <ul className="space-y-1">
+                      {s.idealFor.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-night-800/70 dark:text-cream-100/70">
+                          <span className="mt-1.5 h-1 w-1 rounded-full bg-glow-500 shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Deliverables */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-1.5">
+                      Deliverables
+                    </p>
+                    <ul className="space-y-1">
+                      {s.deliverables.map((item) => (
+                        <li key={item} className="flex items-start gap-2 text-sm text-night-800/70 dark:text-cream-100/70">
+                          <span className="mt-1.5 h-1 w-1 rounded-full bg-glow-500 shrink-0" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Turnaround + Pricing */}
+                  <div className="flex flex-wrap gap-3 pt-2">
+                    <span className="text-xs px-3 py-1.5 rounded-full bg-cream-200 dark:bg-night-700 text-night-800/70 dark:text-cream-100/70 font-medium">
+                      {s.turnaround}
+                    </span>
+                    <span className="text-xs px-3 py-1.5 rounded-full bg-glow-500/10 border border-glow-500/20 text-glow-600 dark:text-glow-400 font-medium">
+                      {s.pricingModel}
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })}
         </div>
       </section>
 
+      {/* ── Working Principles ──────────────────── */}
       <section>
         <h2 className="text-xl font-semibold text-night-800 dark:text-cream-50 mb-6">
           Working Principles
         </h2>
-        <div className="grid sm:grid-cols-3 gap-6">
-          {site.principles.map((p) => (
+        <div className="grid sm:grid-cols-2 gap-6">
+          {site.principles.map((p, i) => (
             <div
               key={p.title}
-              className="p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              className="reveal card-hover p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+              style={{ transitionDelay: `${i * 80}ms` }}
             >
               <h3 className="font-semibold text-glow-500 mb-2">{p.title}</h3>
-              <p className="text-sm text-night-800/60 dark:text-cream-100/60">
+              <p className="text-sm text-night-800/60 dark:text-cream-100/60 leading-relaxed">
                 {p.description}
               </p>
             </div>
