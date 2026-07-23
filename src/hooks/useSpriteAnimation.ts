@@ -6,7 +6,6 @@ interface SpriteConfig {
   frames: number;
   frameWidth: number;
   frameHeight: number;
-  scale: number;
   opacity: number;
   blendMode: GlobalCompositeOperation;
   loop: boolean;
@@ -62,11 +61,9 @@ export default function useSpriteAnimation(
 
   const drawFrame = useCallback(
     (ctx: CanvasRenderingContext2D, image: HTMLImageElement, frame: number) => {
-      const { frameWidth, frameHeight, scale, opacity, blendMode } = config;
-      const dw = frameWidth * scale;
-      const dh = frameHeight * scale;
+      const { frameWidth, frameHeight, opacity, blendMode } = config;
 
-      ctx.clearRect(0, 0, dw, dh);
+      ctx.clearRect(0, 0, frameWidth, frameHeight);
       ctx.globalAlpha = opacity;
       ctx.globalCompositeOperation = blendMode;
 
@@ -78,8 +75,8 @@ export default function useSpriteAnimation(
         frameHeight,
         0,
         0,
-        dw,
-        dh
+        frameWidth,
+        frameHeight
       );
     },
     [config]
@@ -92,12 +89,12 @@ export default function useSpriteAnimation(
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { frameWidth, frameHeight, scale, frames, fps, loop } = config;
-    const dw = frameWidth * scale;
-    const dh = frameHeight * scale;
+    const { frameWidth, frameHeight, frames, fps, loop } = config;
+    const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = dw;
-    canvas.height = dh;
+    canvas.width = frameWidth * dpr;
+    canvas.height = frameHeight * dpr;
+    ctx.scale(dpr, dpr);
 
     let cancelled = false;
 

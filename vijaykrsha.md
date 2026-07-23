@@ -457,9 +457,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 // File: src\config\site.ts
 export const site = {
   name: "Vijay Kumar Sharma",
-  tagline: "Legal & Technology Solutions for Businesses",
+  tagline: "Legal Research, Drafting & Digital Legal Solutions",
   description:
-    "Legal researcher, contract drafter, and data analyst helping businesses and startups navigate complex legal and technology challenges. Based in India.",
+    "Law graduate (LL.B.), legal researcher, and contract drafting professional with experience supporting individuals, businesses, and startups through practical legal documentation, research, and technology-assisted solutions. Based in India.",
 
   contact: {
     phone: "+91-9599130381",
@@ -479,9 +479,9 @@ export const site = {
   ],
 
   trustBadges: [
-    { label: "3+ Years Experience", icon: "calendar" },
+    { label: "Professional Legal Practice", icon: "calendar" },
     { label: "NDA by Default", icon: "shield" },
-    { label: "Cross-Domain Expertise", icon: "diamond" },
+    { label: "Interdisciplinary Approach", icon: "diamond" },
   ],
 
   whyHireMe: [
@@ -492,25 +492,25 @@ export const site = {
       icon: "shield",
     },
     {
-      title: "3+ Years Experience",
+      title: "Professional Legal Practice",
       description:
         "Proven track record across legal research, contract management, and data analytics for clients in multiple industries.",
       icon: "calendar",
     },
     {
-      title: "Cross-Domain Expertise",
+      title: "Interdisciplinary Approach",
       description:
         "Rare combination of legal knowledge and technical skill — bridging the gap between law and technology.",
       icon: "diamond",
     },
     {
-      title: "Detail Oriented",
+      title: "Attention to Detail",
       description:
         "Meticulous attention to statutory references, contract clauses, and data accuracy. No shortcuts on quality.",
       icon: "magnifier",
     },
     {
-      title: "Fast Turnaround",
+      title: "Timely Delivery",
       description:
         "Efficient workflows and legal-tech integration mean faster delivery without compromising thoroughness.",
       icon: "bolt",
@@ -645,7 +645,7 @@ export const site = {
         "Accurate, verifiable, and well-sourced work. No shortcuts on quality or credibility.",
     },
     {
-      title: "3+ Years Experience",
+      title: "Professional Legal Practice",
       description:
         "Proven track record across legal research, contract management, and data analytics projects.",
     },
@@ -1302,10 +1302,13 @@ export default function About() {
                 {site.description}
               </p>
               <p className="text-night-800/60 dark:text-cream-100/60 leading-relaxed mt-3 text-sm">
-                I combine deep legal knowledge with technical proficiency to deliver solutions
-                that are accurate, efficient, and completely confidential. Whether you need
-                contract review, regulatory research, or data-driven insights, I bring a
-                cross-disciplinary approach that bridges the gap between law and technology.
+                My legal work includes research, drafting, document review, and legal support
+                across various practice areas. During my legal journey, I have worked on matters
+                relating to Family Law, Criminal Law, the Negotiable Instruments Act, Contract
+                Law, Consumer Law, Constitutional Law, and other civil and commercial legal
+                matters. Alongside legal practice, I use technology and data-driven workflows
+                to improve accuracy, organization, and efficiency while maintaining complete
+                confidentiality for every engagement.
               </p>
             </div>
           </div>
@@ -1360,10 +1363,10 @@ export default function About() {
         </div>
       </section>
 
-      {/* ── Section 4: Why Hire Me ───────────────── */}
+      {/* ── Section 4: Why Clients Choose to Work With Me ───────────────── */}
       <section className="mb-16">
         <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50 mb-6">
-          Why Hire Me
+          Why Clients Choose to Work With Me
         </h2>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {site.whyHireMe.map((item, i) => {
@@ -1407,7 +1410,7 @@ export default function About() {
         </div>
 
         <h3 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
-          Areas of Expertise
+          Areas of Practice
         </h3>
         <div className="flex flex-wrap gap-3">
           {site.expertise.map((e) => (

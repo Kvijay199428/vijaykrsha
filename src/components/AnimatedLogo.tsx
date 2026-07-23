@@ -22,13 +22,12 @@ export default function AnimatedLogo({
 
   const config = {
     ...logoConfig,
-    scale: size ? size / logoConfig.frameWidth : logoConfig.scale,
     blendMode: logoConfig.blendMode as GlobalCompositeOperation,
   };
 
   useSpriteAnimation(canvasRef, config);
 
-  const displaySize = config.frameWidth * config.scale;
+  const displaySize = size ?? logoConfig.frameWidth;
 
   if (prefersReducedMotion) {
     return (

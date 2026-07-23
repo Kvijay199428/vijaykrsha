@@ -266,7 +266,7 @@ export const site = {
       title: "Vega Share",
       category: "Android",
       icon: "share",
-      status: "coming-soon" as const,
+      status: "live" as const,
       description:
         "WiFi-based file transfer app for Android. Share files from your phone to any device on the same network using just a browser — no app installation needed on the receiving end.",
       features: [
@@ -274,10 +274,14 @@ export const site = {
         "Preview documents, images, video, and audio directly in the browser",
         "Upload files from any device back to your phone via browser URL",
         "No app installation required on the receiving device",
+        "HTTPS secure transfers with self-signed certificates",
+        "mDNS auto-discovery on local network",
       ],
-      techStack: ["Android", "Kotlin", "HTTP Server", "WebSocket"],
-      link: { label: "Coming Soon", url: "#" },
-      tags: ["Android", "WiFi", "File Transfer", "Browser"],
+      techStack: ["Android", "Kotlin", "NanoHTTPD", "BouncyCastle", "React", "Vite"],
+      logo: "/vega-share-icon.png",
+      screenshots: ["/vega-share-screenshot.png", "/vega-share-feature.png"],
+      link: { label: "Download APK", url: "https://github.com/Kvijay199428/VEGA-SHARE/releases/download/v1.0.1/vega-share-1.0.1.apk" },
+      tags: ["Android", "WiFi", "File Transfer", "Browser", "HTTPS"],
     },
     {
       title: "Rent App Management",

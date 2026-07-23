@@ -130,8 +130,7 @@ body {
 /* ── Animated Logo ────────────────────────────────── */
 
 .animated-logo {
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
+  image-rendering: auto;
 }
 
 /* ── Status Badges ────────────────────────────────── */
