@@ -6,7 +6,7 @@ export const site = {
 
   contact: {
     phone: "+91-9599130381",
-    email: "vijay@vijaykrsha.online",
+    email: "vijaykrsha@hotmail.com",
     emailAlt: "contact@vijaykrsha.online",
     website: "https://vijaykrsha.online",
     location: "India",

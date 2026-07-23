@@ -1,0 +1,11 @@
+{
+  "src": "/logo/logo.png.gz",
+  "fps": 10,
+  "frames": 15,
+  "frameWidth": 200,
+  "frameHeight": 200,
+  "scale": 0.30,
+  "opacity": 0.80,
+  "blendMode": "normal",
+  "loop": true
+}
