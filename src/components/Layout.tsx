@@ -155,9 +155,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* ── Footer ──────────────────────────────── */}
       <footer className="border-t border-cream-200 dark:border-night-700 bg-cream-100 dark:bg-night-800">
         <div className="max-w-6xl mx-auto px-4 py-12">
-          {/* Centered Logo + Tagline */}
+          {/* Centered Tagline + WhatsApp */}
           <div className="flex flex-col items-center mb-10">
-            <AnimatedLogo className="mb-1" />
             <p className="font-bold text-lg text-glow-600 dark:text-glow-400 mb-1">
               VIJAYKRSHA.ONLINE
             </p>
@@ -243,7 +242,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="border-t border-cream-200 dark:border-night-700 pt-6 text-center text-sm text-night-800/50 dark:text-cream-100/50">
+          <div className="border-t border-cream-200 dark:border-night-700 pt-6 flex items-center justify-center gap-3 text-sm text-night-800/50 dark:text-cream-100/50">
+            <AnimatedLogo />
             <p>&copy; {new Date().getFullYear()} {site.name}. All rights reserved.</p>
           </div>
         </div>
