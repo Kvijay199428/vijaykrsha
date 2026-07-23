@@ -108,10 +108,13 @@ export default function About() {
                 {site.description}
               </p>
               <p className="text-night-800/60 dark:text-cream-100/60 leading-relaxed mt-3 text-sm">
-                I combine deep legal knowledge with technical proficiency to deliver solutions
-                that are accurate, efficient, and completely confidential. Whether you need
-                contract review, regulatory research, or data-driven insights, I bring a
-                cross-disciplinary approach that bridges the gap between law and technology.
+                My legal work includes research, drafting, document review, and legal support
+                across various practice areas. During my legal journey, I have worked on matters
+                relating to Family Law, Criminal Law, the Negotiable Instruments Act, Contract
+                Law, Consumer Law, Constitutional Law, and other civil and commercial legal
+                matters. Alongside legal practice, I use technology and data-driven workflows
+                to improve accuracy, organization, and efficiency while maintaining complete
+                confidentiality for every engagement.
               </p>
             </div>
           </div>
@@ -166,10 +169,10 @@ export default function About() {
         </div>
       </section>
 
-      {/* ── Section 4: Why Hire Me ───────────────── */}
+      {/* ── Section 4: Why Clients Choose to Work With Me ───────────────── */}
       <section className="mb-16">
         <h2 className="text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50 mb-6">
-          Why Hire Me
+          Why Clients Choose to Work With Me
         </h2>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {site.whyHireMe.map((item, i) => {
@@ -213,7 +216,7 @@ export default function About() {
         </div>
 
         <h3 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
-          Areas of Expertise
+          Areas of Practice
         </h3>
         <div className="flex flex-wrap gap-3">
           {site.expertise.map((e) => (

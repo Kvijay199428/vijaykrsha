@@ -82,23 +82,17 @@ server {
 }
 ```
 
-```xml
-// File: public\favicon.svg
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#a78bfa"/>
-  <text x="16" y="23" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="20" fill="#fff">V</text>
-</svg>
-```
-
 ```json
 // File: public\logo\logo.json
 {
+  "src": "/logo/logo.png.gz",
   "fps": 10,
-  "frames": 10,
+  "frames": 15,
   "frameWidth": 200,
   "frameHeight": 200,
-  "scale": 0.6,
-  "opacity": 0.85,
+  "scale": 0.30,
+  "opacity": 0.80,
+  "blendMode": "normal",
   "loop": true
 }
 ```
@@ -134,51 +128,49 @@ export default function App() {
 
 ```tsx
 // File: src\components\AnimatedLogo.tsx
-import { useSpriteAnimation } from "@/hooks/useSpriteAnimation";
-
-interface AnimatedLogoConfig {
-  fps: number;
-  frames: number;
-  frameWidth: number;
-  frameHeight: number;
-  scale: number;
-  opacity: number;
-  loop: boolean;
-}
+import { useRef } from "react";
+import useSpriteAnimation from "@/hooks/useSpriteAnimation";
+import logoConfig from "../../public/logo/logo.json";
 
 interface AnimatedLogoProps {
-  config: AnimatedLogoConfig;
-  spriteSrc?: string;
   className?: string;
   alt?: string;
+  size?: number;
 }
 
 export default function AnimatedLogo({
-  config,
-  spriteSrc = "/logo/sprite.webp",
   className = "",
   alt = "Vijay Kumar Sharma",
+  size,
 }: AnimatedLogoProps) {
-  const { canvasRef, isLoaded, prefersReducedMotion } = useSpriteAnimation({
-    src: spriteSrc,
-    config,
-    enabled: true,
-  });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const scaledWidth = config.frameWidth * config.scale;
-  const scaledHeight = config.frameHeight * config.scale;
+  const prefersReducedMotion =
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : true;
 
-  if (prefersReducedMotion || !isLoaded) {
+  const config = {
+    ...logoConfig,
+    scale: size ? size / logoConfig.frameWidth : logoConfig.scale,
+    blendMode: logoConfig.blendMode as GlobalCompositeOperation,
+  };
+
+  useSpriteAnimation(canvasRef, config);
+
+  const displaySize = config.frameWidth * config.scale;
+
+  if (prefersReducedMotion) {
     return (
       <div
         className={`animated-logo flex items-center justify-center ${className}`}
-        style={{ width: scaledWidth, height: scaledHeight }}
+        style={{ width: displaySize, height: displaySize }}
       >
-        {isLoaded && !prefersReducedMotion ? null : (
-          <div className="flex items-center justify-center w-full h-full rounded-2xl bg-glow-500/10 border border-glow-500/20">
-            <span className="text-3xl font-bold text-glow-600 dark:text-glow-400">VK</span>
-          </div>
-        )}
+        <div className="flex items-center justify-center w-full h-full rounded-2xl bg-glow-500/10 border border-glow-500/20">
+          <span className="text-3xl font-bold text-glow-600 dark:text-glow-400">
+            VK
+          </span>
+        </div>
       </div>
     );
   }
@@ -187,9 +179,9 @@ export default function AnimatedLogo({
     <canvas
       ref={canvasRef}
       className={`animated-logo ${className}`}
+      style={{ width: displaySize, height: displaySize }}
       aria-label={alt}
       role="img"
-      style={{ width: scaledWidth, height: scaledHeight }}
     />
   );
 }
@@ -202,7 +194,6 @@ import { useTheme } from "@/context/ThemeContext";
 import { site } from "@/config/site";
 import { useState, useEffect, useRef } from "react";
 import AnimatedLogo from "./AnimatedLogo";
-import logoConfig from "../../public/logo/logo.json";
 
 function SunIcon() {
   return (
@@ -354,19 +345,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* ── Footer ──────────────────────────────── */}
       <footer className="border-t border-cream-200 dark:border-night-700 bg-cream-100 dark:bg-night-800">
-        <div className="max-w-6xl mx-auto px-4 py-12">
-          {/* Centered Logo + Tagline */}
+        <div className="max-w-6xl mx-auto px-4 pt-12 pb-4">
+          {/* Centered Tagline + WhatsApp */}
           <div className="flex flex-col items-center mb-10">
-            <AnimatedLogo
-              config={logoConfig}
-              className="mb-4"
-            />
             <p className="font-bold text-lg text-glow-600 dark:text-glow-400 mb-1">
-              {site.name}
+              VIJAYKRSHA.ONLINE
             </p>
-            <p className="text-sm text-night-800/50 dark:text-cream-100/50">
+            <p className="text-sm text-night-800/50 dark:text-cream-100/50 mb-3">
               Legal Research &bull; Contract Drafting &bull; Legal Technology
             </p>
+            <a
+              href="https://wa.me/919599130381"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#25D366] text-white text-sm font-medium hover:bg-[#20b858] transition-colors"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              Chat on WhatsApp
+            </a>
           </div>
 
           {/* 4-Column Grid */}
@@ -435,7 +433,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="border-t border-cream-200 dark:border-night-700 pt-6 text-center text-sm text-night-800/50 dark:text-cream-100/50">
+          <div className="border-t border-cream-200 dark:border-night-700 pt-4 flex items-center justify-center gap-3 text-sm text-night-800/50 dark:text-cream-100/50">
+            <AnimatedLogo size={100} />
             <p>&copy; {new Date().getFullYear()} {site.name}. All rights reserved.</p>
           </div>
         </div>
@@ -464,7 +463,7 @@ export const site = {
 
   contact: {
     phone: "+91-9599130381",
-    email: "vijay@vijaykrsha.online",
+    email: "vijaykrsha@hotmail.com",
     emailAlt: "contact@vijaykrsha.online",
     website: "https://vijaykrsha.online",
     location: "India",
@@ -804,136 +803,169 @@ export function useTheme() {
 
 ```typescript
 // File: src\hooks\useSpriteAnimation.ts
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 interface SpriteConfig {
+  src: string;
   fps: number;
   frames: number;
   frameWidth: number;
   frameHeight: number;
   scale: number;
   opacity: number;
+  blendMode: GlobalCompositeOperation;
   loop: boolean;
 }
 
-interface UseSpriteAnimationOptions {
-  src: string;
-  config: SpriteConfig;
-  enabled?: boolean;
+async function loadGzippedImage(src: string): Promise<HTMLImageElement> {
+  const res = await fetch(src);
+  if (!res.ok) throw new Error(`Failed to fetch sprite: ${res.status}`);
+
+  const buffer = await res.arrayBuffer();
+
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("DecompressionStream not supported");
+  }
+
+  const ds = new DecompressionStream("gzip");
+  const writer = ds.writable.getWriter();
+  writer.write(new Uint8Array(buffer));
+  writer.close();
+
+  const decompressed = await new Response(ds.readable).arrayBuffer();
+  const blob = new Blob([decompressed], { type: "image/png" });
+  const url = URL.createObjectURL(blob);
+
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load decompressed sprite"));
+    };
+    img.src = url;
+  });
 }
 
-export function useSpriteAnimation({ src, config, enabled = true }: UseSpriteAnimationOptions) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+export default function useSpriteAnimation(
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  config: SpriteConfig
+) {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const frameRef = useRef(0);
   const lastTimeRef = useRef(0);
   const rafRef = useRef<number>(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const loadedRef = useRef(false);
 
-  const prefersReducedMotion = typeof window !== "undefined"
-    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    : false;
+  const prefersReducedMotion =
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : true;
 
-  const shouldAnimate = enabled && !prefersReducedMotion;
+  const drawFrame = useCallback(
+    (ctx: CanvasRenderingContext2D, image: HTMLImageElement, frame: number) => {
+      const { frameWidth, frameHeight, scale, opacity, blendMode } = config;
+      const dw = frameWidth * scale;
+      const dh = frameHeight * scale;
 
-  const drawFrame = useCallback((frameIndex: number) => {
+      ctx.clearRect(0, 0, dw, dh);
+      ctx.globalAlpha = opacity;
+      ctx.globalCompositeOperation = blendMode;
+
+      ctx.drawImage(
+        image,
+        frame * frameWidth,
+        0,
+        frameWidth,
+        frameHeight,
+        0,
+        0,
+        dw,
+        dh
+      );
+    },
+    [config]
+  );
+
+  useEffect(() => {
     const canvas = canvasRef.current;
-    const image = imageRef.current;
-    if (!canvas || !image) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { frameWidth, frameHeight, scale, opacity } = config;
-    const scaledWidth = frameWidth * scale;
-    const scaledHeight = frameHeight * scale;
+    const { frameWidth, frameHeight, scale, frames, fps, loop } = config;
+    const dw = frameWidth * scale;
+    const dh = frameHeight * scale;
 
-    canvas.width = scaledWidth;
-    canvas.height = scaledHeight;
+    canvas.width = dw;
+    canvas.height = dh;
 
-    ctx.clearRect(0, 0, scaledWidth, scaledHeight);
-    ctx.globalAlpha = opacity;
-
-    const sx = frameIndex * frameWidth;
-    ctx.drawImage(
-      image,
-      sx, 0, frameWidth, frameHeight,
-      0, 0, scaledWidth, scaledHeight
-    );
-  }, [config]);
-
-  useEffect(() => {
-    const image = new Image();
-    image.src = src;
-    image.onload = () => {
-      imageRef.current = image;
-      setIsLoaded(true);
-      drawFrame(0);
-    };
-    return () => {
-      imageRef.current = null;
-    };
-  }, [src, drawFrame]);
-
-  useEffect(() => {
-    if (!isLoaded || !shouldAnimate) return;
-
-    const { fps, frames, loop } = config;
-    const interval = 1000 / fps;
+    let cancelled = false;
 
     const animate = (timestamp: number) => {
+      if (cancelled) return;
+
+      if (!loadedRef.current || !imageRef.current) {
+        rafRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      const interval = 1000 / fps;
+
       if (timestamp - lastTimeRef.current >= interval) {
         lastTimeRef.current = timestamp;
-        frameRef.current = (frameRef.current + 1) % frames;
+        drawFrame(ctx, imageRef.current, frameRef.current);
 
-        if (!loop && frameRef.current === 0) {
-          setIsPlaying(false);
-          return;
+        if (frameRef.current < frames - 1) {
+          frameRef.current++;
+        } else if (loop) {
+          frameRef.current = 0;
         }
-
-        drawFrame(frameRef.current);
       }
+
       rafRef.current = requestAnimationFrame(animate);
     };
 
-    rafRef.current = requestAnimationFrame(animate);
-    setIsPlaying(true);
+    const loadAndStart = async () => {
+      try {
+        imageRef.current = await loadGzippedImage(config.src);
+        loadedRef.current = true;
 
-    return () => {
-      cancelAnimationFrame(rafRef.current);
-      setIsPlaying(false);
+        if (prefersReducedMotion) {
+          drawFrame(ctx, imageRef.current, 0);
+          return;
+        }
+
+        rafRef.current = requestAnimationFrame(animate);
+      } catch (e) {
+        console.warn("Sprite animation failed:", e);
+        canvas.style.display = "none";
+      }
     };
-  }, [isLoaded, shouldAnimate, config, drawFrame]);
 
-  // Pause when tab is hidden
-  useEffect(() => {
-    if (!shouldAnimate) return;
+    loadAndStart();
 
     const handleVisibility = () => {
       if (document.hidden) {
         cancelAnimationFrame(rafRef.current);
-        setIsPlaying(false);
-      } else if (isLoaded) {
-        const interval = 1000 / config.fps;
-        const animate = (timestamp: number) => {
-          if (timestamp - lastTimeRef.current >= interval) {
-            lastTimeRef.current = timestamp;
-            frameRef.current = (frameRef.current + 1) % config.frames;
-            drawFrame(frameRef.current);
-          }
-          rafRef.current = requestAnimationFrame(animate);
-        };
+      } else if (loadedRef.current && !prefersReducedMotion) {
+        lastTimeRef.current = 0;
         rafRef.current = requestAnimationFrame(animate);
-        setIsPlaying(true);
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [shouldAnimate, isLoaded, config, drawFrame]);
 
-  return { canvasRef, isLoaded, isPlaying, prefersReducedMotion };
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafRef.current);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [canvasRef, config, drawFrame, prefersReducedMotion]);
 }
 ```
 

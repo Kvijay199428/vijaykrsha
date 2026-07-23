@@ -1,8 +1,8 @@
 export const site = {
   name: "Vijay Kumar Sharma",
-  tagline: "Legal & Technology Solutions for Businesses",
+  tagline: "Legal Research, Drafting & Digital Legal Solutions",
   description:
-    "Legal researcher, contract drafter, and data analyst helping businesses and startups navigate complex legal and technology challenges. Based in India.",
+    "Law graduate (LL.B.), legal researcher, and contract drafting professional with experience supporting individuals, businesses, and startups through practical legal documentation, research, and technology-assisted solutions. Based in India.",
 
   contact: {
     phone: "+91-9599130381",
@@ -22,9 +22,9 @@ export const site = {
   ],
 
   trustBadges: [
-    { label: "3+ Years Experience", icon: "calendar" },
+    { label: "Professional Legal Practice", icon: "calendar" },
     { label: "NDA by Default", icon: "shield" },
-    { label: "Cross-Domain Expertise", icon: "diamond" },
+    { label: "Interdisciplinary Approach", icon: "diamond" },
   ],
 
   whyHireMe: [
@@ -35,25 +35,25 @@ export const site = {
       icon: "shield",
     },
     {
-      title: "3+ Years Experience",
+      title: "Professional Legal Practice",
       description:
         "Proven track record across legal research, contract management, and data analytics for clients in multiple industries.",
       icon: "calendar",
     },
     {
-      title: "Cross-Domain Expertise",
+      title: "Interdisciplinary Approach",
       description:
         "Rare combination of legal knowledge and technical skill — bridging the gap between law and technology.",
       icon: "diamond",
     },
     {
-      title: "Detail Oriented",
+      title: "Attention to Detail",
       description:
         "Meticulous attention to statutory references, contract clauses, and data accuracy. No shortcuts on quality.",
       icon: "magnifier",
     },
     {
-      title: "Fast Turnaround",
+      title: "Timely Delivery",
       description:
         "Efficient workflows and legal-tech integration mean faster delivery without compromising thoroughness.",
       icon: "bolt",
@@ -188,7 +188,7 @@ export const site = {
         "Accurate, verifiable, and well-sourced work. No shortcuts on quality or credibility.",
     },
     {
-      title: "3+ Years Experience",
+      title: "Professional Legal Practice",
       description:
         "Proven track record across legal research, contract management, and data analytics projects.",
     },
