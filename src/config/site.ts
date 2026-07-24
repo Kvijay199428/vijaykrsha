@@ -9,7 +9,7 @@ export const site = {
     email: "vijaykrsha@hotmail.com",
     emailAlt: "contact@vijaykrsha.online",
     website: "https://vijaykrsha.online",
-    location: "India",
+    location: "Faridabad, Haryana, India",
   },
 
   nav: [

@@ -655,9 +655,9 @@ export const site = {
   ],
 
   workingStyle: {
-    availability: "Monday - Saturday, 9 AM - 7 PM IST",
+    availability: "Monday - Saturday, 9 AM - 5 PM IST",
     responseTime: "Within 24 hours",
-    communication: "Email, Phone, Video Call",
+    communication: "Email, Phone",
     timezone: "IST (UTC +5:30)",
   },
 
