@@ -90,7 +90,6 @@ server {
   "frames": 15,
   "frameWidth": 200,
   "frameHeight": 200,
-  "scale": 0.30,
   "opacity": 0.80,
   "blendMode": "normal",
   "loop": true
@@ -152,13 +151,12 @@ export default function AnimatedLogo({
 
   const config = {
     ...logoConfig,
-    scale: size ? size / logoConfig.frameWidth : logoConfig.scale,
     blendMode: logoConfig.blendMode as GlobalCompositeOperation,
   };
 
   useSpriteAnimation(canvasRef, config);
 
-  const displaySize = config.frameWidth * config.scale;
+  const displaySize = size ?? logoConfig.frameWidth;
 
   if (prefersReducedMotion) {
     return (
@@ -723,7 +721,7 @@ export const site = {
       title: "Vega Share",
       category: "Android",
       icon: "share",
-      status: "coming-soon" as const,
+      status: "live" as const,
       description:
         "WiFi-based file transfer app for Android. Share files from your phone to any device on the same network using just a browser — no app installation needed on the receiving end.",
       features: [
@@ -731,10 +729,14 @@ export const site = {
         "Preview documents, images, video, and audio directly in the browser",
         "Upload files from any device back to your phone via browser URL",
         "No app installation required on the receiving device",
+        "HTTPS secure transfers with self-signed certificates",
+        "mDNS auto-discovery on local network",
       ],
-      techStack: ["Android", "Kotlin", "HTTP Server", "WebSocket"],
-      link: { label: "Coming Soon", url: "#" },
-      tags: ["Android", "WiFi", "File Transfer", "Browser"],
+      techStack: ["Android", "Kotlin", "NanoHTTPD", "BouncyCastle", "React", "Vite"],
+      logo: "/vega-share-icon.png",
+      screenshots: ["/vega-share-screenshot.png", "/vega-share-feature.png"],
+      link: { label: "Download APK", url: "https://github.com/Kvijay199428/VEGA-SHARE/releases/download/v1.0.1/vega-share-1.0.1.apk" },
+      tags: ["Android", "WiFi", "File Transfer", "Browser", "HTTPS"],
     },
     {
       title: "Rent App Management",
@@ -811,7 +813,6 @@ interface SpriteConfig {
   frames: number;
   frameWidth: number;
   frameHeight: number;
-  scale: number;
   opacity: number;
   blendMode: GlobalCompositeOperation;
   loop: boolean;
@@ -867,11 +868,9 @@ export default function useSpriteAnimation(
 
   const drawFrame = useCallback(
     (ctx: CanvasRenderingContext2D, image: HTMLImageElement, frame: number) => {
-      const { frameWidth, frameHeight, scale, opacity, blendMode } = config;
-      const dw = frameWidth * scale;
-      const dh = frameHeight * scale;
+      const { frameWidth, frameHeight, opacity, blendMode } = config;
 
-      ctx.clearRect(0, 0, dw, dh);
+      ctx.clearRect(0, 0, frameWidth, frameHeight);
       ctx.globalAlpha = opacity;
       ctx.globalCompositeOperation = blendMode;
 
@@ -883,8 +882,8 @@ export default function useSpriteAnimation(
         frameHeight,
         0,
         0,
-        dw,
-        dh
+        frameWidth,
+        frameHeight
       );
     },
     [config]
@@ -897,12 +896,12 @@ export default function useSpriteAnimation(
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const { frameWidth, frameHeight, scale, frames, fps, loop } = config;
-    const dw = frameWidth * scale;
-    const dh = frameHeight * scale;
+    const { frameWidth, frameHeight, frames, fps, loop } = config;
+    const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = dw;
-    canvas.height = dh;
+    canvas.width = frameWidth * dpr;
+    canvas.height = frameHeight * dpr;
+    ctx.scale(dpr, dpr);
 
     let cancelled = false;
 
@@ -1103,8 +1102,7 @@ body {
 /* ── Animated Logo ────────────────────────────────── */
 
 .animated-logo {
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
+  image-rendering: auto;
 }
 
 /* ── Status Badges ────────────────────────────────── */
@@ -1507,7 +1505,11 @@ export default function Apps() {
             >
               {/* Header */}
               <div className="flex items-center gap-3 mb-3">
-                <Icon />
+                {"logo" in app && app.logo ? (
+                  <img src={app.logo} alt={`${app.title} logo`} className="h-7 w-7 rounded-lg object-contain" />
+                ) : (
+                  <Icon />
+                )}
                 <span
                   className={`h-2 w-2 rounded-full ${categoryColors[app.category] ?? "bg-glow-500"}`}
                 />
@@ -1527,12 +1529,25 @@ export default function Apps() {
                 {app.description}
               </p>
 
-              {/* Screenshot Placeholder */}
-              <div className="h-36 rounded-xl bg-cream-200 dark:bg-night-700 flex items-center justify-center mb-4 border border-cream-300 dark:border-night-600">
-                <span className="text-xs text-night-800/30 dark:text-cream-100/30">
-                  Screenshot coming soon
-                </span>
-              </div>
+              {/* Screenshots */}
+              {"screenshots" in app && app.screenshots && app.screenshots.length > 0 ? (
+                <div className={`grid ${app.screenshots.length > 1 ? "grid-cols-2" : "grid-cols-1"} gap-2 mb-4`}>
+                  {app.screenshots.map((src: string, idx: number) => (
+                    <img
+                      key={idx}
+                      src={src}
+                      alt={`${app.title} screenshot ${idx + 1}`}
+                      className="h-36 w-full rounded-xl object-cover border border-cream-300 dark:border-night-600"
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="h-36 rounded-xl bg-cream-200 dark:bg-night-700 flex items-center justify-center mb-4 border border-cream-300 dark:border-night-600">
+                  <span className="text-xs text-night-800/30 dark:text-cream-100/30">
+                    Screenshot coming soon
+                  </span>
+                </div>
+              )}
 
               {/* Features */}
               <ul className="text-sm text-night-800/60 dark:text-cream-100/60 mb-4 space-y-1.5 flex-1">
@@ -1576,10 +1591,10 @@ export default function Apps() {
               {/* CTA */}
               <a
                 href={app.link.url}
-                target={app.link.url !== "#" ? "_blank" : undefined}
-                rel={app.link.url !== "#" ? "noopener noreferrer" : undefined}
+                target={app.link.url.startsWith("http") ? "_blank" : undefined}
+                rel={app.link.url.startsWith("http") ? "noopener noreferrer" : undefined}
                 className={`inline-block text-center px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  app.link.url !== "#"
+                  app.link.url.startsWith("http")
                     ? "btn-primary bg-glow-500 text-white hover:bg-glow-600"
                     : "btn-outline border border-cream-300 dark:border-night-600 text-night-800/70 dark:text-cream-100/70 hover:bg-cream-200 dark:hover:bg-night-700"
                 }`}
