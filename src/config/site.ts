@@ -6,10 +6,17 @@ export const site = {
 
   contact: {
     phone: "+91-9599130381",
+    phoneDisplay: "+91-9599130381",
+    whatsapp: "https://wa.me/919599130381",
     email: "vijaykrsha@hotmail.com",
     emailAlt: "contact@vijaykrsha.online",
     website: "https://vijaykrsha.online",
     location: "Faridabad, Haryana, India",
+  },
+
+  api: {
+    baseUrl: import.meta.env.VITE_API_URL || "https://api.vijaykrsha.online",
+    contactPath: "/vks/api/contact",
   },
 
   nav: [

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { site } from "@/config/site";
 
 function PhoneIcon() {
@@ -51,6 +52,69 @@ function CheckIcon() {
 
 export default function Contact() {
   const { contact, workingStyle, beforeContacting } = site;
+
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    mobile: "",
+    projectType: "Legal Research",
+    priority: "standard",
+    message: "",
+    website: "", // honeypot
+  });
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+
+  const setField = (field: string, value: string) =>
+    setForm((f) => ({ ...f, [field]: value }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSent(false);
+    setSubmitting(true);
+    try {
+      const body = new FormData();
+      body.append("name", form.name);
+      body.append("email", form.email);
+      body.append("mobile", form.mobile);
+      body.append("project_type", form.projectType);
+      body.append("priority", form.priority);
+      body.append("message", form.message);
+      body.append("website", form.website); // honeypot
+      if (files) {
+        for (const file of Array.from(files)) {
+          body.append("documents", file, file.name);
+        }
+      }
+      const res = await fetch(`${site.api.baseUrl}${site.api.contactPath}`, {
+        method: "POST",
+        body,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Could not send your message. Please try again.");
+      }
+      setSent(true);
+      setForm({
+        name: "",
+        email: "",
+        mobile: "",
+        projectType: "Legal Research",
+        priority: "standard",
+        message: "",
+        website: "",
+      });
+      setFiles(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send your message.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
       <h1 className="text-3xl md:text-4xl font-bold text-night-800 dark:text-cream-50 mb-4">
@@ -67,12 +131,14 @@ export default function Contact() {
           {/* Contact Cards */}
           <div className="grid sm:grid-cols-2 gap-4">
             <a
-              href={`tel:${contact.phone}`}
+              href={contact.whatsapp}
+              target="_blank"
+              rel="noopener noreferrer"
               className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
             >
               <PhoneIcon />
               <div>
-                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Phone</p>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">WhatsApp</p>
                 <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.phone}</p>
               </div>
             </a>
@@ -133,7 +199,7 @@ export default function Contact() {
             <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
               Send a Message
             </h2>
-            <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+            <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
@@ -141,6 +207,9 @@ export default function Contact() {
                   </label>
                   <input
                     type="text"
+                    required
+                    value={form.name}
+                    onChange={(e) => setField("name", e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
                     placeholder="Your name"
                   />
@@ -151,6 +220,9 @@ export default function Contact() {
                   </label>
                   <input
                     type="email"
+                    required
+                    value={form.email}
+                    onChange={(e) => setField("email", e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
                     placeholder="you@example.com"
                   />
@@ -160,25 +232,30 @@ export default function Contact() {
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Mobile
+                  </label>
+                  <input
+                    type="tel"
+                    value={form.mobile}
+                    onChange={(e) => setField("mobile", e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                    placeholder="Your mobile number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
                     Project Type
                   </label>
-                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
+                  <select
+                    value={form.projectType}
+                    onChange={(e) => setField("projectType", e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                  >
                     <option>Legal Research</option>
                     <option>Contract Drafting</option>
                     <option>Data Analysis</option>
                     <option>Legal-Tech Integration</option>
                     <option>Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                    Budget Range
-                  </label>
-                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
-                    <option>Under ₹10,000</option>
-                    <option>₹10,000 - ₹50,000</option>
-                    <option>₹50,000 - ₹1,00,000</option>
-                    <option>₹1,00,000+</option>
                   </select>
                 </div>
               </div>
@@ -189,14 +266,43 @@ export default function Contact() {
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
-                    <input type="radio" name="priority" value="standard" defaultChecked className="accent-glow-500" />
+                    <input
+                      type="radio"
+                      name="priority"
+                      value="standard"
+                      checked={form.priority === "standard"}
+                      onChange={() => setField("priority", "standard")}
+                      className="accent-glow-500"
+                    />
                     Standard
                   </label>
                   <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
-                    <input type="radio" name="priority" value="urgent" className="accent-glow-500" />
+                    <input
+                      type="radio"
+                      name="priority"
+                      value="urgent"
+                      checked={form.priority === "urgent"}
+                      onChange={() => setField("priority", "urgent")}
+                      className="accent-glow-500"
+                    />
                     Urgent
                   </label>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                  Documents <span className="opacity-60">(optional)</span>
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  onChange={(e) => setFiles(e.target.files)}
+                  className="w-full text-sm text-night-800/70 dark:text-cream-100/70 file:mr-3 file:rounded-xl file:border-0 file:bg-glow-500 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-glow-600"
+                />
+                <p className="text-xs text-night-800/40 dark:text-cream-100/40 mt-1">
+                  PDF, DOC, XLS, or images — up to 25MB each.
+                </p>
               </div>
 
               <div>
@@ -205,16 +311,38 @@ export default function Contact() {
                 </label>
                 <textarea
                   rows={4}
+                  required
+                  value={form.message}
+                  onChange={(e) => setField("message", e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors resize-none"
                   placeholder="Tell me about your project..."
                 />
               </div>
 
+              {/* Honeypot — hidden from humans, bots fill it. */}
+              <input
+                type="text"
+                value={form.website}
+                onChange={(e) => setField("website", e.target.value)}
+                className="hidden"
+                tabIndex={-1}
+                autoComplete="off"
+                aria-hidden="true"
+              />
+
+              {sent && (
+                <p className="text-sm text-sage-500">
+                  Thank you — your message has been sent. I'll get back to you within 24 hours.
+                </p>
+              )}
+              {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+
               <button
                 type="submit"
-                className="btn-primary px-6 py-2.5 rounded-xl bg-glow-500 text-white font-medium text-sm hover:bg-glow-600"
+                disabled={submitting}
+                className="btn-primary px-6 py-2.5 rounded-xl bg-glow-500 text-white font-medium text-sm hover:bg-glow-600 disabled:opacity-50"
               >
-                Send Message
+                {submitting ? "Sending…" : "Send Message"}
               </button>
             </form>
           </div>
