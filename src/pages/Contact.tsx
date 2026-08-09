@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { site } from "@/config/site";
 
 function PhoneIcon() {
@@ -50,6 +50,19 @@ function CheckIcon() {
   );
 }
 
+const ALLOWED_EXTENSIONS = [
+  "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt",
+  "png", "jpg", "jpeg", "gif", "webp",
+];
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_FILES = 5;
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function Contact() {
   const { contact, workingStyle, beforeContacting } = site;
 
@@ -62,18 +75,54 @@ export default function Contact() {
     message: "",
     website: "", // honeypot
   });
-  const [files, setFiles] = useState<FileList | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const [fileWarnings, setFileWarnings] = useState<string[]>([]);
 
   const setField = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  const addFiles = (incoming: File[]) => {
+    const warnings: string[] = [];
+    const next: File[] = [...files];
+    for (const file of incoming) {
+      const ext = file.name.includes(".")
+        ? file.name.split(".").pop()!.toLowerCase()
+        : "";
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        warnings.push(`${file.name} — unsupported file type. Use PDF, DOC, XLS, TXT, or an image.`);
+        continue;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        warnings.push(`${file.name} — exceeds the 25MB limit.`);
+        continue;
+      }
+      if (next.some((f) => f.name === file.name && f.size === file.size)) {
+        continue;
+      }
+      if (next.length >= MAX_FILES) {
+        warnings.push(`You can attach up to ${MAX_FILES} files.`);
+        break;
+      }
+      next.push(file);
+    }
+    setFiles(next);
+    setFileWarnings(warnings);
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFileWarnings([]);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSent(false);
+    setFileWarnings([]);
     setSubmitting(true);
     try {
       const body = new FormData();
@@ -84,10 +133,8 @@ export default function Contact() {
       body.append("priority", form.priority);
       body.append("message", form.message);
       body.append("website", form.website); // honeypot
-      if (files) {
-        for (const file of Array.from(files)) {
-          body.append("documents", file, file.name);
-        }
+      for (const file of files) {
+        body.append("documents", file, file.name);
       }
       const res = await fetch(`${site.api.baseUrl}${site.api.contactPath}`, {
         method: "POST",
@@ -97,6 +144,7 @@ export default function Contact() {
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || "Could not send your message. Please try again.");
       }
+      const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
       setSent(true);
       setForm({
         name: "",
@@ -107,7 +155,12 @@ export default function Contact() {
         message: "",
         website: "",
       });
-      setFiles(null);
+      setFiles([]);
+      setFileWarnings(skipped.length > 0 ? skipped.map((s: { filename?: string; reason?: string }) => {
+        const reason = s.reason === "too_large" ? "exceeds the 25MB limit" : "unsupported file type";
+        return `${s.filename ?? "A file"} was not delivered (${reason}).`;
+      }) : []);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send your message.");
     } finally {
@@ -295,14 +348,48 @@ export default function Contact() {
                   Documents <span className="opacity-60">(optional)</span>
                 </label>
                 <input
+                  ref={fileInputRef}
                   type="file"
                   multiple
-                  onChange={(e) => setFiles(e.target.files)}
+                  onChange={(e) => {
+                    if (e.target.files) addFiles(Array.from(e.target.files));
+                    e.target.value = "";
+                  }}
                   className="w-full text-sm text-night-800/70 dark:text-cream-100/70 file:mr-3 file:rounded-xl file:border-0 file:bg-glow-500 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-glow-600"
                 />
                 <p className="text-xs text-night-800/40 dark:text-cream-100/40 mt-1">
-                  PDF, DOC, XLS, or images — up to 25MB each.
+                  PDF, DOC, XLS, or images — up to 25MB each, max {MAX_FILES} files. You can add files in multiple steps.
                 </p>
+                {fileWarnings.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {fileWarnings.map((w) => (
+                      <li key={w} className="text-xs text-red-600 dark:text-red-400">
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {files.length > 0 && (
+                  <ul className="mt-2 space-y-1.5">
+                    {files.map((file, i) => (
+                      <li
+                        key={`${file.name}-${file.size}-${i}`}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-xs"
+                      >
+                        <span className="text-night-800 dark:text-cream-100 truncate flex-1">{file.name}</span>
+                        <span className="text-night-800/40 dark:text-cream-100/40">{fmtBytes(file.size)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          aria-label={`Remove ${file.name}`}
+                          className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <div>
