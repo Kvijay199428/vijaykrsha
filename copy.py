@@ -34,11 +34,14 @@ SOURCE_PATHS = [
 
 SOURCE_FILE_PATHS = [
     "docker-compose.yml",
+    "docker-compose.dev.yml",
+    "docker-compose.prod.yml",
     "Dockerfile",
     "nginx.conf",
     "vite.config.ts",
     "tsconfig.json",
     "package.json",
+    ".env.example",
 ]
 
 # Directories to exclude from scanning

@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useState } from "react";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   LayoutDashboard,
   Inbox,
@@ -8,6 +8,8 @@ import {
   Users,
   ScrollText,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Shield,
 } from "lucide-react";
 
@@ -15,78 +17,100 @@ const navItems = [
   { to: "/vega/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/vega/admin/inbox", label: "Inbox", icon: Inbox },
   { to: "/vega/admin/settings", label: "Settings", icon: Settings },
-  { to: "/vega/admin/admin-users", label: "Admin Users", icon: Users },
+  { to: "/vega/admin/users", label: "Users", icon: Users },
   { to: "/vega/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
 ];
 
 export default function AdminLayout() {
-  const { isAuthenticated, isLoading, admin, logout } = useAuth();
+  const { admin, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [collapsed, setCollapsed] = useState(() => {
+    return localStorage.getItem("admin-sidebar-collapsed") === "true";
+  });
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      navigate("/vega/admin/login", { replace: true });
-    }
-  }, [isLoading, isAuthenticated, navigate]);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
+  function toggleSidebar() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("admin-sidebar-collapsed", String(next));
+      return next;
+    });
   }
 
-  if (!isAuthenticated) return null;
+  function handleLogout() {
+    logout();
+    navigate("/vega/admin/login");
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
-      <aside className="w-64 bg-card border-r flex flex-col">
-        <div className="p-6 border-b">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="font-semibold text-sm">Vega Admin</h1>
-              <p className="text-xs text-muted-foreground">{admin?.username}</p>
-            </div>
-          </div>
-        </div>
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => {
-            const active = location.pathname.startsWith(item.to);
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <aside
+        className={`${
+          collapsed ? "w-16" : "w-64"
+        } bg-card border-r flex flex-col transition-all duration-200 shrink-0`}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 px-3 py-4 border-b min-h-[57px]">
+          <Shield className="w-5 h-5 text-primary shrink-0" />
+          {!collapsed && (
+            <span className="font-semibold text-sm truncate">Vega Admin</span>
+          )}
           <button
-            onClick={() => logout()}
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted w-full"
+            onClick={toggleSidebar}
+            className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <LogOut className="h-4 w-4" />
-            Logout
+            {collapsed ? (
+              <PanelLeftOpen className="w-4 h-4" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                  isActive
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                } ${collapsed ? "justify-center" : ""}`
+              }
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon className="w-5 h-5 shrink-0" />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="border-t px-2 py-3 space-y-1">
+          {!collapsed && admin && (
+            <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">
+              {admin.username} &middot; {admin.role}
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors ${
+              collapsed ? "justify-center" : ""
+            }`}
+            title={collapsed ? "Logout" : undefined}
+          >
+            <LogOut className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>Logout</span>}
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
-          <Outlet />
-        </div>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto">
+        <Outlet />
       </main>
     </div>
   );

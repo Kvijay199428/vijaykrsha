@@ -1,9 +1,11 @@
 import hashlib
 from uuid import UUID
 from fastapi import Request, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
-from app.models import AdminUser, AdminSession, AdminRole, AdminStatus
+from app.models import AdminUser, AdminSession, AdminRole as AdminRoleEnum, AdminStatus
+from app.models_rbac import AdminRole, AdminRolePermission, AdminPermission, Permission
 from app.security.sessions import get_session, touch_session
 
 
@@ -29,7 +31,7 @@ async def get_current_admin(
     if not session:
         raise HTTPException(status_code=401, detail="session_expired")
 
-    stmt = __import__("sqlalchemy").select(AdminUser).where(AdminUser.id == session.admin_id)
+    stmt = select(AdminUser).where(AdminUser.id == session.admin_id)
     result = await db.execute(stmt)
     admin = result.scalar_one_or_none()
     if not admin:
@@ -44,7 +46,7 @@ async def get_current_admin(
 async def require_owner(
     admin: AdminUser = Depends(get_current_admin),
 ) -> AdminUser:
-    if admin.role != AdminRole.owner:
+    if admin.role != AdminRoleEnum.owner:
         raise HTTPException(status_code=403, detail="owner_required")
     return admin
 
@@ -52,6 +54,35 @@ async def require_owner(
 async def require_manager(
     admin: AdminUser = Depends(get_current_admin),
 ) -> AdminUser:
-    if admin.role not in (AdminRole.owner, AdminRole.admin):
+    if admin.role not in (AdminRoleEnum.owner, AdminRoleEnum.admin):
         raise HTTPException(status_code=403, detail="manager_required")
     return admin
+
+
+async def _get_admin_permission_keys(db: AsyncSession, admin: AdminUser) -> set[str]:
+    """Get the set of permission keys for an admin user via their role."""
+    stmt = (
+        select(AdminPermission.key)
+        .join(AdminRolePermission, AdminRolePermission.permission_id == AdminPermission.id)
+        .join(AdminRole, AdminRole.id == AdminRolePermission.role_id)
+        .where(AdminRole.name == admin.role.value if hasattr(admin.role, 'value') else AdminRole.name == admin.role)
+    )
+    result = await db.execute(stmt)
+    return {row[0] for row in result.all()}
+
+
+def require_permission(permission_key: str):
+    """Dependency factory that checks if the current admin has a specific permission."""
+    async def _check(
+        admin: AdminUser = Depends(get_current_admin),
+        db: AsyncSession = Depends(get_db),
+    ) -> AdminUser:
+        # Owners have all permissions
+        if admin.role == AdminRoleEnum.owner:
+            return admin
+
+        perms = await _get_admin_permission_keys(db, admin)
+        if permission_key not in perms:
+            raise HTTPException(status_code=403, detail=f"permission_denied:{permission_key}")
+        return admin
+    return _check

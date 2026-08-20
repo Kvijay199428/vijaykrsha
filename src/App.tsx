@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import Home from "@/pages/Home";
 import About from "@/pages/About";
@@ -14,7 +14,7 @@ import Dashboard from "@/pages/admin/Dashboard";
 import Inbox from "@/pages/admin/Inbox";
 import MessageDetail from "@/pages/admin/MessageDetail";
 import Settings from "@/pages/admin/Settings";
-import AdminUsersPage from "@/pages/admin/AdminUsers";
+import UsersPage from "@/pages/admin/Users";
 import AuditLogs from "@/pages/admin/AuditLogs";
 
 export default function App() {
@@ -27,7 +27,11 @@ export default function App() {
         <Route path="inbox" element={<Inbox />} />
         <Route path="messages/:id" element={<MessageDetail />} />
         <Route path="settings" element={<Settings />} />
-        <Route path="admin-users" element={<AdminUsersPage />} />
+        <Route path="users" element={<UsersPage />} />
+        <Route
+          path="admin-users"
+          element={<Navigate to="/vega/admin/users" replace />}
+        />
         <Route path="audit-logs" element={<AuditLogs />} />
         <Route index element={<Dashboard />} />
       </Route>

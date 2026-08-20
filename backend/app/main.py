@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import get_settings
-from app.api import auth, public_contact, admin_messages, admin_settings
+from app.api import auth, public_contact, admin_messages, admin_settings, admin_users, admin_totp
 
 settings = get_settings()
 
@@ -38,6 +38,8 @@ app.include_router(auth.router)
 app.include_router(public_contact.router)
 app.include_router(admin_messages.router)
 app.include_router(admin_settings.router)
+app.include_router(admin_users.router)
+app.include_router(admin_totp.router)
 
 
 @app.get("/admin/api/health")

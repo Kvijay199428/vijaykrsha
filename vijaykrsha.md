@@ -6,6 +6,171 @@ ingress:
   - service: http_status:404
 ```
 
+```
+// File: .env.example
+# Database
+POSTGRES_PASSWORD=postgres
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/vijaykrsha
+
+# Telegram
+TELEGRAM_BOT_TOKEN=8756048836:AAEspKI4tm_xUMyNG_lV0wEK6RisrRxSRUY
+TELEGRAM_ADMIN_CHAT_ID=1020626328
+
+# Security
+SESSION_SECRET=change-me-in-production
+TOTP_ENCRYPTION_KEY=change-me-in-production
+
+# MinIO
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+S3_ENDPOINT=http://storage:9000
+S3_BUCKET=vijaykrsha-private
+
+# CORS
+CORS_ORIGINS=https://vijaykrsha.online,https://vijaykrsha-website.pages.dev
+```
+
+```yaml
+// File: docker-compose.dev.yml
+services:
+  database-dev:
+    image: postgres:16-alpine
+    container_name: database-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vijaykrsha_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_DEV_PASSWORD}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:27003:5432"
+    networks:
+      - dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vijaykrsha_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  storage-dev:
+    image: minio/minio:latest
+    container_name: storage-dev
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_DEV_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_DEV_SECRET_KEY}
+    volumes:
+      - minio_dev_data:/data
+    ports:
+      - "127.0.0.1:27002:9000"
+    networks:
+      - dev-network
+
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: backend-dev
+    restart: unless-stopped
+    depends_on:
+      database-dev:
+        condition: service_healthy
+      storage-dev:
+        condition: service_started
+    ports:
+      - "26001:8000"
+    env_file:
+      - ./env/.env.dev
+    networks:
+      - dev-network
+
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: frontend-dev
+    restart: unless-stopped
+    ports:
+      - "26002:80"
+    depends_on:
+      - backend-dev
+    networks:
+      - dev-network
+
+volumes:
+  postgres_dev_data:
+  minio_dev_data:
+
+networks:
+  dev-network:
+    name: vijaykrsha-dev
+```
+
+```yaml
+// File: docker-compose.prod.yml
+services:
+  database-prod:
+    image: postgres:16-alpine
+    container_name: database-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vijaykrsha
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - vijaykrshaonline_pgdata:/var/lib/postgresql/data
+    networks:
+      - prod-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vijaykrsha"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  storage-prod:
+    image: minio/minio:latest
+    container_name: storage-prod
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_PROD_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_PROD_SECRET_KEY}
+    volumes:
+      - vijaykrshaonline_miniodata:/data
+    networks:
+      - prod-network
+
+  backend-prod:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend-prod
+    restart: unless-stopped
+    depends_on:
+      database-prod:
+        condition: service_healthy
+      storage-prod:
+        condition: service_started
+    ports:
+      - "26011:8000"
+    env_file:
+      - ./env/.env.prod
+    networks:
+      - prod-network
+
+volumes:
+  vijaykrshaonline_pgdata:
+    external: true
+  vijaykrshaonline_miniodata:
+    external: true
+
+networks:
+  prod-network:
+    name: vijaykrsha-prod
+```
+
 ```yaml
 // File: docker-compose.yml
 services:
@@ -144,6 +309,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   proxyRequest.headers.delete("Origin");
   proxyRequest.headers.delete("Referer");
+  proxyRequest.headers.set("X-Forwarded-By", "pages-proxy");
 
   const response = await fetch(proxyRequest);
   const newResponse = new Response(response.body, response);

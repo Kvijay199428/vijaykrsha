@@ -18,9 +18,23 @@ export const ROUTES = {
   ADMINAPIMESSAGES: `${API}/admin/api/messages`,
   ADMINAPISETTINGS: `${API}/admin/api/settings`,
   ADMINAPIAUDITLOGS: `${API}/admin/api/audit-logs`,
-  ADMINAPIADMINUSERS: `${API}/admin/api/admin-users`,
-  ADMINAPITOTPSETUP: `${API}/admin/api/settings/totp/setup`,
-  ADMINAPITOTPENABLE: `${API}/admin/api/settings/totp/enable`,
-  ADMINAPITOTPDISABLE: `${API}/admin/api/settings/totp/disable`,
   ADMINAPICHANGEPASSWORD: `${API}/admin/api/settings/change-password`,
+
+  // User management
+  ADMINAPIUSERS: `${API}/admin/api/users`,
+  ADMINAPIUSERSBYID: (id: string) => `${API}/admin/api/users/${id}`,
+  ADMINAPIUSERDISABLE: (id: string) => `${API}/admin/api/users/${id}/disable`,
+  ADMINAPIUSERENABLE: (id: string) => `${API}/admin/api/users/${id}/enable`,
+  ADMINAPIUSERREVOKE: (id: string) => `${API}/admin/api/users/${id}/revoke-sessions`,
+  ADMINAPIUSERRESETPW: (id: string) => `${API}/admin/api/users/${id}/reset-password`,
+
+  // Per-user TOTP
+  ADMINAPIUSERTOTPSETUP: (id: string) => `${API}/admin/api/users/${id}/totp/setup`,
+  ADMINAPIUSERTOTPENABLE: (id: string) => `${API}/admin/api/users/${id}/totp/enable`,
+  ADMINAPIUSERTOTPDISABLE: (id: string) => `${API}/admin/api/users/${id}/totp/disable`,
+  ADMINAPIUSERTOTPRESET: (id: string) => `${API}/admin/api/users/${id}/totp/reset`,
+
+  // Roles & permissions
+  ADMINAPIROLES: `${API}/admin/api/roles`,
+  ADMINAPIPERMISSIONS: `${API}/admin/api/permissions`,
 } as const;
