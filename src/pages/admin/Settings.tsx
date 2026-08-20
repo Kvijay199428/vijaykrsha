@@ -125,12 +125,14 @@ export default function Settings() {
         <p className="text-muted-foreground text-sm">Manage your security settings</p>
       </div>
 
-      {msg && <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-lg text-sm">{msg}</div>}
-      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>}
+      {msg && <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl text-sm">{msg}</div>}
+      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm">{error}</div>}
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Shield className="h-5 w-5 text-primary" />
+          <div className="p-2 neu-btn rounded-xl">
+            <Shield className="h-5 w-5 text-primary" />
+          </div>
           <h2 className="font-semibold">Two-Factor Authentication</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
@@ -145,22 +147,22 @@ export default function Settings() {
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   placeholder="000000"
-                  className="px-3 py-1 border rounded-lg text-sm font-mono w-32"
+                  className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
                   maxLength={6}
                 />
-                <button type="submit" disabled={loading} className="px-4 py-1 bg-red-600 text-white rounded-lg text-sm">
+                <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
                   Disable
                 </button>
               </form>
             </div>
           ) : (
-            <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm">
+            <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
               Enable TOTP
             </button>
           )
         ) : (
           <div className="space-y-4">
-            <div className="p-4 bg-muted rounded-lg">
+            <div className="neu-concave p-4 rounded-xl">
               <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
               <code className="text-sm font-mono break-all">{totpSecret}</code>
             </div>
@@ -169,10 +171,10 @@ export default function Settings() {
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="000000"
-                className="px-3 py-1 border rounded-lg text-sm font-mono w-32"
+                className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
                 maxLength={6}
               />
-              <button type="submit" disabled={loading} className="px-4 py-1 bg-primary text-primary-foreground rounded-lg text-sm">
+              <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-primary-foreground text-sm font-semibold">
                 Verify & Enable
               </button>
             </form>
@@ -180,9 +182,11 @@ export default function Settings() {
         )}
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Lock className="h-5 w-5 text-primary" />
+          <div className="p-2 neu-btn rounded-xl">
+            <Lock className="h-5 w-5 text-primary" />
+          </div>
           <h2 className="font-semibold">Change Password</h2>
         </div>
         <form onSubmit={changePassword} className="space-y-3">
@@ -191,7 +195,7 @@ export default function Settings() {
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             placeholder="Current password"
-            className="w-full px-3 py-2 border rounded-lg text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
             required
           />
           <input
@@ -199,7 +203,7 @@ export default function Settings() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="New password"
-            className="w-full px-3 py-2 border rounded-lg text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
             required
             minLength={6}
           />
@@ -208,10 +212,10 @@ export default function Settings() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Confirm new password"
-            className="w-full px-3 py-2 border rounded-lg text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
             required
           />
-          <button type="submit" disabled={loading} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm">
+          <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
             Change Password
           </button>
         </form>

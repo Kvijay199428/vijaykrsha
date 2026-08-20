@@ -3,6 +3,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+  /* ── Public site palette (unchanged) ── */
   --color-cream-50: #fdfbf7;
   --color-cream-100: #f7f3eb;
   --color-cream-200: #ede7d9;
@@ -22,6 +23,41 @@
 
   --color-mist-500: #6b8299;
   --color-mist-400: #8ba3b8;
+
+  /* ── Neumorphism admin palette ── */
+  --color-background: #E8E8E8;
+  --color-foreground: #2D3436;
+  --color-card: #E8E8E8;
+  --color-card-foreground: #2D3436;
+  --color-primary: #7C3AED;
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary: #8B5CF6;
+  --color-secondary-foreground: #FFFFFF;
+  --color-muted: #F5E0E8;
+  --color-muted-foreground: #636E72;
+  --color-accent: #059669;
+  --color-accent-foreground: #FFFFFF;
+  --color-destructive: #DC2626;
+  --color-destructive-foreground: #FFFFFF;
+  --color-border: #D0D0D0;
+  --color-input: #E8E8E8;
+  --color-ring: #7C3AED;
+
+  /* ── Neumorphism shadow sources ── */
+  --color-neu-light: #FFFFFF;
+  --color-neu-dark: #A3A3A3;
+
+  /* ── Dark mode neumorphism ── */
+  --color-dark-background: #2D2D2D;
+  --color-dark-foreground: #E0E0E0;
+  --color-dark-card: #2D2D2D;
+  --color-dark-card-foreground: #E0E0E0;
+  --color-dark-muted: #3A3A3A;
+  --color-dark-muted-foreground: #A0A0A0;
+  --color-dark-border: #404040;
+  --color-dark-input: #2D2D2D;
+  --color-dark-neu-light: #3A3A3A;
+  --color-dark-neu-dark: #202020;
 }
 
 html {
@@ -30,6 +66,107 @@ html {
 
 body {
   @apply bg-cream-50 text-night-800 dark:bg-night-900 dark:text-cream-100 transition-colors duration-300;
+}
+
+/* ── Neumorphism Utilities ─────────────────────── */
+
+.neu-flat {
+  background: var(--color-background);
+  border-radius: 14px;
+  box-shadow:
+    -5px -5px 15px var(--color-neu-light),
+    5px 5px 15px var(--color-neu-dark);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dark .neu-flat {
+  background: var(--color-dark-background);
+  box-shadow:
+    -5px -5px 15px var(--color-dark-neu-light),
+    5px 5px 15px var(--color-dark-neu-dark);
+}
+
+.neu-convex {
+  background: linear-gradient(145deg, #f0f0f0, #d4d4d4);
+  border-radius: 14px;
+  box-shadow:
+    -5px -5px 15px var(--color-neu-light),
+    5px 5px 15px var(--color-neu-dark);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dark .neu-convex {
+  background: linear-gradient(145deg, #333, #272727);
+  box-shadow:
+    -5px -5px 15px var(--color-dark-neu-light),
+    5px 5px 15px var(--color-dark-neu-dark);
+}
+
+.neu-concave {
+  background: linear-gradient(145deg, #d4d4d4, #f0f0f0);
+  border-radius: 14px;
+  box-shadow:
+    inset -3px -3px 7px var(--color-neu-light),
+    inset 3px 3px 7px var(--color-neu-dark);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dark .neu-concave {
+  background: linear-gradient(145deg, #272727, #333);
+  box-shadow:
+    inset -3px -3px 7px var(--color-dark-neu-light),
+    inset 3px 3px 7px var(--color-dark-neu-dark);
+}
+
+.neu-pressed {
+  background: var(--color-background);
+  border-radius: 14px;
+  box-shadow:
+    inset -3px -3px 7px var(--color-neu-light),
+    inset 3px 3px 7px var(--color-neu-dark);
+  transition: box-shadow 0.15s ease;
+}
+.dark .neu-pressed {
+  background: var(--color-dark-background);
+  box-shadow:
+    inset -3px -3px 7px var(--color-dark-neu-light),
+    inset 3px 3px 7px var(--color-dark-neu-dark);
+}
+
+.neu-btn {
+  background: linear-gradient(145deg, #f0f0f0, #d4d4d4);
+  border-radius: 12px;
+  box-shadow:
+    -4px -4px 10px var(--color-neu-light),
+    4px 4px 10px var(--color-neu-dark);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  user-select: none;
+}
+.neu-btn:hover {
+  box-shadow:
+    -6px -6px 14px var(--color-neu-light),
+    6px 6px 14px var(--color-neu-dark);
+}
+.neu-btn:active {
+  background: linear-gradient(145deg, #d4d4d4, #f0f0f0);
+  box-shadow:
+    inset -3px -3px 7px var(--color-neu-light),
+    inset 3px 3px 7px var(--color-neu-dark);
+}
+.dark .neu-btn {
+  background: linear-gradient(145deg, #333, #272727);
+  box-shadow:
+    -4px -4px 10px var(--color-dark-neu-light),
+    4px 4px 10px var(--color-dark-neu-dark);
+}
+.dark .neu-btn:hover {
+  box-shadow:
+    -6px -6px 14px var(--color-dark-neu-light),
+    6px 6px 14px var(--color-dark-neu-dark);
+}
+.dark .neu-btn:active {
+  background: linear-gradient(145deg, #272727, #333);
+  box-shadow:
+    inset -3px -3px 7px var(--color-dark-neu-light),
+    inset 3px 3px 7px var(--color-dark-neu-dark);
 }
 
 /* ── Typing Animation ─────────────────────────────── */
@@ -58,7 +195,7 @@ body {
   animation: typing-loop 4s ease-in-out infinite, typing-glow 4s ease-in-out infinite;
 }
 
-/* ── Card & Button Interactions ───────────────────── */
+/* ── Card & Button Interactions (Public) ──────────── */
 
 .card-hover {
   transition: box-shadow 0.2s ease, transform 0.2s ease;
@@ -176,13 +313,15 @@ body {
   .card-hover:hover,
   .btn-primary:hover,
   .btn-outline:hover,
-  .nav-link:hover {
+  .nav-link:hover,
+  .neu-btn:hover {
     transform: none;
-    box-shadow: none;
+    box-shadow: inherit;
   }
   .btn-primary:active,
   .btn-outline:active,
-  .nav-link:active {
+  .nav-link:active,
+  .neu-btn:active {
     transform: none;
   }
   .back-to-top {

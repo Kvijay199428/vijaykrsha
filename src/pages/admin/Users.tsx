@@ -93,7 +93,7 @@ export default function UsersPage() {
   const canManage = currentAdmin?.role === "owner" || currentAdmin?.role === "admin";
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -108,7 +108,7 @@ export default function UsersPage() {
         {canManage && (
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm font-medium"
+            className="flex items-center gap-2 px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold"
           >
             <Plus className="w-4 h-4" />
             Create User
@@ -125,13 +125,13 @@ export default function UsersPage() {
             placeholder="Search users..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full pl-9 pr-3 py-2 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-3 py-2 border rounded-lg bg-background text-sm"
+          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
         >
           <option value="">All Roles</option>
           <option value="owner">Owner</option>
@@ -143,7 +143,7 @@ export default function UsersPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 border rounded-lg bg-background text-sm"
+          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
         >
           <option value="">All Status</option>
           <option value="active">Active</option>
@@ -152,10 +152,10 @@ export default function UsersPage() {
       </div>
 
       {/* Table */}
-      <div className="border rounded-lg overflow-hidden">
+      <div className="neu-flat overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="bg-muted/50 border-b">
+            <tr className="bg-muted/30 border-b border-border/50">
               <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">User</th>
               <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Name</th>
               <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Role</th>
@@ -178,7 +178,7 @@ export default function UsersPage() {
               filtered.map((user) => {
                 const RoleIcon = ROLE_ICONS[user.role] || Shield;
                 return (
-                  <tr key={user.id} className="border-b last:border-0 hover:bg-muted/30">
+                  <tr key={user.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3">
                       <span className="font-medium text-sm">{user.username}</span>
                     </td>
@@ -217,14 +217,14 @@ export default function UsersPage() {
                       <td className="px-4 py-3 relative">
                         <button
                           onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
-                          className="p-1 rounded hover:bg-accent"
+                          className="p-1.5 rounded-xl hover:bg-muted/50 transition-colors"
                         >
                           <MoreVertical className="w-4 h-4" />
                         </button>
                         {openMenuId === user.id && (
                           <>
                             <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
-                            <div className="absolute right-0 top-full mt-1 z-50 w-52 bg-card border rounded-lg shadow-lg py-1">
+                            <div className="absolute right-0 top-full mt-1 z-50 w-52 neu-convex py-1">
                               <MenuItem icon={UserCog} label="Edit" onClick={() => { setShowEdit(user); setOpenMenuId(null); }} />
                               <MenuItem icon={KeyRound} label="Configure TOTP" onClick={() => { setShowTotpSetup(user); setOpenMenuId(null); }} />
                               <MenuItem icon={RefreshCw} label="Reset Password" onClick={() => { setShowResetPassword(user); setOpenMenuId(null); }} />
@@ -313,7 +313,7 @@ function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Shield;
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-accent ${
+      className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted/30 transition-colors ${
         danger ? "text-red-600 dark:text-red-400" : ""
       }`}
     >
@@ -370,16 +370,16 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
   return (
     <Dialog onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Create Admin User</h2>
-      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Input label="Username *" value={form.username} onChange={(v) => setForm({ ...form, username: v })} />
-        <Input label="Display Name *" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
-        <Input label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
-        <Input label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
-        <Input label="Confirm Password *" type="password" value={form.confirmPassword} onChange={(v) => setForm({ ...form, confirmPassword: v })} />
+        <NeuInput label="Username *" value={form.username} onChange={(v) => setForm({ ...form, username: v })} />
+        <NeuInput label="Display Name *" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
+        <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+        <NeuInput label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+        <NeuInput label="Confirm Password *" type="password" value={form.confirmPassword} onChange={(v) => setForm({ ...form, confirmPassword: v })} />
         <div>
           <label className="block text-sm font-medium mb-1">Role *</label>
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-background text-sm">
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
             <option value="owner">Owner</option>
             <option value="admin">Admin</option>
             <option value="manager">Manager</option>
@@ -387,10 +387,10 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
             <option value="viewer">Viewer</option>
           </select>
         </div>
-        <Input label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
+        <NeuInput label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border hover:bg-accent">Cancel</button>
-          <button type="submit" disabled={loading} className="px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+          <button type="submit" disabled={loading} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
             {loading ? "Creating..." : "Create User"}
           </button>
         </div>
@@ -432,13 +432,13 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
   return (
     <Dialog onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Edit {user.username}</h2>
-      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Input label="Display Name" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
-        <Input label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+        <NeuInput label="Display Name" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
+        <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
         <div>
           <label className="block text-sm font-medium mb-1">Role</label>
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 border rounded-lg bg-background text-sm">
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
             <option value="owner">Owner</option>
             <option value="admin">Admin</option>
             <option value="manager">Manager</option>
@@ -447,8 +447,8 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
           </select>
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border hover:bg-accent">Cancel</button>
-          <button type="submit" disabled={loading} className="px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+          <button type="submit" disabled={loading} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
             {loading ? "Saving..." : "Save Changes"}
           </button>
         </div>
@@ -503,7 +503,7 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
   return (
     <Dialog onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Configure TOTP for {user.username}</h2>
-      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
 
       {step === "loading" && <p className="text-muted-foreground text-sm">Loading...</p>}
 
@@ -512,7 +512,7 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
           <p className="text-sm text-muted-foreground mb-3">
             Add this account to your authenticator app (Google Authenticator, Authy, etc.):
           </p>
-          <div className="bg-muted p-3 rounded-lg mb-3">
+          <div className="neu-concave p-3 rounded-xl mb-3">
             <p className="text-xs text-muted-foreground mb-1">Secret (manual entry):</p>
             <code className="text-sm font-mono break-all">{secret}</code>
           </div>
@@ -524,12 +524,12 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
               onChange={(e) => setCode(e.target.value)}
               placeholder="000000"
               maxLength={6}
-              className="w-full px-3 py-2 border rounded-lg bg-background text-sm font-mono"
+              className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm font-mono"
             />
           </div>
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border hover:bg-accent">Cancel</button>
-            <button onClick={handleEnable} disabled={loading || code.length !== 6} className="px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+            <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+            <button onClick={handleEnable} disabled={loading || code.length !== 6} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
               {loading ? "Verifying..." : "Verify & Enable"}
             </button>
           </div>
@@ -580,13 +580,13 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
   return (
     <Dialog onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Reset Password for {user.username}</h2>
-      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg text-sm">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
       <p className="text-sm text-muted-foreground mb-3">The user will be logged out after password reset.</p>
-      <Input label="New Password" type="password" value={password} onChange={setPassword} />
-      <Input label="Confirm Password" type="password" value={confirm} onChange={setConfirm} />
+      <NeuInput label="New Password" type="password" value={password} onChange={setPassword} />
+      <NeuInput label="Confirm Password" type="password" value={confirm} onChange={setConfirm} />
       <div className="flex justify-end gap-2 pt-3">
-        <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border hover:bg-accent">Cancel</button>
-        <button onClick={handleSubmit} disabled={loading || password.length < 6} className="px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+        <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+        <button onClick={handleSubmit} disabled={loading || password.length < 6} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
           {loading ? "Resetting..." : "Reset Password"}
         </button>
       </div>
@@ -606,12 +606,12 @@ function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfir
       <h2 className="text-lg font-semibold mb-2">{title}</h2>
       <p className="text-sm text-muted-foreground mb-4">{message}</p>
       <div className="flex justify-end gap-2">
-        <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border hover:bg-accent">Cancel</button>
+        <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
         <button
           onClick={async () => { setLoading(true); await onConfirm(); }}
           disabled={loading}
-          className={`px-4 py-2 text-sm rounded-lg text-white disabled:opacity-50 ${
-            danger ? "bg-red-600 hover:bg-red-700" : "bg-primary hover:bg-primary/90"
+          className={`px-4 py-2 text-sm neu-btn text-white font-semibold disabled:opacity-50 ${
+            danger ? "bg-destructive" : "bg-primary"
           }`}
         >
           {loading ? "..." : confirmLabel}
@@ -626,9 +626,9 @@ function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfir
 function Dialog({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-card border rounded-xl shadow-xl w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto">
-        <button onClick={onClose} className="absolute top-4 right-4 p-1 rounded hover:bg-accent">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative neu-convex w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-muted/50 transition-colors">
           <X className="w-4 h-4" />
         </button>
         {children}
@@ -637,9 +637,9 @@ function Dialog({ onClose, children }: { onClose: () => void; children: React.Re
   );
 }
 
-// ── Shared Input ─────────────────────────────────────────────────────────────
+// ── Shared NeuInput ──────────────────────────────────────────────────────────
 
-function Input({ label, type = "text", value, onChange, placeholder }: {
+function NeuInput({ label, type = "text", value, onChange, placeholder }: {
   label: string; type?: string; value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   return (
@@ -650,7 +650,7 @@ function Input({ label, type = "text", value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2 border rounded-lg bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+        className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
       />
     </div>
   );

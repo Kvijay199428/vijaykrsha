@@ -7,15 +7,15 @@ interface AlertProps extends HTMLAttributes<HTMLDivElement> {
 const Alert = forwardRef<HTMLDivElement, AlertProps>(
   ({ className = "", variant = "default", ...props }, ref) => {
     const variants: Record<string, string> = {
-      default: "bg-background text-foreground border",
+      default: "neu-flat text-foreground border-0",
       destructive:
-        "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+        "bg-destructive/10 text-destructive border-destructive/20 rounded-xl",
     };
     return (
       <div
         ref={ref}
         role="alert"
-        className={`relative w-full rounded-lg border p-4 ${variants[variant]} ${className}`}
+        className={`relative w-full rounded-xl p-4 ${variants[variant]} ${className}`}
         {...props}
       />
     );

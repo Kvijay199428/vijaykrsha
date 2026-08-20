@@ -46,17 +46,19 @@ export default function AdminLayout() {
       <aside
         className={`${
           collapsed ? "w-16" : "w-64"
-        } bg-card border-r flex flex-col transition-all duration-200 shrink-0`}
+        } neu-flat border-0 flex flex-col transition-all duration-200 shrink-0 m-2 rounded-2xl`}
       >
         {/* Header */}
-        <div className="flex items-center gap-2 px-3 py-4 border-b min-h-[57px]">
-          <Shield className="w-5 h-5 text-primary shrink-0" />
+        <div className="flex items-center gap-2 px-3 py-4 border-b border-border/50 min-h-[57px]">
+          <div className="p-1.5 neu-btn rounded-xl">
+            <Shield className="w-4 h-4 text-primary shrink-0" />
+          </div>
           {!collapsed && (
             <span className="font-semibold text-sm truncate">Vega Admin</span>
           )}
           <button
             onClick={toggleSidebar}
-            className="ml-auto p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            className="ml-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? (
@@ -74,10 +76,10 @@ export default function AdminLayout() {
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                   isActive
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    ? "neu-pressed text-primary font-medium"
+                    : "text-muted-foreground hover:text-foreground"
                 } ${collapsed ? "justify-center" : ""}`
               }
               title={collapsed ? item.label : undefined}
@@ -89,7 +91,7 @@ export default function AdminLayout() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t px-2 py-3 space-y-1">
+        <div className="border-t border-border/50 px-2 py-3 space-y-1">
           {!collapsed && admin && (
             <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">
               {admin.username} &middot; {admin.role}
@@ -97,7 +99,7 @@ export default function AdminLayout() {
           )}
           <button
             onClick={handleLogout}
-            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors ${
+            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:text-destructive transition-colors ${
               collapsed ? "justify-center" : ""
             }`}
             title={collapsed ? "Logout" : undefined}
@@ -109,8 +111,10 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
+      <main className="flex-1 overflow-y-auto p-2">
+        <div className="h-full neu-flat rounded-2xl p-6">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

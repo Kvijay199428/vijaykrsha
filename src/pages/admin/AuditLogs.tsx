@@ -37,12 +37,12 @@ export default function AuditLogs() {
         <p className="text-muted-foreground text-sm">{total} total entries</p>
       </div>
 
-      <div className="rounded-xl bg-card border overflow-hidden">
+      <div className="neu-flat overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : (
           <table className="w-full">
-            <thead className="border-b bg-muted/50">
+            <thead className="border-b border-border/50 bg-muted/30">
               <tr>
                 <th className="text-left p-4 text-sm font-medium">Event</th>
                 <th className="text-left p-4 text-sm font-medium">Actor</th>
@@ -50,9 +50,9 @@ export default function AuditLogs() {
                 <th className="text-left p-4 text-sm font-medium">Time</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-border/50">
               {logs.map((log) => (
-                <tr key={log.id} className="hover:bg-muted/30">
+                <tr key={log.id} className="hover:bg-muted/20 transition-colors">
                   <td className="p-4 text-sm">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       log.event.includes("success") || log.event.includes("verified") ? "bg-green-100 text-green-700" :
@@ -81,7 +81,7 @@ export default function AuditLogs() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Previous
           </button>
@@ -89,7 +89,7 @@ export default function AuditLogs() {
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Next
           </button>

@@ -54,13 +54,13 @@ export default function Inbox() {
             placeholder="Search messages..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg bg-background text-sm"
+            className="w-full pl-10 pr-4 py-2 neu-concave rounded-xl bg-transparent text-sm"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-4 py-2 border rounded-lg bg-background text-sm"
+          className="px-4 py-2 neu-concave rounded-xl bg-transparent text-sm"
         >
           <option value="">All Statuses</option>
           <option value="new">New</option>
@@ -71,18 +71,18 @@ export default function Inbox() {
         </select>
       </div>
 
-      <div className="rounded-xl bg-card border overflow-hidden">
+      <div className="neu-flat overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : messages.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">No messages found.</div>
         ) : (
-          <div className="divide-y">
+          <div className="divide-y divide-border/50">
             {messages.map((msg) => (
               <Link
                 key={msg.id}
                 to={`/vega/admin/messages/${msg.id}`}
-                className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -122,7 +122,7 @@ export default function Inbox() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Previous
           </button>
@@ -132,7 +132,7 @@ export default function Inbox() {
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Next
           </button>
