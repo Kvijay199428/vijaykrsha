@@ -1,0 +1,27 @@
+[project]
+name = "vijaykrsha-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    "pydantic-settings",
+    "pydantic[email]",
+    "argon2-cffi",
+    "pyotp",
+    "cryptography",
+    "boto3",
+    "httpx",
+    "python-multipart",
+    "structlog",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]

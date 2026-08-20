@@ -1,0 +1,59 @@
+services:
+  database-prod:
+    image: postgres:16-alpine
+    container_name: database-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vijaykrsha
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - vijaykrshaonline_pgdata:/var/lib/postgresql/data
+    networks:
+      - prod-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vijaykrsha"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  storage-prod:
+    image: minio/minio:latest
+    container_name: storage-prod
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_PROD_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_PROD_SECRET_KEY}
+    volumes:
+      - vijaykrshaonline_miniodata:/data
+    networks:
+      - prod-network
+
+  backend-prod:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend-prod
+    restart: unless-stopped
+    depends_on:
+      database-prod:
+        condition: service_healthy
+      storage-prod:
+        condition: service_started
+    ports:
+      - "26011:8000"
+    env_file:
+      - ./env/.env.prod
+    networks:
+      - prod-network
+
+volumes:
+  vijaykrshaonline_pgdata:
+    external: true
+  vijaykrshaonline_miniodata:
+    external: true
+
+networks:
+  prod-network:
+    name: vijaykrsha-prod

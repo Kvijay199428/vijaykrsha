@@ -27,6 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent
 SOURCE_PATHS = [
     "src",
     "public",
+    ".cloudflare",
+    "functions",
+    
 ]
 
 SOURCE_FILE_PATHS = [

@@ -9,3 +9,6 @@ tsconfig.tsbuildinfo
 .DS_Store
 cloudflare.yml
 wrangler.toml
+env/.env.dev
+env/.env.prod
+cloudflared/*.json

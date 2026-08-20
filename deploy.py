@@ -1,3 +1,16 @@
+"""
+vijaykrsha.online deployment script
+====================================
+
+Usage:
+  python deploy.py --dev --local              # Dev: upload + rebuild dev containers
+  python deploy.py --dev --tailscale          # Dev via Tailscale
+  python deploy.py --prod --local             # Prod: rebuild backend + push to GitHub (prod branch)
+  python deploy.py --prod --tailscale         # Prod via Tailscale + push to GitHub
+  python deploy.py --prod --cloudflare        # Prod: rebuild + direct Cloudflare Pages deploy
+  python deploy.py --prod --local --clean     # Full clean redeploy
+"""
+
 import os
 import sys
 import subprocess
@@ -23,10 +36,13 @@ ZIP_FILE = os.path.join(BASE_DIR, "update.zip")
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 CLOUDFLARE_YML = os.path.join(BASE_DIR, "cloudflare.yml")
 
-# Docker server
-DOCKER_HOST = "192.168.1.50"
-DOCKER_USER = "vega"
-DOCKER_PASSWORD = "1010"
+# Network hosts
+LOCAL_HOST = "192.168.1.50"
+TAILSCALE_HOST = "100.107.83.28"
+SSH_PORT = 22009
+SSH_USER = "vega"
+SSH_PASSWORD = "1010"
+
 REMOTE_ZIP = "/home/vega/update.zip"
 REMOTE_DIR = "/home/vega/vijaykrsha.online"
 
@@ -35,69 +51,48 @@ EXCLUDE_DIRS = {
     ".git",
     "node_modules",
     "dist",
+    ".opencode",
 }
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def build():
-    print("\n[1/3] Building frontend application...")
-    result = subprocess.run("npm install && npm run build", cwd=LOCAL_DIR, shell=True)
-    if result.returncode != 0:
-        print("\nERROR: Build failed")
-        sys.exit(1)
-    print("Build completed successfully.")
-
-
-def prompt_target():
-    print("\n" + "=" * 45)
-    print(" SELECT DEPLOYMENT TARGET")
-    print("=" * 45)
-    print("  1. Docker    — Deploy to Docker server (192.168.1.50)")
-    print("  2. Cloudflare — Deploy to Cloudflare Pages")
-    print("  3. Both       — Deploy to Docker + Cloudflare")
-    print("=" * 45)
-
-    while True:
-        choice = input("\nEnter choice [1/2/3]: ").strip()
-        if choice in ("1", "2", "3"):
-            return {"1": "docker", "2": "cloudflare", "3": "both"}[choice]
-        print("Invalid choice. Enter 1, 2, or 3.")
-
-
-def read_cloudflare_config():
-    if not os.path.exists(CLOUDFLARE_YML):
-        print(f"\nERROR: {CLOUDFLARE_YML} not found.")
-        print("Create cloudflare.yml with your Cloudflare credentials.")
-        sys.exit(1)
-
-    if yaml is None:
-        # Fallback: simple YAML parser
-        config = {}
-        with open(CLOUDFLARE_YML, "r") as f:
-            for line in f:
-                line = line.strip()
-                if ":" in line and not line.startswith("#"):
-                    key, val = line.split(":", 1)
-                    config[key.strip()] = val.strip().strip('"').strip("'")
-        return config
-
-    with open(CLOUDFLARE_YML, "r") as f:
-        return yaml.safe_load(f)
-
-
-# ── Docker Deployment ─────────────────────────────────────────────────────────
-
-def deploy_docker(clean=False):
+def ssh_connect(host):
     if paramiko is None:
         print("\nERROR: paramiko not installed. Run: pip install paramiko")
         sys.exit(1)
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    print(f"\nConnecting to {SSH_USER}@{host}:{SSH_PORT}...")
+    ssh.connect(host, port=SSH_PORT, username=SSH_USER, password=SSH_PASSWORD, timeout=30)
+    print("Connected.")
+    return ssh
 
-    print("\n" + "=" * 45)
-    print(" DOCKER DEPLOYMENT")
-    print("=" * 45)
 
-    # Zip source
+def ssh_run(ssh, cmd, label=None, timeout=300):
+    if label:
+        print(f"\n>>> {label}")
+    else:
+        preview = cmd[:120] + "..." if len(cmd) > 120 else cmd
+        print(f"\n>>> {preview}")
+    stdin, stdout, stderr = ssh.exec_command(cmd, get_pty=True, timeout=timeout)
+    exit_status = stdout.channel.recv_exit_status()
+    while True:
+        data = stdout.channel.recv(4096)
+        if not data:
+            break
+        sys.stdout.buffer.write(data)
+        sys.stdout.flush()
+    err = stderr.read().decode("utf-8", errors="replace")
+    if err:
+        print(err[-2000:])
+    if exit_status != 0:
+        print(f"\nERROR: Command failed (exit code {exit_status})")
+        return False
+    return True
+
+
+def create_zip():
     if os.path.exists(ZIP_FILE):
         os.remove(ZIP_FILE)
 
@@ -108,104 +103,146 @@ def deploy_docker(clean=False):
             if any(part in EXCLUDE_DIRS for part in root.replace("\\", "/").split("/")):
                 continue
             for file in files:
-                if file.endswith(".zip"):
+                if file.endswith((".zip", ".pyc")):
                     continue
                 local_path = os.path.join(root, file)
                 arcname = os.path.relpath(local_path, LOCAL_DIR).replace("\\", "/")
                 zipf.write(local_path, arcname=arcname)
+    print(f"ZIP created ({os.path.getsize(ZIP_FILE) // 1024} KB).")
 
-    print("ZIP created.")
 
-    # Connect
-    print(f"\nConnecting to {DOCKER_USER}@{DOCKER_HOST}...")
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(DOCKER_HOST, username=DOCKER_USER, password=DOCKER_PASSWORD)
+def cleanup_zip():
+    if os.path.exists(ZIP_FILE):
+        os.remove(ZIP_FILE)
 
-    # Upload
-    print("Uploading...")
+
+def read_cloudflare_config():
+    if not os.path.exists(CLOUDFLARE_YML):
+        return {}
+    config = {}
+    with open(CLOUDFLARE_YML, "r") as f:
+        for line in f:
+            line = line.strip()
+            if ":" in line and not line.startswith("#"):
+                key, val = line.split(":", 1)
+                config[key.strip()] = val.strip().strip('"').strip("'")
+    return config
+
+
+# ── Docker Deployment ─────────────────────────────────────────────────────────
+
+def deploy_docker(host, env, clean=False):
+    ssh = ssh_connect(host)
+
+    create_zip()
+
+    print("\nUploading project...")
     def progress(t, total):
         if total > 0:
-            sys.stdout.write(f"\r  {int(t/total*100)}%")
+            sys.stdout.write(f"\r  Upload: {int(t/total*100)}%")
             sys.stdout.flush()
-
     sftp = ssh.open_sftp()
     sftp.put(ZIP_FILE, REMOTE_ZIP, callback=progress)
     sftp.close()
-    print("\nUpload completed.")
+    print("\nUpload complete.")
 
-    # Commands
-    commands = []
+    compose_file = "docker-compose.dev.yml" if env == "dev" else "docker-compose.prod.yml"
+    env_file = "env/.env.dev" if env == "dev" else "env/.env.prod"
+    service = "backend-dev frontend-dev" if env == "dev" else "backend-prod"
+
     if clean:
-        print("\n[CLEAN] Removing old containers/images/volumes...")
-        commands.extend([
-            f"cd {REMOTE_DIR} && docker compose down --rmi all -v --remove-orphans || true",
-            f"echo '{DOCKER_PASSWORD}' | sudo -S rm -rf {REMOTE_DIR}",
-            f"mkdir -p {REMOTE_DIR}",
-            f"python3 -c \"import zipfile; zipfile.ZipFile('{REMOTE_ZIP}','r').extractall('{REMOTE_DIR}')\"",
-            f"rm -f {REMOTE_ZIP}",
-            f"cd {REMOTE_DIR} && cat > .dockerignore <<'EOF'\nnode_modules/\ndist/\n.git/\n__pycache__/\nEOF",
-            "docker builder prune -af",
-            f"cd {REMOTE_DIR} && docker compose build --no-cache",
-            f"cd {REMOTE_DIR} && docker compose up -d --force-recreate",
-        ])
-    else:
-        print("\n[NORMAL] Updating files and rebuilding...")
-        commands.extend([
-            f"mkdir -p {REMOTE_DIR}",
-            f"python3 -c \"import zipfile; zipfile.ZipFile('{REMOTE_ZIP}','r').extractall('{REMOTE_DIR}')\"",
-            f"rm -f {REMOTE_ZIP}",
-            f"cd {REMOTE_DIR} && cat > .dockerignore <<'EOF'\nnode_modules/\ndist/\n.git/\n__pycache__/\nEOF",
-            f"cd {REMOTE_DIR} && docker compose build",
-            f"cd {REMOTE_DIR} && docker compose up -d",
-        ])
+        print("\n[CLEAN] Removing existing containers...")
+        ssh_run(ssh, f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} down --rmi all -v --remove-orphans || true", "Stopping containers")
 
-    for cmd in commands:
-        stdin, stdout, stderr = ssh.exec_command(cmd, get_pty=True)
-        while True:
-            data = stdout.channel.recv(4096)
-            if not data:
-                break
-            sys.stdout.buffer.write(data)
-            sys.stdout.flush()
-        if stdout.channel.recv_exit_status() != 0:
-            print(f"\nERROR: Command failed")
+    commands = [
+        (f"mkdir -p {REMOTE_DIR}", "Ensuring directory exists"),
+        (f"python3 -c \"import zipfile; zipfile.ZipFile('{REMOTE_ZIP}','r').extractall('{REMOTE_DIR}')\"", "Extracting files"),
+        (f"rm -f {REMOTE_ZIP}", "Cleaning up zip"),
+        (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} up -d --build {service}", f"Building and starting {env} containers"),
+    ]
+
+    for cmd, label in commands:
+        if not ssh_run(ssh, cmd, label):
+            cleanup_zip()
             ssh.close()
             sys.exit(1)
 
+    if env == "dev":
+        ssh_run(ssh, "curl -s http://localhost:26001/admin/api/health", "Verifying backend-dev health")
+    else:
+        ssh_run(ssh, "curl -s http://localhost:26011/admin/api/health", "Verifying backend-prod health")
+
     ssh.close()
-    print("\nDocker deployment completed.")
+    cleanup_zip()
+    print(f"\n{env.upper()} Docker deployment completed.")
 
 
-# ── Cloudflare Pages Deployment ───────────────────────────────────────────────
+# ── GitHub Push ───────────────────────────────────────────────────────────────
+
+def push_github(branch):
+    print("\n" + "=" * 45)
+    print(f" GITHUB PUSH (branch: {branch})")
+    print("=" * 45)
+
+    subprocess.run("git add -A", cwd=LOCAL_DIR, shell=True, check=True)
+
+    result = subprocess.run("git status --porcelain", cwd=LOCAL_DIR, shell=True, capture_output=True, text=True)
+    if not result.stdout.strip():
+        print("No changes to commit.")
+        return
+
+    print(f"Changes:\n{result.stdout[:2000]}")
+
+    msg = "deploy: update from local"
+    subprocess.run(f'git commit -m "{msg}"', cwd=LOCAL_DIR, shell=True, check=True)
+    print(f"Committed: {msg}")
+
+    print(f"\nPushing to origin/{branch}...")
+    result = subprocess.run(
+        f"git push origin HEAD:{branch}",
+        cwd=LOCAL_DIR,
+        shell=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"\nERROR: Push failed\n{result.stderr}")
+        sys.exit(1)
+
+    print(f"Pushed to {branch}. Cloudflare Pages will auto-deploy.")
+
+
+# ── Cloudflare Pages Direct Deploy ────────────────────────────────────────────
 
 def deploy_cloudflare():
     print("\n" + "=" * 45)
-    print(" CLOUDFLARE PAGES DEPLOYMENT")
+    print(" CLOUDFLARE PAGES DIRECT DEPLOY")
     print("=" * 45)
 
-    config = read_cloudflare_config()
-    account_id = config.get("account_id", "")
-    api_token = config.get("api_token", "")
-    project_name = config.get("project_name", "vijaykrsha-website")
+    cf_config = read_cloudflare_config()
+    account_id = cf_config.get("account_id", "")
+    api_token = cf_config.get("api_token", "")
+    project_name = cf_config.get("project_name", "vijaykrsha-website")
 
     if not account_id or not api_token:
         print("\nERROR: account_id and api_token required in cloudflare.yml")
         sys.exit(1)
 
-    if not os.path.exists(DIST_DIR):
-        print(f"\nERROR: dist/ not found. Run build first.")
+    print("\nBuilding frontend...")
+    result = subprocess.run("npm install && npm run build", cwd=LOCAL_DIR, shell=True)
+    if result.returncode != 0:
+        print("\nERROR: Build failed")
         sys.exit(1)
 
-    print(f"\nProject: {project_name}")
-    print(f"Account: {account_id[:8]}...")
+    if not os.path.exists(DIST_DIR):
+        print("\nERROR: dist/ not found after build")
+        sys.exit(1)
 
-    # Set env vars for wrangler
     env = os.environ.copy()
     env["CLOUDFLARE_ACCOUNT_ID"] = account_id
     env["CLOUDFLARE_API_TOKEN"] = api_token
 
-    print("\nDeploying to Cloudflare Pages...")
+    print(f"\nDeploying to Cloudflare Pages ({project_name})...")
     result = subprocess.run(
         f"npx wrangler pages deploy dist --project-name={project_name}",
         cwd=LOCAL_DIR,
@@ -217,51 +254,75 @@ def deploy_cloudflare():
         print("\nERROR: Cloudflare deployment failed")
         sys.exit(1)
 
-    print("\nCloudflare deployment completed.")
+    print(f"\nCloudflare Pages deployment completed.")
     print(f"  https://{project_name}.pages.dev")
+    print(f"  https://vijaykrsha.online")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Deploy vijaykrsha.online")
-    parser.add_argument(
-        "--target",
-        choices=["docker", "cloudflare", "both"],
-        help="Deployment target (interactive prompt if omitted)",
+    parser = argparse.ArgumentParser(
+        description="Deploy vijaykrsha.online",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python deploy.py --dev --local           Dev deployment via local network
+  python deploy.py --dev --tailscale       Dev deployment via Tailscale
+  python deploy.py --prod --local          Prod: rebuild backend + push to GitHub (prod branch)
+  python deploy.py --prod --tailscale      Prod via Tailscale + push to GitHub
+  python deploy.py --prod --cloudflare     Prod: rebuild + direct Cloudflare Pages deploy
+  python deploy.py --prod --local --clean  Full clean redeploy
+""",
     )
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="Clean deploy (Docker only): remove all containers/images/volumes first.",
-    )
-    parser.add_argument(
-        "--build-only",
-        action="store_true",
-        help="Only build, skip deployment.",
-    )
+
+    network = parser.add_mutually_exclusive_group()
+    network.add_argument("--local", action="store_true", help=f"Use local network ({LOCAL_HOST})")
+    network.add_argument("--tailscale", action="store_true", help=f"Use Tailscale ({TAILSCALE_HOST})")
+
+    env = parser.add_mutually_exclusive_group()
+    env.add_argument("--dev", action="store_true", help="Deploy dev environment (branch: main)")
+    env.add_argument("--prod", action="store_true", help="Deploy production environment (branch: prod)")
+
+    parser.add_argument("--clean", action="store_true", help="Clean deploy: remove all containers/images/volumes first (prod only)")
+    parser.add_argument("--cloudflare", action="store_true", help="Also deploy frontend directly to Cloudflare Pages (prod only)")
+
     args = parser.parse_args()
 
-    # Build
-    build()
+    if not args.dev and not args.prod:
+        parser.error("Must specify --dev or --prod")
 
-    if args.build_only:
-        print("\nBuild-only mode. Skipping deployment.")
-        return
+    if not args.local and not args.tailscale:
+        parser.error("Must specify --local or --tailscale")
 
-    # Target selection
-    target = args.target or prompt_target()
+    if args.cloudflare and not args.prod:
+        parser.error("--cloudflare can only be used with --prod")
 
-    # Deploy
-    if target in ("docker", "both"):
-        deploy_docker(clean=args.clean)
+    if args.clean and not args.prod:
+        parser.error("--clean can only be used with --prod")
 
-    if target in ("cloudflare", "both"):
+    host = LOCAL_HOST if args.local else TAILSCALE_HOST
+    network_name = "local" if args.local else "tailscale"
+    branch = "main" if args.dev else "prod"
+    env_name = "dev" if args.dev else "prod"
+
+    print("\n" + "=" * 45)
+    print(" DEPLOYMENT CONFIGURATION")
+    print("=" * 45)
+    print(f"  Network:   {network_name} ({host})")
+    print(f"  Env:       {env_name.upper()}")
+    print(f"  Branch:    {branch}")
+    print(f"  Clean:     {args.clean}")
+    print(f"  Cloudflare:{' direct deploy' if args.cloudflare else ' via GitHub auto-deploy'}")
+    print("=" * 45)
+
+    deploy_docker(host, env_name, clean=args.clean)
+
+    if args.prod:
+        push_github(branch)
+
+    if args.cloudflare:
         deploy_cloudflare()
-
-    # Cleanup
-    if os.path.exists(ZIP_FILE):
-        os.remove(ZIP_FILE)
 
     print("\n" + "=" * 45)
     print(" ALL DEPLOYMENTS COMPLETED")

@@ -136,7 +136,7 @@ export default function Contact() {
       for (const file of files) {
         body.append("documents", file, file.name);
       }
-      const res = await fetch(`${site.api.baseUrl}${site.api.contactPath}`, {
+      const res = await fetch("/api/vks/api/contact", {
         method: "POST",
         body,
       });

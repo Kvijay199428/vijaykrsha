@@ -7,19 +7,46 @@ import Portfolio from "@/pages/Portfolio";
 import Apps from "@/pages/Apps";
 import Contact from "@/pages/Contact";
 import NotFound from "@/pages/NotFound";
+import AdminLogin from "@/pages/AdminLogin";
+import Setup from "@/pages/admin/Setup";
+import AdminLayout from "@/pages/admin/AdminLayout";
+import Dashboard from "@/pages/admin/Dashboard";
+import Inbox from "@/pages/admin/Inbox";
+import MessageDetail from "@/pages/admin/MessageDetail";
+import Settings from "@/pages/admin/Settings";
+import AdminUsersPage from "@/pages/admin/AdminUsers";
+import AuditLogs from "@/pages/admin/AuditLogs";
 
 export default function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/freelance" element={<Freelance />} />
-        <Route path="/portfolio" element={<Portfolio />} />
-        <Route path="/apps" element={<Apps />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Layout>
+    <Routes>
+      <Route path="/vega/admin/login" element={<AdminLogin />} />
+      <Route path="/vega/admin/setup" element={<Setup />} />
+      <Route path="/vega/admin" element={<AdminLayout />}>
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="inbox" element={<Inbox />} />
+        <Route path="messages/:id" element={<MessageDetail />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="admin-users" element={<AdminUsersPage />} />
+        <Route path="audit-logs" element={<AuditLogs />} />
+        <Route index element={<Dashboard />} />
+      </Route>
+      <Route
+        path="*"
+        element={
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/freelance" element={<Freelance />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/apps" element={<Apps />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Layout>
+        }
+      />
+    </Routes>
   );
 }

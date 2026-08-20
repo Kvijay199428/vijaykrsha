@@ -1,11 +1,83 @@
 ```yaml
+// File: .cloudflare\config.yml
+ingress:
+  - hostname: api.vijaykrsha.online
+    service: http://localhost:8000
+  - service: http_status:404
+```
+
+```yaml
 // File: docker-compose.yml
 services:
-  web:
-    build: .
-    ports:
-      - "8080:80"
+  db:
+    image: postgres:16-alpine
     restart: unless-stopped
+    environment:
+      POSTGRES_DB: vijaykrsha
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  storage:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/vijaykrsha
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-change-me-in-production}
+      S3_ENDPOINT: http://storage:9000
+      S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://vijaykrsha.online}
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  miniodata:
 ```
 
 ```
@@ -22,6 +94,67 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
+```
+
+```typescript
+// File: functions\api\[[path]].ts
+export interface Env {
+  API_ORIGIN: string;
+}
+
+const ALLOWED_ORIGINS = [
+  "https://vijaykrsha.online",
+  "https://vijaykrsha-website.pages.dev",
+];
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  const allowed = ALLOWED_ORIGINS.includes(origin || "")
+    ? origin!
+    : ALLOWED_ORIGINS[0];
+
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+  };
+}
+
+export const onRequest: PagesFunction<Env> = async (context) => {
+  const { request } = context;
+  const origin = request.headers.get("Origin");
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
+
+  const url = new URL(request.url);
+  const path = url.searchParams.get("__proxy_path") || url.pathname.replace(/^\/api\//, "/");
+
+  const backendUrl = new URL(path, context.env.API_ORIGIN || "https://api.vijaykrsha.online");
+  backendUrl.search = url.search;
+
+  const proxyRequest = new Request(backendUrl.toString(), {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+    redirect: "follow",
+  });
+
+  proxyRequest.headers.delete("Origin");
+  proxyRequest.headers.delete("Referer");
+
+  const response = await fetch(proxyRequest);
+  const newResponse = new Response(response.body, response);
+  const headers = corsHeaders(origin);
+
+  for (const [key, value] of Object.entries(headers)) {
+    newResponse.headers.set(key, value);
+  }
+
+  return newResponse;
+};
 ```
 
 ```conf
@@ -66,20 +199,26 @@ server {
     "build:cf": "python cloudflare.py"
   },
   "dependencies": {
+    "lucide-react": "^1.32.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.7",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",
     "tailwindcss": "^4.1.7",
-    "@tailwindcss/vite": "^4.1.7",
     "typescript": "~5.8.3",
     "vite": "^6.3.5"
   }
 }
+```
+
+```
+// File: public\_redirects
+/* /index.html 200
 ```
 
 ```json
@@ -107,20 +246,47 @@ import Portfolio from "@/pages/Portfolio";
 import Apps from "@/pages/Apps";
 import Contact from "@/pages/Contact";
 import NotFound from "@/pages/NotFound";
+import AdminLogin from "@/pages/AdminLogin";
+import Setup from "@/pages/admin/Setup";
+import AdminLayout from "@/pages/admin/AdminLayout";
+import Dashboard from "@/pages/admin/Dashboard";
+import Inbox from "@/pages/admin/Inbox";
+import MessageDetail from "@/pages/admin/MessageDetail";
+import Settings from "@/pages/admin/Settings";
+import AdminUsersPage from "@/pages/admin/AdminUsers";
+import AuditLogs from "@/pages/admin/AuditLogs";
 
 export default function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/freelance" element={<Freelance />} />
-        <Route path="/portfolio" element={<Portfolio />} />
-        <Route path="/apps" element={<Apps />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Layout>
+    <Routes>
+      <Route path="/vega/admin/login" element={<AdminLogin />} />
+      <Route path="/vega/admin/setup" element={<Setup />} />
+      <Route path="/vega/admin" element={<AdminLayout />}>
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="inbox" element={<Inbox />} />
+        <Route path="messages/:id" element={<MessageDetail />} />
+        <Route path="settings" element={<Settings />} />
+        <Route path="admin-users" element={<AdminUsersPage />} />
+        <Route path="audit-logs" element={<AuditLogs />} />
+        <Route index element={<Dashboard />} />
+      </Route>
+      <Route
+        path="*"
+        element={
+          <Layout>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/freelance" element={<Freelance />} />
+              <Route path="/portfolio" element={<Portfolio />} />
+              <Route path="/apps" element={<Apps />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Layout>
+        }
+      />
+    </Routes>
   );
 }
 ```
@@ -451,6 +617,320 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 }
 ```
 
+```tsx
+// File: src\components\ui\alert.tsx
+import { type HTMLAttributes, forwardRef } from "react";
+
+interface AlertProps extends HTMLAttributes<HTMLDivElement> {
+  variant?: "default" | "destructive";
+}
+
+const Alert = forwardRef<HTMLDivElement, AlertProps>(
+  ({ className = "", variant = "default", ...props }, ref) => {
+    const variants: Record<string, string> = {
+      default: "bg-background text-foreground border",
+      destructive:
+        "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+    };
+    return (
+      <div
+        ref={ref}
+        role="alert"
+        className={`relative w-full rounded-lg border p-4 ${variants[variant]} ${className}`}
+        {...props}
+      />
+    );
+  }
+);
+Alert.displayName = "Alert";
+
+const AlertDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLParagraphElement>>(
+  ({ className = "", ...props }, ref) => (
+    <p ref={ref} className={`text-sm [&_p]:leading-relaxed ${className}`} {...props} />
+  )
+);
+AlertDescription.displayName = "AlertDescription";
+
+export { Alert, AlertDescription };
+```
+
+```tsx
+// File: src\components\ui\button.tsx
+import { type ButtonHTMLAttributes, forwardRef } from "react";
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: "default" | "destructive" | "outline" | "ghost";
+}
+
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className = "", variant = "default", disabled, ...props }, ref) => {
+    const base =
+      "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none h-10 px-4 py-2";
+    const variants: Record<string, string> = {
+      default: "bg-primary text-primary-foreground hover:bg-primary/90",
+      destructive:
+        "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+      outline:
+        "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+      ghost: "hover:bg-accent hover:text-accent-foreground",
+    };
+
+    return (
+      <button
+        ref={ref}
+        className={`${base} ${variants[variant]} ${className}`}
+        disabled={disabled}
+        {...props}
+      />
+    );
+  }
+);
+Button.displayName = "Button";
+
+export { Button };
+```
+
+```tsx
+// File: src\components\ui\card.tsx
+import { type HTMLAttributes, forwardRef } from "react";
+
+const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className = "", ...props }, ref) => (
+    <div
+      ref={ref}
+      className={`rounded-lg border bg-card text-card-foreground shadow-sm ${className}`}
+      {...props}
+    />
+  )
+);
+Card.displayName = "Card";
+
+const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className = "", ...props }, ref) => (
+    <div ref={ref} className={`flex flex-col space-y-1.5 p-6 ${className}`} {...props} />
+  )
+);
+CardHeader.displayName = "CardHeader";
+
+const CardTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
+  ({ className = "", ...props }, ref) => (
+    <h3 ref={ref} className={`text-2xl font-semibold leading-none tracking-tight ${className}`} {...props} />
+  )
+);
+CardTitle.displayName = "CardTitle";
+
+const CardDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLParagraphElement>>(
+  ({ className = "", ...props }, ref) => (
+    <p ref={ref} className={`text-sm text-muted-foreground ${className}`} {...props} />
+  )
+);
+CardDescription.displayName = "CardDescription";
+
+const CardContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className = "", ...props }, ref) => (
+    <div ref={ref} className={`p-6 pt-0 ${className}`} {...props} />
+  )
+);
+CardContent.displayName = "CardContent";
+
+export { Card, CardHeader, CardTitle, CardDescription, CardContent };
+```
+
+```tsx
+// File: src\components\ui\dialog.tsx
+import { type HTMLAttributes, forwardRef, useEffect, useRef } from "react";
+
+interface DialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: React.ReactNode;
+}
+
+function Dialog({ open, onOpenChange, children }: DialogProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange(false);
+    };
+    document.addEventListener("keydown", handleEsc);
+    return () => document.removeEventListener("keydown", handleEsc);
+  }, [open, onOpenChange]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="fixed inset-0 bg-black/80"
+        onClick={() => onOpenChange(false)}
+      />
+      <div ref={ref} className="relative z-50">{children}</div>
+    </div>
+  );
+}
+
+const DialogContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className = "", ...props }, ref) => (
+    <div
+      ref={ref}
+      className={`fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg ${className}`}
+      {...props}
+    />
+  )
+);
+DialogContent.displayName = "DialogContent";
+
+const DialogHeader = ({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) => (
+  <div className={`flex flex-col space-y-1.5 text-center sm:text-left ${className}`} {...props} />
+);
+DialogHeader.displayName = "DialogHeader";
+
+const DialogTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
+  ({ className = "", ...props }, ref) => (
+    <h2 ref={ref} className={`text-lg font-semibold leading-none tracking-tight ${className}`} {...props} />
+  )
+);
+DialogTitle.displayName = "DialogTitle";
+
+const DialogDescription = forwardRef<HTMLParagraphElement, HTMLAttributes<HTMLParagraphElement>>(
+  ({ className = "", ...props }, ref) => (
+    <p ref={ref} className={`text-sm text-muted-foreground ${className}`} {...props} />
+  )
+);
+DialogDescription.displayName = "DialogDescription";
+
+export { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription };
+```
+
+```tsx
+// File: src\components\ui\input.tsx
+import { type InputHTMLAttributes, forwardRef } from "react";
+
+const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  ({ className = "", ...props }, ref) => {
+    return (
+      <input
+        ref={ref}
+        className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+        {...props}
+      />
+    );
+  }
+);
+Input.displayName = "Input";
+
+export { Input };
+```
+
+```tsx
+// File: src\components\ui\label.tsx
+import { type LabelHTMLAttributes, forwardRef } from "react";
+
+const Label = forwardRef<HTMLLabelElement, LabelHTMLAttributes<HTMLLabelElement>>(
+  ({ className = "", ...props }, ref) => {
+    return (
+      <label
+        ref={ref}
+        className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`}
+        {...props}
+      />
+    );
+  }
+);
+Label.displayName = "Label";
+
+export { Label };
+```
+
+```tsx
+// File: src\components\ui\tabs.tsx
+import { createContext, useContext, useState, type ReactNode } from "react";
+
+interface TabsContextType {
+  value: string;
+  onValueChange: (value: string) => void;
+}
+
+const TabsContext = createContext<TabsContextType>({
+  value: "",
+  onValueChange: () => {},
+});
+
+interface TabsProps {
+  defaultValue: string;
+  children: ReactNode;
+  className?: string;
+}
+
+function Tabs({ defaultValue, children, className = "" }: TabsProps) {
+  const [value, setValue] = useState(defaultValue);
+  return (
+    <TabsContext.Provider value={{ value, onValueChange: setValue }}>
+      <div className={className}>{children}</div>
+    </TabsContext.Provider>
+  );
+}
+
+function TabsList({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={`inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function TabsTrigger({
+  value,
+  children,
+  className = "",
+}: {
+  value: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const ctx = useContext(TabsContext);
+  const isActive = ctx.value === value;
+  return (
+    <button
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+        isActive
+          ? "bg-background text-foreground shadow-sm"
+          : "hover:text-foreground"
+      } ${className}`}
+      onClick={() => ctx.onValueChange(value)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TabsContent({
+  value,
+  children,
+  className = "",
+}: {
+  value: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const ctx = useContext(TabsContext);
+  if (ctx.value !== value) return null;
+  return (
+    <div
+      className={`mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+export { Tabs, TabsList, TabsTrigger, TabsContent };
+```
+
 ```typescript
 // File: src\config\site.ts
 export const site = {
@@ -461,10 +941,17 @@ export const site = {
 
   contact: {
     phone: "+91-9599130381",
+    phoneDisplay: "+91-9599130381",
+    whatsapp: "https://wa.me/919599130381",
     email: "vijaykrsha@hotmail.com",
     emailAlt: "contact@vijaykrsha.online",
     website: "https://vijaykrsha.online",
-    location: "India",
+    location: "Faridabad, Haryana, India",
+  },
+
+  api: {
+    baseUrl: import.meta.env.VITE_API_URL || "https://api.vijaykrsha.online",
+    contactPath: "/vks/api/contact",
   },
 
   nav: [
@@ -800,6 +1287,229 @@ export function useTheme() {
   const ctx = useContext(ThemeContext);
   if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
   return ctx;
+}
+```
+
+```tsx
+// File: src\contexts\AuthContext.tsx
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { ROUTES } from "@/lib/routes";
+
+interface SecondFactorResult {
+  status: "second_factor_required";
+  challenge_id: string;
+  methods: string[];
+}
+
+export class OtpCooldownError extends Error {
+  cooldownSeconds: number;
+  constructor(cooldownSeconds: number) {
+    super(`Please wait ${cooldownSeconds}s before requesting a new code.`);
+    this.cooldownSeconds = cooldownSeconds;
+  }
+}
+
+interface AuthContextType {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  admin: { id: string; username: string; role: string } | null;
+  login: (
+    username: string,
+    password: string,
+    rememberMe?: boolean
+  ) => Promise<SecondFactorResult>;
+  loginOtpSend: (challengeId: string) => Promise<{ cooldown_seconds: number }>;
+  loginOtpVerify: (
+    challengeId: string,
+    code: string
+  ) => Promise<{ totpRequired: boolean; challenge_id?: string }>;
+  loginTotp: (
+    challengeId: string,
+    code: string
+  ) => Promise<void>;
+  logout: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [admin, setAdmin] = useState<{ id: string; username: string; role: string } | null>(null);
+
+  useEffect(() => {
+    fetch(ROUTES.ADMINAPIAUTHME, { credentials: "include" })
+      .then((response) => {
+        if (response.ok) return response.json();
+        throw new Error("not authenticated");
+      })
+      .then((data) => {
+        setIsAuthenticated(true);
+        setAdmin(data);
+      })
+      .catch(() => {
+        setIsAuthenticated(false);
+        setAdmin(null);
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const login = useCallback(
+    async (
+      username: string,
+      password: string,
+      rememberMe = false
+    ): Promise<SecondFactorResult> => {
+      const response = await fetch(ROUTES.ADMINAPIAUTHLOGIN, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, remember_me: rememberMe }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: "Login failed" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "Login failed");
+      }
+
+      return await response.json();
+    },
+    []
+  );
+
+  const loginOtpSend = useCallback(
+    async (challengeId: string): Promise<{ cooldown_seconds: number }> => {
+      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINOTPSEND, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_id: challengeId }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: "Failed to send code" }));
+        const msg = typeof err.detail === "string" ? err.detail : "Failed to send code";
+        if (msg.includes("resend_cooldown")) {
+          const match = msg.match(/(\d+)/);
+          throw new OtpCooldownError(match ? parseInt(match[1]) : 60);
+        }
+        throw new Error(msg);
+      }
+
+      return await response.json();
+    },
+    []
+  );
+
+  const loginOtpVerify = useCallback(
+    async (challengeId: string, code: string) => {
+      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINOTPVERIFY, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_id: challengeId, code }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: "OTP verification failed" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "OTP verification failed");
+      }
+
+      const data = await response.json();
+      if (data.status === "totp_required") {
+        return { totpRequired: true, challenge_id: data.challenge_id };
+      }
+
+      setIsAuthenticated(true);
+      setAdmin(data.admin ?? null);
+      return { totpRequired: false };
+    },
+    []
+  );
+
+  const loginTotp = useCallback(
+    async (challengeId: string, code: string) => {
+      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINTOTP, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge_id: challengeId, code }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: "TOTP verification failed" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "TOTP verification failed");
+      }
+
+      const data = await response.json();
+      setIsAuthenticated(true);
+      setAdmin(data.admin ?? null);
+    },
+    []
+  );
+
+  const logout = useCallback(async () => {
+    await fetch(ROUTES.ADMINAPIAUTHLOGOUT, {
+      method: "POST",
+      credentials: "include",
+    });
+    setIsAuthenticated(false);
+    setAdmin(null);
+    window.location.assign("/vega/admin/login");
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        isAuthenticated,
+        isLoading,
+        admin,
+        login,
+        loginOtpSend,
+        loginOtpVerify,
+        loginTotp,
+        logout,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
+  return context;
+}
+```
+
+```typescript
+// File: src\hooks\useApi.ts
+export async function apiGet<T = unknown>(url: string): Promise<T> {
+  const response = await fetch(url, { credentials: "include" });
+  if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
+  return response.json();
+}
+
+export async function apiPost<T = unknown>(
+  url: string,
+  body?: Record<string, unknown>
+): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) throw new Error(`POST ${url} failed: ${response.status}`);
+  return response.json();
 }
 ```
 
@@ -1168,23 +1878,56 @@ body {
 }
 ```
 
+```typescript
+// File: src\lib\routes.ts
+const API = "/api";
+
+export const ROUTES = {
+  CONTACT: `${API}/vks/api/contact`,
+
+  ADMINAPIAUTHLOGIN: `${API}/admin/api/auth/login`,
+  ADMINAPIAUTHLOGINTOTP: `${API}/admin/api/auth/login-totp`,
+  ADMINAPIAUTHLOGINOTPSEND: `${API}/admin/api/auth/login-otp-send`,
+  ADMINAPIAUTHLOGINOTPVERIFY: `${API}/admin/api/auth/login-otp-verify`,
+  ADMINAPIAUTHLOGOUT: `${API}/admin/api/auth/logout`,
+  ADMINAPIAUTHME: `${API}/admin/api/auth/me`,
+  ADMINAPISETUPREQUIRED: `${API}/admin/api/auth/setup-required`,
+  ADMINAPISETUPCREATE: `${API}/admin/api/auth/setup-create`,
+  ADMINAPIPASSWORDFORGOTVERIFY: `${API}/admin/api/auth/password/forgot-verify`,
+  ADMINAPIPASSWORDFORGOTRESET: `${API}/admin/api/auth/password/forgot-reset`,
+
+  ADMINAPISTATS: `${API}/admin/api/stats`,
+  ADMINAPIMESSAGES: `${API}/admin/api/messages`,
+  ADMINAPISETTINGS: `${API}/admin/api/settings`,
+  ADMINAPIAUDITLOGS: `${API}/admin/api/audit-logs`,
+  ADMINAPIADMINUSERS: `${API}/admin/api/admin-users`,
+  ADMINAPITOTPSETUP: `${API}/admin/api/settings/totp/setup`,
+  ADMINAPITOTPENABLE: `${API}/admin/api/settings/totp/enable`,
+  ADMINAPITOTPDISABLE: `${API}/admin/api/settings/totp/disable`,
+  ADMINAPICHANGEPASSWORD: `${API}/admin/api/settings/change-password`,
+} as const;
+```
+
 ```tsx
 // File: src\main.tsx
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import App from "@/App";
 import "@/index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <ThemeProvider>
-        <App />
-      </ThemeProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <App />
+        </ThemeProvider>
+      </AuthProvider>
     </BrowserRouter>
-  </StrictMode>,
+  </StrictMode>
 );
 ```
 
@@ -1427,6 +2170,1656 @@ export default function About() {
 ```
 
 ```tsx
+// File: src\pages\admin\AdminLayout.tsx
+import { useEffect } from "react";
+import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  LayoutDashboard,
+  Inbox,
+  Settings,
+  Users,
+  ScrollText,
+  LogOut,
+  Shield,
+} from "lucide-react";
+
+const navItems = [
+  { to: "/vega/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/vega/admin/inbox", label: "Inbox", icon: Inbox },
+  { to: "/vega/admin/settings", label: "Settings", icon: Settings },
+  { to: "/vega/admin/admin-users", label: "Admin Users", icon: Users },
+  { to: "/vega/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
+];
+
+export default function AdminLayout() {
+  const { isAuthenticated, isLoading, admin, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      navigate("/vega/admin/login", { replace: true });
+    }
+  }, [isLoading, isAuthenticated, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) return null;
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
+      <aside className="w-64 bg-card border-r flex flex-col">
+        <div className="p-6 border-b">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Shield className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-semibold text-sm">Vega Admin</h1>
+              <p className="text-xs text-muted-foreground">{admin?.username}</p>
+            </div>
+          </div>
+        </div>
+        <nav className="flex-1 p-4 space-y-1">
+          {navItems.map((item) => {
+            const active = location.pathname.startsWith(item.to);
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="p-4 border-t">
+          <button
+            onClick={() => logout()}
+            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted w-full"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
+        </div>
+      </aside>
+      <main className="flex-1 overflow-auto">
+        <div className="p-8">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\AdminUsers.tsx
+import { useEffect, useState } from "react";
+import { ROUTES } from "@/lib/routes";
+
+interface AdminUser {
+  id: string;
+  username: string;
+  email: string;
+  display_name: string;
+  role: string;
+  status: string;
+  totp_enabled: boolean;
+  last_login_at: string;
+  created_at: string;
+}
+
+export default function AdminUsers() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(ROUTES.ADMINAPIADMINUSERS, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setUsers(data.items ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Admin Users</h1>
+          <p className="text-muted-foreground text-sm">{users.length} admin accounts</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-card border overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
+        ) : (
+          <table className="w-full">
+            <thead className="border-b bg-muted/50">
+              <tr>
+                <th className="text-left p-4 text-sm font-medium">Username</th>
+                <th className="text-left p-4 text-sm font-medium">Display Name</th>
+                <th className="text-left p-4 text-sm font-medium">Role</th>
+                <th className="text-left p-4 text-sm font-medium">Status</th>
+                <th className="text-left p-4 text-sm font-medium">TOTP</th>
+                <th className="text-left p-4 text-sm font-medium">Last Login</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {users.map((u) => (
+                <tr key={u.id} className="hover:bg-muted/30">
+                  <td className="p-4 text-sm font-medium">{u.username}</td>
+                  <td className="p-4 text-sm">{u.display_name}</td>
+                  <td className="p-4 text-sm">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      u.role === "owner" ? "bg-purple-100 text-purple-700" :
+                      u.role === "admin" ? "bg-blue-100 text-blue-700" :
+                      "bg-slate-100 text-slate-700"
+                    }`}>
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="p-4 text-sm">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      u.status === "active" ? "bg-green-100 text-green-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      {u.status}
+                    </span>
+                  </td>
+                  <td className="p-4 text-sm">{u.totp_enabled ? "Yes" : "No"}</td>
+                  <td className="p-4 text-sm text-muted-foreground">
+                    {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\AuditLogs.tsx
+import { useEffect, useState } from "react";
+import { ROUTES } from "@/lib/routes";
+
+interface AuditLog {
+  id: number;
+  event: string;
+  actor_admin_id: string;
+  ip_address: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export default function AuditLogs() {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${ROUTES.ADMINAPIAUDITLOGS}?page=${page}&limit=50`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        setLogs(data.items ?? []);
+        setTotal(data.total ?? 0);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [page]);
+
+  const totalPages = Math.ceil(total / 50);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Audit Logs</h1>
+        <p className="text-muted-foreground text-sm">{total} total entries</p>
+      </div>
+
+      <div className="rounded-xl bg-card border overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
+        ) : (
+          <table className="w-full">
+            <thead className="border-b bg-muted/50">
+              <tr>
+                <th className="text-left p-4 text-sm font-medium">Event</th>
+                <th className="text-left p-4 text-sm font-medium">Actor</th>
+                <th className="text-left p-4 text-sm font-medium">IP</th>
+                <th className="text-left p-4 text-sm font-medium">Time</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {logs.map((log) => (
+                <tr key={log.id} className="hover:bg-muted/30">
+                  <td className="p-4 text-sm">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      log.event.includes("success") || log.event.includes("verified") ? "bg-green-100 text-green-700" :
+                      log.event.includes("failure") || log.event.includes("disabled") ? "bg-red-100 text-red-700" :
+                      "bg-slate-100 text-slate-700"
+                    }`}>
+                      {log.event}
+                    </span>
+                  </td>
+                  <td className="p-4 text-sm text-muted-foreground font-mono text-xs">
+                    {log.actor_admin_id?.slice(0, 8) ?? "—"}
+                  </td>
+                  <td className="p-4 text-sm text-muted-foreground">{log.ip_address ?? "—"}</td>
+                  <td className="p-4 text-sm text-muted-foreground">
+                    {new Date(log.created_at).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\Dashboard.tsx
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ROUTES } from "@/lib/routes";
+import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight } from "lucide-react";
+
+interface Stats {
+  total_messages: number;
+  new_messages: number;
+  in_progress: number;
+  resolved: number;
+}
+
+interface Message {
+  id: string;
+  reference: string;
+  sender_name: string;
+  sender_email: string;
+  subject: string;
+  status: string;
+  priority: string;
+  created_at: string;
+}
+
+export default function Dashboard() {
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [recent, setRecent] = useState<Message[]>([]);
+
+  useEffect(() => {
+    fetch(ROUTES.ADMINAPISTATS, { credentials: "include" })
+      .then((r) => r.json())
+      .then(setStats)
+      .catch(() => {});
+    fetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setRecent(data.items ?? []))
+      .catch(() => {});
+  }, []);
+
+  const cards = [
+    { label: "Total Messages", value: stats?.total_messages ?? 0, icon: MessageSquare, color: "text-blue-600" },
+    { label: "New", value: stats?.new_messages ?? 0, icon: Mail, color: "text-orange-600" },
+    { label: "In Progress", value: stats?.in_progress ?? 0, icon: Clock, color: "text-yellow-600" },
+    { label: "Resolved", value: stats?.resolved ?? 0, icon: CheckCircle, color: "text-green-600" },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-muted-foreground text-sm">Overview of your admin console</p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {cards.map((card) => (
+          <div key={card.label} className="rounded-xl bg-card border p-6">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm text-muted-foreground">{card.label}</span>
+              <card.icon className={`h-5 w-5 ${card.color}`} />
+            </div>
+            <p className="text-3xl font-bold">{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl bg-card border">
+        <div className="flex items-center justify-between p-6 border-b">
+          <h2 className="font-semibold">Recent Messages</h2>
+          <Link to="/vega/admin/inbox" className="text-sm text-primary hover:underline flex items-center gap-1">
+            View all <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+        <div className="divide-y">
+          {recent.length === 0 ? (
+            <p className="p-6 text-sm text-muted-foreground">No messages yet.</p>
+          ) : (
+            recent.map((msg) => (
+              <Link
+                key={msg.id}
+                to={`/vega/admin/messages/${msg.id}`}
+                className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{msg.sender_name || "Anonymous"}</p>
+                  <p className="text-xs text-muted-foreground truncate">{msg.subject}</p>
+                </div>
+                <div className="flex items-center gap-3 ml-4">
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    msg.status === "new" ? "bg-orange-100 text-orange-700" :
+                    msg.status === "in_progress" ? "bg-yellow-100 text-yellow-700" :
+                    "bg-green-100 text-green-700"
+                  }`}>
+                    {msg.status}
+                  </span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(msg.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\Inbox.tsx
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ROUTES } from "@/lib/routes";
+import { Search } from "lucide-react";
+
+interface Message {
+  id: string;
+  reference: string;
+  sender_name: string;
+  sender_email: string;
+  subject: string;
+  status: string;
+  priority: string;
+  channel: string;
+  created_at: string;
+}
+
+export default function Inbox() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    if (search) params.set("search", search);
+    if (statusFilter) params.set("status", statusFilter);
+    fetch(`${ROUTES.ADMINAPIMESSAGES}?${params}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        setMessages(data.items ?? []);
+        setTotal(data.total ?? 0);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [page, search, statusFilter]);
+
+  const totalPages = Math.ceil(total / 20);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Inbox</h1>
+        <p className="text-muted-foreground text-sm">{total} total messages</p>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            placeholder="Search messages..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="w-full pl-10 pr-4 py-2 border rounded-lg bg-background text-sm"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          className="px-4 py-2 border rounded-lg bg-background text-sm"
+        >
+          <option value="">All Statuses</option>
+          <option value="new">New</option>
+          <option value="in_progress">In Progress</option>
+          <option value="waiting">Waiting</option>
+          <option value="resolved">Resolved</option>
+          <option value="spam">Spam</option>
+        </select>
+      </div>
+
+      <div className="rounded-xl bg-card border overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
+        ) : messages.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">No messages found.</div>
+        ) : (
+          <div className="divide-y">
+            {messages.map((msg) => (
+              <Link
+                key={msg.id}
+                to={`/vega/admin/messages/${msg.id}`}
+                className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sm truncate">{msg.sender_name || "Anonymous"}</p>
+                    <span className="text-xs text-muted-foreground">({msg.sender_email})</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground truncate">{msg.subject}</p>
+                </div>
+                <div className="flex items-center gap-3 ml-4">
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                    msg.status === "new" ? "bg-orange-100 text-orange-700" :
+                    msg.status === "in_progress" ? "bg-yellow-100 text-yellow-700" :
+                    msg.status === "resolved" ? "bg-green-100 text-green-700" :
+                    "bg-slate-100 text-slate-700"
+                  }`}>
+                    {msg.status.replace("_", " ")}
+                  </span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${
+                    msg.priority === "urgent" ? "bg-red-100 text-red-700" :
+                    msg.priority === "high" ? "bg-orange-100 text-orange-700" :
+                    "bg-slate-100 text-slate-600"
+                  }`}>
+                    {msg.priority}
+                  </span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(msg.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\MessageDetail.tsx
+import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ROUTES } from "@/lib/routes";
+import { ArrowLeft, Send, Tag, MessageSquare } from "lucide-react";
+
+interface Note {
+  id: string;
+  body: string;
+  author_id: string;
+  created_at: string;
+}
+
+interface Tag_ {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface Message {
+  id: string;
+  reference: string;
+  sender_name: string;
+  sender_email: string;
+  sender_phone: string;
+  subject: string;
+  body: string;
+  status: string;
+  priority: string;
+  channel: string;
+  source_page: string;
+  created_at: string;
+  notes: Note[];
+  tags: Tag_[];
+}
+
+export default function MessageDetail() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [message, setMessage] = useState<Message | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [noteBody, setNoteBody] = useState("");
+  const [newTag, setNewTag] = useState("");
+  const [status, setStatus] = useState("");
+  const [priority, setPriority] = useState("");
+
+  useEffect(() => {
+    if (!id) return;
+    fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        setMessage(data);
+        setStatus(data.status);
+        setPriority(data.priority);
+      })
+      .catch(() => navigate("/vega/admin/inbox"))
+      .finally(() => setLoading(false));
+  }, [id, navigate]);
+
+  async function updateField(field: string, value: string) {
+    if (!id) return;
+    await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+    setMessage((prev) => prev ? { ...prev, [field]: value } : prev);
+  }
+
+  async function addNote(e: React.FormEvent) {
+    e.preventDefault();
+    if (!id || !noteBody.trim()) return;
+    const res = await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/notes`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: noteBody }),
+    });
+    const note = await res.json();
+    setMessage((prev) => prev ? { ...prev, notes: [...prev.notes, note] } : prev);
+    setNoteBody("");
+  }
+
+  async function addTag(e: React.FormEvent) {
+    e.preventDefault();
+    if (!id || !newTag.trim()) return;
+    await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/tags`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag_name: newTag }),
+    });
+    setNewTag("");
+    const refreshed = await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, { credentials: "include" }).then((r) => r.json());
+    setMessage(refreshed);
+  }
+
+  if (loading) return <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>;
+  if (!message) return null;
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+      <button onClick={() => navigate("/vega/admin/inbox")} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Back to inbox
+      </button>
+
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">{message.subject}</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {message.sender_name} ({message.sender_email}) — {message.reference}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <select value={status} onChange={(e) => { setStatus(e.target.value); updateField("status", e.target.value); }} className="px-3 py-1 border rounded-lg text-sm">
+            <option value="new">New</option>
+            <option value="in_progress">In Progress</option>
+            <option value="waiting">Waiting</option>
+            <option value="resolved">Resolved</option>
+            <option value="spam">Spam</option>
+          </select>
+          <select value={priority} onChange={(e) => { setPriority(e.target.value); updateField("priority", e.target.value); }} className="px-3 py-1 border rounded-lg text-sm">
+            <option value="low">Low</option>
+            <option value="normal">Normal</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-card border p-6">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.body}</p>
+        <div className="mt-4 pt-4 border-t flex gap-4 text-xs text-muted-foreground">
+          <span>Channel: {message.channel}</span>
+          <span>Received: {new Date(message.created_at).toLocaleString()}</span>
+          {message.sender_phone && <span>Phone: {message.sender_phone}</span>}
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-card border p-6">
+        <h2 className="font-semibold mb-4 flex items-center gap-2"><Tag className="h-4 w-4" /> Tags</h2>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {message.tags.length === 0 && <span className="text-xs text-muted-foreground">No tags</span>}
+          {message.tags.map((t) => (
+            <span key={t.id} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">{t.name}</span>
+          ))}
+        </div>
+        <form onSubmit={addTag} className="flex gap-2">
+          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-1 border rounded-lg text-sm" />
+          <button type="submit" className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-sm">Add</button>
+        </form>
+      </div>
+
+      <div className="rounded-xl bg-card border p-6">
+        <h2 className="font-semibold mb-4 flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Notes</h2>
+        <div className="space-y-3 mb-4">
+          {message.notes.length === 0 && <p className="text-xs text-muted-foreground">No notes yet</p>}
+          {message.notes.map((n) => (
+            <div key={n.id} className="p-3 bg-muted/50 rounded-lg">
+              <p className="text-sm">{n.body}</p>
+              <p className="text-xs text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={addNote} className="flex gap-2">
+          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-1 border rounded-lg text-sm" />
+          <button type="submit" className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-sm flex items-center gap-1">
+            <Send className="h-3 w-3" /> Add
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\Settings.tsx
+import { useEffect, useState } from "react";
+import { ROUTES } from "@/lib/routes";
+import { Shield, Lock } from "lucide-react";
+
+export default function Settings() {
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [totpSecret, setTotpSecret] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  useEffect(() => {
+    fetch(ROUTES.ADMINAPISETTINGS, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setTotpEnabled(data.totp_enabled))
+      .catch(() => {});
+  }, []);
+
+  async function startTotpSetup() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(ROUTES.ADMINAPITOTPSETUP, { credentials: "include" });
+      const data = await res.json();
+      setTotpSecret(data.secret);
+      setShowSetup(true);
+    } catch {
+      setError("Failed to load TOTP setup");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function enableTotp(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(ROUTES.ADMINAPITOTPENABLE, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: totpCode, secret: totpSecret }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Failed" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "Failed");
+      }
+      setTotpEnabled(true);
+      setShowSetup(false);
+      setMsg("TOTP enabled successfully");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function disableTotp(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(ROUTES.ADMINAPITOTPDISABLE, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ totp_code: totpCode }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Failed" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "Failed");
+      }
+      setTotpEnabled(false);
+      setShowSetup(false);
+      setMsg("TOTP disabled successfully");
+      setTotpCode("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(ROUTES.ADMINAPICHANGEPASSWORD, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Failed" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "Failed");
+      }
+      setMsg("Password changed successfully");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-8 max-w-2xl">
+      <div>
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-muted-foreground text-sm">Manage your security settings</p>
+      </div>
+
+      {msg && <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-lg text-sm">{msg}</div>}
+      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>}
+
+      <div className="rounded-xl bg-card border p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Shield className="h-5 w-5 text-primary" />
+          <h2 className="font-semibold">Two-Factor Authentication</h2>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          {totpEnabled ? "TOTP is currently enabled" : "TOTP is currently disabled"}
+        </p>
+        {!showSetup ? (
+          totpEnabled ? (
+            <div className="space-y-3">
+              <p className="text-sm">Enter your TOTP code to disable:</p>
+              <form onSubmit={disableTotp} className="flex gap-2">
+                <input
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="px-3 py-1 border rounded-lg text-sm font-mono w-32"
+                  maxLength={6}
+                />
+                <button type="submit" disabled={loading} className="px-4 py-1 bg-red-600 text-white rounded-lg text-sm">
+                  Disable
+                </button>
+              </form>
+            </div>
+          ) : (
+            <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm">
+              Enable TOTP
+            </button>
+          )
+        ) : (
+          <div className="space-y-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
+              <code className="text-sm font-mono break-all">{totpSecret}</code>
+            </div>
+            <form onSubmit={enableTotp} className="flex gap-2">
+              <input
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                className="px-3 py-1 border rounded-lg text-sm font-mono w-32"
+                maxLength={6}
+              />
+              <button type="submit" disabled={loading} className="px-4 py-1 bg-primary text-primary-foreground rounded-lg text-sm">
+                Verify & Enable
+              </button>
+            </form>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl bg-card border p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Lock className="h-5 w-5 text-primary" />
+          <h2 className="font-semibold">Change Password</h2>
+        </div>
+        <form onSubmit={changePassword} className="space-y-3">
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder="Current password"
+            className="w-full px-3 py-2 border rounded-lg text-sm"
+            required
+          />
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="New password"
+            className="w-full px-3 py-2 border rounded-lg text-sm"
+            required
+            minLength={6}
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm new password"
+            className="w-full px-3 py-2 border rounded-lg text-sm"
+            required
+          />
+          <button type="submit" disabled={loading} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm">
+            Change Password
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\Setup.tsx
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ROUTES } from "@/lib/routes";
+import { Shield } from "lucide-react";
+
+export default function Setup() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    username: "",
+    password: "",
+    confirmPassword: "",
+    email: "",
+    display_name: "",
+  });
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (form.password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(ROUTES.ADMINAPISETUPCREATE, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: form.username,
+          password: form.password,
+          email: form.email || null,
+          display_name: form.display_name || form.username,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Setup failed" }));
+        throw new Error(typeof err.detail === "string" ? err.detail : "Setup failed");
+      }
+      navigate("/vega/admin/dashboard", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Setup failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+      <div className="w-full max-w-md rounded-2xl bg-card border shadow-sm p-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-3 bg-primary/10 rounded-xl">
+            <Shield className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold">Initial Setup</h1>
+            <p className="text-sm text-muted-foreground">Create your owner account</p>
+          </div>
+        </div>
+
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Username *</label>
+            <input
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
+              required
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Display Name *</label>
+            <input
+              value={form.display_name}
+              onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Email (optional)</label>
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Password *</label>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
+              required
+              minLength={6}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Confirm Password *</label>
+            <input
+              type="password"
+              value={form.confirmPassword}
+              onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+              className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
+              required
+            />
+          </div>
+          <button type="submit" disabled={loading} className="w-full py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium">
+            {loading ? "Creating..." : "Create Owner Account"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\AdminLogin.tsx
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth, OtpCooldownError } from "@/contexts/AuthContext";
+import { ROUTES } from "@/lib/routes";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Eye,
+  EyeOff,
+  Shield,
+  AlertTriangle,
+  ArrowLeft,
+  KeyRound,
+  Lock,
+  Fingerprint,
+  Send,
+} from "lucide-react";
+
+type OtpMethod = "telegram" | "totp";
+
+function formatCountdown(s: number) {
+  const m = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+export default function AdminLoginPage() {
+  const navigate = useNavigate();
+  const { login, loginTotp, loginOtpSend, loginOtpVerify } = useAuth();
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [methods, setMethods] = useState<string[]>([]);
+  const [method, setMethod] = useState<OtpMethod>("telegram");
+  const [code, setCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpMsg, setOtpMsg] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  const [showForgotDialog, setShowForgotDialog] = useState(false);
+  const [forgotStep, setForgotStep] = useState<"verify" | "reset">("verify");
+  const [forgotChallengeId, setForgotChallengeId] = useState<string | null>(null);
+  const [forgotData, setForgotData] = useState({
+    username: "",
+    totpToken: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
+
+  useEffect(() => {
+    fetch(ROUTES.ADMINAPISETUPREQUIRED, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.required) {
+          setSetupRequired(true);
+          navigate("/vega/admin/setup", { replace: true });
+        }
+      })
+      .catch(() => {});
+  }, [navigate]);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  const useTelegram = method === "telegram" && methods.includes("telegram_otp");
+
+  function resetSecondFactor() {
+    setChallengeId(null);
+    setMethods([]);
+    setMethod("telegram");
+    setCode("");
+    setOtpSent(false);
+    setOtpMsg(null);
+    setCooldown(0);
+    setError("");
+  }
+
+  async function handleSendOtp() {
+    if (!challengeId) return;
+    setError("");
+    setSending(true);
+    setOtpMsg(null);
+    try {
+      const res = await loginOtpSend(challengeId);
+      setOtpSent(true);
+      setOtpMsg("Code sent to your Telegram. Check your chat and enter the code below.");
+      setCooldown(res.cooldown_seconds ?? 60);
+    } catch (err) {
+      if (err instanceof OtpCooldownError) {
+        setOtpSent(true);
+        setCooldown(err.cooldownSeconds);
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to send code");
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const result = await login(username, password, rememberMe);
+      if (result.status === "second_factor_required") {
+        setChallengeId(result.challenge_id);
+        const m = result.methods ?? [];
+        setMethods(m);
+        if (m.includes("telegram_otp")) {
+          setMethod("telegram");
+        } else if (m.includes("totp")) {
+          setMethod("totp");
+        }
+        if (m.includes("telegram_otp")) {
+          setTimeout(() => handleSendOtpWithChallenge(result.challenge_id), 100);
+        }
+      } else {
+        navigate("/vega/admin/dashboard", { replace: true });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSendOtpWithChallenge(cid: string) {
+    try {
+      const res = await loginOtpSend(cid);
+      setOtpSent(true);
+      setOtpMsg("Code sent to your Telegram. Check your chat and enter the code below.");
+      setCooldown(res.cooldown_seconds ?? 60);
+    } catch (err) {
+      if (err instanceof OtpCooldownError) {
+        setOtpSent(true);
+        setCooldown(err.cooldownSeconds);
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to send code");
+      }
+    }
+  }
+
+  async function handleCodeSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!challengeId) return;
+    setError("");
+    setLoading(true);
+    try {
+      if (useTelegram) {
+        const result = await loginOtpVerify(challengeId, code);
+        if (result.totpRequired && result.challenge_id) {
+          setChallengeId(result.challenge_id);
+          setMethod("totp");
+          setCode("");
+          setOtpSent(false);
+          setOtpMsg(null);
+          return;
+        }
+      } else {
+        await loginTotp(challengeId, code);
+      }
+      navigate("/vega/admin/dashboard", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      if (forgotStep === "verify") {
+        const response = await fetch(ROUTES.ADMINAPIPASSWORDFORGOTVERIFY, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: forgotData.username,
+            totp_code: forgotData.totpToken,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ detail: "Verification failed" }));
+          throw new Error(typeof err.detail === "string" ? err.detail : "Verification failed");
+        }
+        const data = await response.json();
+        setForgotChallengeId(data.challenge_id);
+        setForgotStep("reset");
+        setSuccess("TOTP verified. Enter your new password.");
+      } else {
+        if (forgotData.newPassword !== forgotData.confirmPassword) {
+          setError("Passwords do not match");
+          setLoading(false);
+          return;
+        }
+        if (forgotData.newPassword.length < 6) {
+          setError("Password must be at least 6 characters");
+          setLoading(false);
+          return;
+        }
+        const response = await fetch(ROUTES.ADMINAPIPASSWORDFORGOTRESET, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            challenge_id: forgotChallengeId,
+            new_password: forgotData.newPassword,
+          }),
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ detail: "Reset failed" }));
+          throw new Error(typeof err.detail === "string" ? err.detail : "Reset failed");
+        }
+        setSuccess("Password reset successfully! Redirecting to login...");
+        setTimeout(() => {
+          setShowForgotDialog(false);
+          setForgotStep("verify");
+          setForgotChallengeId(null);
+          setForgotData({ username: "", totpToken: "", newPassword: "", confirmPassword: "" });
+          setSuccess("");
+        }, 2000);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Operation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (setupRequired) return null;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4 auto-rows-[auto]">
+        <div className="md:col-span-1 md:row-span-2 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/10 p-8 flex flex-col items-center justify-center text-center gap-4">
+          <div className="p-4 bg-primary/15 rounded-2xl">
+            <Shield className="h-12 w-12 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Vega Admin</h1>
+            <p className="text-muted-foreground text-sm mt-1">Secure management console</p>
+          </div>
+          <div className="mt-4 space-y-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <Lock className="h-4 w-4 text-primary shrink-0" />
+              <span>End-to-end encrypted auth</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Fingerprint className="h-4 w-4 text-primary shrink-0" />
+              <span>Two-factor protection</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Shield className="h-4 w-4 text-primary shrink-0" />
+              <span>Session-based access control</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="md:col-span-2 rounded-2xl bg-card border shadow-sm p-8">
+          <div className="mb-6">
+            <h2 className="text-xl font-semibold">
+              {challengeId ? "Two-Factor Authentication" : "Sign in to your account"}
+            </h2>
+            <p className="text-muted-foreground text-sm mt-1">
+              {challengeId ? "Verify your identity to continue" : "Enter your credentials to continue"}
+            </p>
+          </div>
+
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {otpMsg && (
+            <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+              <Send className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-blue-800 dark:text-blue-200">{otpMsg}</AlertDescription>
+            </Alert>
+          )}
+
+          {!challengeId ? (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    placeholder="Enter username"
+                    value={username}
+                    onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter password"
+                      value={password}
+                      onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-2 text-sm">
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-gray-300" />
+                  <span>Remember me</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setShowForgotDialog(true); setForgotStep("verify"); setError(""); setSuccess(""); }}
+                  className="text-sm text-primary hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Please wait..." : "Login"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleCodeSubmit} className="space-y-4">
+              {methods.length > 1 && (
+                <div className="flex gap-2 p-1 bg-muted rounded-lg">
+                  {methods.includes("telegram_otp") && (
+                    <button
+                      type="button"
+                      onClick={() => { setMethod("telegram"); setCode(""); setOtpSent(false); setOtpMsg(null); }}
+                      className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                        method === "telegram" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Send className="h-4 w-4 inline-block mr-1.5" />
+                      Telegram OTP
+                    </button>
+                  )}
+                  {methods.includes("totp") && (
+                    <button
+                      type="button"
+                      onClick={() => { setMethod("totp"); setCode(""); setOtpSent(false); setOtpMsg(null); }}
+                      className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                        method === "totp" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <KeyRound className="h-4 w-4 inline-block mr-1.5" />
+                      Authenticator
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {useTelegram ? (
+                <>
+                  {!otpSent ? (
+                    <Button type="button" variant="outline" className="w-full" onClick={handleSendOtp} disabled={sending}>
+                      <Send className="h-4 w-4 mr-2" />
+                      {sending ? "Sending..." : "Send code via Telegram"}
+                    </Button>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="otp-code" className="flex items-center gap-2">
+                          <Send className="h-4 w-4" />
+                          Telegram Code
+                        </Label>
+                        <Input
+                          id="otp-code"
+                          placeholder="000000"
+                          value={code}
+                          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          required
+                          maxLength={6}
+                          pattern="\d{6}"
+                          className="font-mono text-lg tracking-widest max-w-xs text-center"
+                          autoFocus
+                        />
+                      </div>
+                      {cooldown > 0 ? (
+                        <p className="text-sm text-muted-foreground text-center">Resend available in {formatCountdown(cooldown)}</p>
+                      ) : (
+                        <Button type="button" variant="ghost" className="w-full" onClick={handleSendOtp}>
+                          <Send className="h-4 w-4 mr-2" />
+                          Resend OTP
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="totp-code" className="flex items-center gap-2">
+                    <KeyRound className="h-4 w-4" />
+                    Authenticator Code
+                  </Label>
+                  <Input
+                    id="totp-code"
+                    placeholder="000000"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    required
+                    maxLength={6}
+                    pattern="\d{6}"
+                    className="font-mono text-lg tracking-widest max-w-xs text-center"
+                    autoFocus
+                  />
+                </div>
+              )}
+
+              {!(useTelegram && !otpSent) && (
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Verifying..." : "Verify"}
+                </Button>
+              )}
+
+              <Button type="button" variant="ghost" className="w-full" onClick={resetSecondFactor}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to login
+              </Button>
+            </form>
+          )}
+        </div>
+
+        <div className="md:col-span-1 rounded-2xl bg-card border shadow-sm p-6 flex flex-col justify-center">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-sm font-medium">System Online</span>
+          </div>
+          <p className="text-xs text-muted-foreground">All services operational. Session timeout: 30 minutes.</p>
+        </div>
+      </div>
+
+      <Dialog open={showForgotDialog} onOpenChange={setShowForgotDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>
+              {forgotStep === "verify"
+                ? "Enter your username and TOTP code to verify your identity."
+                : "Create a new password for your account."}
+            </DialogDescription>
+          </DialogHeader>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {success && (
+            <Alert className="mb-4 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
+              <AlertDescription className="text-green-800 dark:text-green-200">{success}</AlertDescription>
+            </Alert>
+          )}
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-username">Username</Label>
+              <Input
+                id="forgot-username"
+                placeholder="Enter your username"
+                value={forgotData.username}
+                onChange={(e) => setForgotData({ ...forgotData, username: e.target.value })}
+                required
+                disabled={forgotStep === "reset"}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="forgot-totp" className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4" />
+                TOTP Code
+              </Label>
+              <Input
+                id="forgot-totp"
+                placeholder="6-digit code from authenticator"
+                value={forgotData.totpToken}
+                onChange={(e) => setForgotData({ ...forgotData, totpToken: e.target.value })}
+                required
+                maxLength={6}
+                pattern="\d{6}"
+                className="font-mono tracking-widest"
+                disabled={forgotStep === "reset"}
+              />
+            </div>
+            {forgotStep === "reset" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">New Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="new-password"
+                      type={showNewPassword ? "text" : "password"}
+                      placeholder="Minimum 6 characters"
+                      value={forgotData.newPassword}
+                      onChange={(e) => setForgotData({ ...forgotData, newPassword: e.target.value })}
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password">Confirm New Password</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    placeholder="Confirm your new password"
+                    value={forgotData.confirmPassword}
+                    onChange={(e) => setForgotData({ ...forgotData, confirmPassword: e.target.value })}
+                    required
+                  />
+                </div>
+              </>
+            )}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Please wait..." : forgotStep === "verify" ? "Verify TOTP" : "Reset Password"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+```
+
+```tsx
 // File: src\pages\Apps.tsx
 import { site } from "@/config/site";
 
@@ -1612,6 +4005,7 @@ export default function Apps() {
 
 ```tsx
 // File: src\pages\Contact.tsx
+import { useRef, useState } from "react";
 import { site } from "@/config/site";
 
 function PhoneIcon() {
@@ -1663,8 +4057,124 @@ function CheckIcon() {
   );
 }
 
+const ALLOWED_EXTENSIONS = [
+  "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt",
+  "png", "jpg", "jpeg", "gif", "webp",
+];
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_FILES = 5;
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function Contact() {
   const { contact, workingStyle, beforeContacting } = site;
+
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    mobile: "",
+    projectType: "Legal Research",
+    priority: "standard",
+    message: "",
+    website: "", // honeypot
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+  const [fileWarnings, setFileWarnings] = useState<string[]>([]);
+
+  const setField = (field: string, value: string) =>
+    setForm((f) => ({ ...f, [field]: value }));
+
+  const addFiles = (incoming: File[]) => {
+    const warnings: string[] = [];
+    const next: File[] = [...files];
+    for (const file of incoming) {
+      const ext = file.name.includes(".")
+        ? file.name.split(".").pop()!.toLowerCase()
+        : "";
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        warnings.push(`${file.name} — unsupported file type. Use PDF, DOC, XLS, TXT, or an image.`);
+        continue;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        warnings.push(`${file.name} — exceeds the 25MB limit.`);
+        continue;
+      }
+      if (next.some((f) => f.name === file.name && f.size === file.size)) {
+        continue;
+      }
+      if (next.length >= MAX_FILES) {
+        warnings.push(`You can attach up to ${MAX_FILES} files.`);
+        break;
+      }
+      next.push(file);
+    }
+    setFiles(next);
+    setFileWarnings(warnings);
+  };
+
+  const removeFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFileWarnings([]);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSent(false);
+    setFileWarnings([]);
+    setSubmitting(true);
+    try {
+      const body = new FormData();
+      body.append("name", form.name);
+      body.append("email", form.email);
+      body.append("mobile", form.mobile);
+      body.append("project_type", form.projectType);
+      body.append("priority", form.priority);
+      body.append("message", form.message);
+      body.append("website", form.website); // honeypot
+      for (const file of files) {
+        body.append("documents", file, file.name);
+      }
+      const res = await fetch("/api/vks/api/contact", {
+        method: "POST",
+        body,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || "Could not send your message. Please try again.");
+      }
+      const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
+      setSent(true);
+      setForm({
+        name: "",
+        email: "",
+        mobile: "",
+        projectType: "Legal Research",
+        priority: "standard",
+        message: "",
+        website: "",
+      });
+      setFiles([]);
+      setFileWarnings(skipped.length > 0 ? skipped.map((s: { filename?: string; reason?: string }) => {
+        const reason = s.reason === "too_large" ? "exceeds the 25MB limit" : "unsupported file type";
+        return `${s.filename ?? "A file"} was not delivered (${reason}).`;
+      }) : []);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send your message.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
       <h1 className="text-3xl md:text-4xl font-bold text-night-800 dark:text-cream-50 mb-4">
@@ -1681,12 +4191,14 @@ export default function Contact() {
           {/* Contact Cards */}
           <div className="grid sm:grid-cols-2 gap-4">
             <a
-              href={`tel:${contact.phone}`}
+              href={contact.whatsapp}
+              target="_blank"
+              rel="noopener noreferrer"
               className="card-hover flex items-center gap-3 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 hover:border-glow-500 transition-colors"
             >
               <PhoneIcon />
               <div>
-                <p className="text-xs text-night-800/50 dark:text-cream-100/50">Phone</p>
+                <p className="text-xs text-night-800/50 dark:text-cream-100/50">WhatsApp</p>
                 <p className="text-sm font-medium text-night-800 dark:text-cream-50">{contact.phone}</p>
               </div>
             </a>
@@ -1747,7 +4259,7 @@ export default function Contact() {
             <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
               Send a Message
             </h2>
-            <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+            <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
@@ -1755,6 +4267,9 @@ export default function Contact() {
                   </label>
                   <input
                     type="text"
+                    required
+                    value={form.name}
+                    onChange={(e) => setField("name", e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
                     placeholder="Your name"
                   />
@@ -1765,6 +4280,9 @@ export default function Contact() {
                   </label>
                   <input
                     type="email"
+                    required
+                    value={form.email}
+                    onChange={(e) => setField("email", e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
                     placeholder="you@example.com"
                   />
@@ -1774,25 +4292,30 @@ export default function Contact() {
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Mobile
+                  </label>
+                  <input
+                    type="tel"
+                    value={form.mobile}
+                    onChange={(e) => setField("mobile", e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                    placeholder="Your mobile number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
                     Project Type
                   </label>
-                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
+                  <select
+                    value={form.projectType}
+                    onChange={(e) => setField("projectType", e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
+                  >
                     <option>Legal Research</option>
                     <option>Contract Drafting</option>
                     <option>Data Analysis</option>
                     <option>Legal-Tech Integration</option>
                     <option>Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                    Budget Range
-                  </label>
-                  <select className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors">
-                    <option>Under ₹10,000</option>
-                    <option>₹10,000 - ₹50,000</option>
-                    <option>₹50,000 - ₹1,00,000</option>
-                    <option>₹1,00,000+</option>
                   </select>
                 </div>
               </div>
@@ -1803,14 +4326,77 @@ export default function Contact() {
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
-                    <input type="radio" name="priority" value="standard" defaultChecked className="accent-glow-500" />
+                    <input
+                      type="radio"
+                      name="priority"
+                      value="standard"
+                      checked={form.priority === "standard"}
+                      onChange={() => setField("priority", "standard")}
+                      className="accent-glow-500"
+                    />
                     Standard
                   </label>
                   <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
-                    <input type="radio" name="priority" value="urgent" className="accent-glow-500" />
+                    <input
+                      type="radio"
+                      name="priority"
+                      value="urgent"
+                      checked={form.priority === "urgent"}
+                      onChange={() => setField("priority", "urgent")}
+                      className="accent-glow-500"
+                    />
                     Urgent
                   </label>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                  Documents <span className="opacity-60">(optional)</span>
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={(e) => {
+                    if (e.target.files) addFiles(Array.from(e.target.files));
+                    e.target.value = "";
+                  }}
+                  className="w-full text-sm text-night-800/70 dark:text-cream-100/70 file:mr-3 file:rounded-xl file:border-0 file:bg-glow-500 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-glow-600"
+                />
+                <p className="text-xs text-night-800/40 dark:text-cream-100/40 mt-1">
+                  PDF, DOC, XLS, or images — up to 25MB each, max {MAX_FILES} files. You can add files in multiple steps.
+                </p>
+                {fileWarnings.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {fileWarnings.map((w) => (
+                      <li key={w} className="text-xs text-red-600 dark:text-red-400">
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {files.length > 0 && (
+                  <ul className="mt-2 space-y-1.5">
+                    {files.map((file, i) => (
+                      <li
+                        key={`${file.name}-${file.size}-${i}`}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-xs"
+                      >
+                        <span className="text-night-800 dark:text-cream-100 truncate flex-1">{file.name}</span>
+                        <span className="text-night-800/40 dark:text-cream-100/40">{fmtBytes(file.size)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          aria-label={`Remove ${file.name}`}
+                          className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <div>
@@ -1819,16 +4405,38 @@ export default function Contact() {
                 </label>
                 <textarea
                   rows={4}
+                  required
+                  value={form.message}
+                  onChange={(e) => setField("message", e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors resize-none"
                   placeholder="Tell me about your project..."
                 />
               </div>
 
+              {/* Honeypot — hidden from humans, bots fill it. */}
+              <input
+                type="text"
+                value={form.website}
+                onChange={(e) => setField("website", e.target.value)}
+                className="hidden"
+                tabIndex={-1}
+                autoComplete="off"
+                aria-hidden="true"
+              />
+
+              {sent && (
+                <p className="text-sm text-sage-500">
+                  Thank you — your message has been sent. I'll get back to you within 24 hours.
+                </p>
+              )}
+              {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+
               <button
                 type="submit"
-                className="btn-primary px-6 py-2.5 rounded-xl bg-glow-500 text-white font-medium text-sm hover:bg-glow-600"
+                disabled={submitting}
+                className="btn-primary px-6 py-2.5 rounded-xl bg-glow-500 text-white font-medium text-sm hover:bg-glow-600 disabled:opacity-50"
               >
-                Send Message
+                {submitting ? "Sending…" : "Send Message"}
               </button>
             </form>
           </div>
@@ -2407,7 +5015,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 export default defineConfig({
-  base: "./",
+  base: "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

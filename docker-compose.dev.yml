@@ -1,0 +1,74 @@
+services:
+  database-dev:
+    image: postgres:16-alpine
+    container_name: database-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vijaykrsha_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_DEV_PASSWORD}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:27003:5432"
+    networks:
+      - dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vijaykrsha_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  storage-dev:
+    image: minio/minio:latest
+    container_name: storage-dev
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_DEV_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_DEV_SECRET_KEY}
+    volumes:
+      - minio_dev_data:/data
+    ports:
+      - "127.0.0.1:27002:9000"
+    networks:
+      - dev-network
+
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: backend-dev
+    restart: unless-stopped
+    depends_on:
+      database-dev:
+        condition: service_healthy
+      storage-dev:
+        condition: service_started
+    ports:
+      - "26001:8000"
+    env_file:
+      - ./env/.env.dev
+    networks:
+      - dev-network
+
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: frontend-dev
+    restart: unless-stopped
+    ports:
+      - "26002:80"
+    depends_on:
+      - backend-dev
+    networks:
+      - dev-network
+
+volumes:
+  postgres_dev_data:
+  minio_dev_data:
+
+networks:
+  dev-network:
+    name: vijaykrsha-dev
