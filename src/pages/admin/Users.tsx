@@ -15,7 +15,6 @@ import {
   RefreshCw,
   Ban,
   CheckCircle,
-  Trash2,
   X,
 } from "lucide-react";
 
@@ -30,13 +29,6 @@ interface AdminUser {
   totp_enabled: boolean;
   last_login_at: string | null;
   created_at: string | null;
-}
-
-interface Role {
-  id: string;
-  name: string;
-  description: string;
-  permissions: string[];
 }
 
 const ROLE_COLORS: Record<string, string> = {
@@ -58,7 +50,6 @@ const ROLE_ICONS: Record<string, typeof Shield> = {
 export default function UsersPage() {
   const { admin: currentAdmin } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -76,7 +67,6 @@ export default function UsersPage() {
 
   useEffect(() => {
     loadUsers();
-    loadRoles();
   }, []);
 
   async function loadUsers() {
@@ -89,17 +79,6 @@ export default function UsersPage() {
     } catch {
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadRoles() {
-    try {
-      const res = await fetch(ROUTES.ADMINAPIROLES, { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setRoles(data.items || []);
-      }
-    } catch {
     }
   }
 
@@ -482,7 +461,6 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
 
 function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
   const [secret, setSecret] = useState("");
-  const [uri, setUri] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"loading" | "scan" | "done">("loading");
   const [error, setError] = useState("");
@@ -493,7 +471,6 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
       .then((r) => r.json())
       .then((data) => {
         setSecret(data.secret);
-        setUri(data.otpauth_uri);
         setStep("scan");
       })
       .catch(() => setError("Failed to load TOTP setup"));

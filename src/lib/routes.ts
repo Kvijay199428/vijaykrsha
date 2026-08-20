@@ -34,6 +34,11 @@ export const ROUTES = {
   ADMINAPIUSERTOTPDISABLE: (id: string) => `${API}/admin/api/users/${id}/totp/disable`,
   ADMINAPIUSERTOTPRESET: (id: string) => `${API}/admin/api/users/${id}/totp/reset`,
 
+  // Global TOTP (owner's own settings)
+  ADMINAPITOTPSETUP: `${API}/admin/api/settings/totp/setup`,
+  ADMINAPITOTPENABLE: `${API}/admin/api/settings/totp/enable`,
+  ADMINAPITOTPDISABLE: `${API}/admin/api/settings/totp/disable`,
+
   // Roles & permissions
   ADMINAPIROLES: `${API}/admin/api/roles`,
   ADMINAPIPERMISSIONS: `${API}/admin/api/permissions`,

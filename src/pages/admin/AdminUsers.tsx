@@ -18,7 +18,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPIADMINUSERS, { credentials: "include" })
+    fetch(ROUTES.ADMINAPIUSERS, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setUsers(data.items ?? []))
       .catch(() => {})
