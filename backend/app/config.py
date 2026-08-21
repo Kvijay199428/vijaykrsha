@@ -31,8 +31,49 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "https://vijaykrsha.online,https://vijaykrsha-website.pages.dev"
 
     OTP_PEPPER: str = "vijaykrsha-otp-pepper-change-me"
+
+    # Redis
+    REDIS_URL: str = "redis://redis:6379/0"
+
+    # Rate limiting
+    RATE_LIMIT_LOGIN_IP: int = 10
+    RATE_LIMIT_LOGIN_IP_WINDOW: int = 60
+    RATE_LIMIT_LOGIN_USER: int = 5
+    RATE_LIMIT_LOGIN_USER_WINDOW: int = 600
+    RATE_LIMIT_OTP_SEND: int = 3
+    RATE_LIMIT_OTP_SEND_WINDOW: int = 600
+    RATE_LIMIT_OTP_VERIFY: int = 5
+    RATE_LIMIT_OTP_VERIFY_WINDOW: int = 600
+    RATE_LIMIT_TOTP_VERIFY: int = 5
+    RATE_LIMIT_TOTP_VERIFY_WINDOW: int = 300
+    RATE_LIMIT_API_READ: int = 120
+    RATE_LIMIT_API_READ_WINDOW: int = 60
+    RATE_LIMIT_API_WRITE: int = 30
+    RATE_LIMIT_API_WRITE_WINDOW: int = 60
+    RATE_LIMIT_SETUP: int = 1
+    RATE_LIMIT_SETUP_WINDOW: int = 600
+
+    # Lockout
     MAX_LOGIN_ATTEMPTS: int = 5
     LOCKOUT_MINUTES: int = 15
+    LOCKOUT_SHORT_SECONDS: int = 30
+    LOCKOUT_SHORT_THRESHOLD: int = 3
+
+    # Request validation
+    MAX_JSON_BODY_KB: int = 64
+
+    # Sessions
+    MAX_CONCURRENT_SESSIONS: int = 5
+
+    # Device trust
+    MAX_TRUSTED_DEVICES: int = 5
+    TRUST_EXPIRY_DAYS: int = 90
+
+    # Risk scoring
+    RISK_THRESHOLD_SUSPICIOUS: int = 30
+    RISK_THRESHOLD_CHALLENGE: int = 50
+    RISK_THRESHOLD_BLOCK_TEMP: int = 70
+    RISK_THRESHOLD_BLOCK_PERM: int = 90
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -25,6 +25,7 @@ async def create_session(
     ip_address: str | None,
     user_agent: str | None,
     remember_me: bool = False,
+    device_id: UUID | None = None,
 ) -> str:
     token, token_hash = create_session_token()
     idle = timedelta(minutes=settings.SESSION_IDLE_MINUTES)
@@ -33,8 +34,29 @@ async def create_session(
     else:
         absolute = timedelta(hours=2)
 
+    existing = await db.execute(
+        select(AdminSession).where(
+            AdminSession.admin_id == admin_id,
+            AdminSession.revoked_at.is_(None),
+            AdminSession.expires_at > datetime.now(timezone.utc),
+        )
+    )
+    active_count = len(existing.scalars().all())
+
+    if active_count >= settings.MAX_CONCURRENT_SESSIONS:
+        oldest = await db.execute(
+            select(AdminSession).where(
+                AdminSession.admin_id == admin_id,
+                AdminSession.revoked_at.is_(None),
+            ).order_by(AdminSession.created_at.asc()).limit(1)
+        )
+        oldest_session = oldest.scalar_one_or_none()
+        if oldest_session:
+            oldest_session.revoked_at = datetime.now(timezone.utc)
+
     session = AdminSession(
         admin_id=admin_id,
+        device_id=device_id,
         session_hash=token_hash,
         ip_address=ip_address,
         user_agent=user_agent,

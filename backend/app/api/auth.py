@@ -1,19 +1,30 @@
 import structlog
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import JSONResponse
 from app.db import get_db
 from app.models import (
     AdminUser, AdminStatus, AuthChallenge, OtpPurpose, OtpDelivery,
-    AuditEvent, AuditLog,
+    AuditEvent, AuditLog, Device,
 )
 from app.config import get_settings
 from app.security.passwords import hash_password, verify_password
 from app.security.sessions import create_session, revoke_session
-from app.security.rate_limit import login_limiter
+from app.security.rate_limit import (
+    login_ip_limiter, login_user_limiter, otp_send_limiter,
+    otp_verify_limiter, totp_verify_limiter, setup_limiter,
+    RedisBlocklist,
+)
+from app.security.devices import (
+    identify_or_create_device, create_trust, verify_trust,
+    count_active_trusted_devices, log_security_event,
+)
+from app.security.risk import RiskSignals, calculate_risk
+from app.security.bot_detection import analyze_request_signals
 from app.services.otp_service import (
     create_challenge, get_challenge, set_otp_on_challenge,
     verify_otp, consume_challenge, generate_otp, can_resend_otp,
@@ -28,38 +39,64 @@ router = APIRouter(prefix="/admin/api/auth", tags=["auth"])
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=256)
     remember_me: bool = False
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        return v.strip()
 
 
 class SetupRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=8, max_length=256)
     email: str | None = None
-    display_name: str
+    display_name: str = Field(min_length=1, max_length=160)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        return v.strip()
 
 
 class LoginOtpVerifyRequest(BaseModel):
     challenge_id: str
-    code: str
+    code: str = Field(min_length=4, max_length=8)
     remember_me: bool = False
 
 
 class LoginTotpRequest(BaseModel):
     challenge_id: str
-    code: str
+    code: str = Field(min_length=6, max_length=6)
     remember_me: bool = False
+
+    @field_validator("code")
+    @classmethod
+    def validate_totp_code(cls, v: str) -> str:
+        if not v.isdigit():
+            raise ValueError("TOTP code must be 6 digits")
+        return v
 
 
 class ForgotVerifyRequest(BaseModel):
-    username: str
-    totp_code: str
+    username: str = Field(min_length=1, max_length=100)
+    totp_code: str = Field(min_length=6, max_length=6)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        return v.strip()
 
 
 class ForgotResetRequest(BaseModel):
     challenge_id: str
-    new_password: str
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+class TrustDeviceRequest(BaseModel):
+    trust: bool = True
 
 
 def _audit(db: AsyncSession, event: AuditEvent, admin_id=None, ip=None, ua=None, meta=None):
@@ -72,6 +109,14 @@ def _audit(db: AsyncSession, event: AuditEvent, admin_id=None, ip=None, ua=None,
     ))
 
 
+def _get_lockout_duration(failed_count: int) -> timedelta:
+    if failed_count >= settings.MAX_LOGIN_ATTEMPTS:
+        return timedelta(minutes=settings.LOCKOUT_MINUTES)
+    elif failed_count >= settings.LOCKOUT_SHORT_THRESHOLD:
+        return timedelta(seconds=settings.LOCKOUT_SHORT_SECONDS)
+    return timedelta(seconds=0)
+
+
 @router.get("/setup-required")
 async def setup_required(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(func.count(AdminUser.id)))
@@ -81,6 +126,12 @@ async def setup_required(db: AsyncSession = Depends(get_db)):
 
 @router.post("/setup-create")
 async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+
+    allowed, retry_after = await setup_limiter.check_and_record(ip)
+    if not allowed:
+        raise HTTPException(429, f"rate_limited_retry_{int(retry_after)}s")
+
     result = await db.execute(select(func.count(AdminUser.id)))
     count = result.scalar()
     if count > 0:
@@ -97,19 +148,32 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
     db.add(admin)
     await db.flush()
 
-    token = await create_session(
-        db, admin.id,
-        request.client.host if request.client else None,
-        request.headers.get("user-agent"),
+    device_token = request.cookies.get("__Host-device")
+    device, is_new, new_device_token = await identify_or_create_device(
+        db, device_token, admin.id,
+        ip, request.headers.get("user-agent"),
     )
 
-    response = {"status": "ok", "admin": {"id": str(admin.id), "username": admin.username}}
-    from starlette.responses import JSONResponse
-    resp = JSONResponse(content=response)
+    token = await create_session(
+        db, admin.id, ip,
+        request.headers.get("user-agent"),
+        device_id=device.id,
+    )
+
+    resp = JSONResponse(content={
+        "status": "ok",
+        "admin": {"id": str(admin.id), "username": admin.username},
+    })
     resp.set_cookie(
         "vks_session", token,
         httponly=True, secure=True, samesite="lax",
         max_age=12 * 3600,
+    )
+    resp.set_cookie(
+        "__Host-device", new_device_token,
+        httponly=True, secure=True, samesite="lax",
+        max_age=365 * 24 * 3600,
+        path="/",
     )
     return resp
 
@@ -118,18 +182,49 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
 async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
     ua = request.headers.get("user-agent", "")
+    path = request.url.path
 
-    allowed, retry_after = login_limiter.check(ip)
+    if await RedisBlocklist.is_blocked(f"ip:{ip}"):
+        raise HTTPException(429, "ip_temporarily_blocked")
+
+    allowed, retry_after = await login_ip_limiter.check_and_record(ip)
     if not allowed:
+        await log_security_event(
+            db, "rate_limited", "medium",
+            ip_address=ip, user_agent=ua, path=path, method="POST",
+            reason=f"Login IP rate limited: {ip}",
+        )
         raise HTTPException(429, f"rate_limited_retry_{int(retry_after)}s")
+
+    allowed_user, retry_user = await login_user_limiter.check_and_record(body.username)
+    if not allowed_user:
+        raise HTTPException(429, f"rate_limited_retry_{int(retry_user)}s")
 
     stmt = select(AdminUser).where(AdminUser.username == body.username)
     result = await db.execute(stmt)
     admin = result.scalar_one_or_none()
 
     if not admin or not verify_password(body.password, admin.password_hash):
-        login_limiter.record(ip)
+        if admin:
+            admin.failed_login_count += 1
+            lockout_dur = _get_lockout_duration(admin.failed_login_count)
+            if lockout_dur > timedelta(seconds=0):
+                admin.locked_until = datetime.now(timezone.utc) + lockout_dur
+                await log_security_event(
+                    db, "login_lockout", "high",
+                    admin_id=admin.id, ip_address=ip, user_agent=ua,
+                    path=path, method="POST",
+                    reason=f"Account locked after {admin.failed_login_count} failures",
+                    metadata={"failed_count": admin.failed_login_count, "lockout_seconds": int(lockout_dur.total_seconds())},
+                )
+            await db.commit()
         _audit(db, AuditEvent.login_failure, admin_id=admin.id if admin else None, ip=ip, ua=ua)
+        await log_security_event(
+            db, "login_failure", "medium",
+            admin_id=admin.id if admin else None,
+            ip_address=ip, user_agent=ua, path=path, method="POST",
+            reason=f"Failed login for {body.username}",
+        )
         raise HTTPException(401, "invalid_credentials")
 
     if admin.status != AdminStatus.active:
@@ -137,7 +232,25 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
 
     now = datetime.now(timezone.utc)
     if admin.locked_until and admin.locked_until > now:
-        raise HTTPException(423, "account_locked")
+        remaining = int((admin.locked_until - now).total_seconds())
+        await log_security_event(
+            db, "login_lockout", "high",
+            admin_id=admin.id, ip_address=ip, user_agent=ua,
+            path=path, method="POST",
+            reason="Login attempt on locked account",
+            metadata={"remaining_seconds": remaining},
+        )
+        raise HTTPException(423, f"account_locked_retry_{remaining}s")
+
+    admin.failed_login_count = 0
+    admin.locked_until = None
+    await db.commit()
+
+    device_token = request.cookies.get("__Host-device")
+    device, is_new, new_device_token = await identify_or_create_device(
+        db, device_token, admin.id,
+        ip, ua,
+    )
 
     challenge = await create_challenge(db, admin.id)
     telegram_otp = settings.TELEGRAM_OTP_ENABLED and admin.telegram_chat_id
@@ -154,11 +267,15 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             await set_otp_on_challenge(db, challenge.id, otp_code, OtpDelivery.telegram)
 
     _audit(db, AuditEvent.login_success, admin_id=admin.id, ip=ip, ua=ua)
-    admin.last_login_at = now
-    admin.failed_login_count = 0
-    await db.commit()
+    await log_security_event(
+        db, "login_success", "low",
+        admin_id=admin.id, device_id=device.id,
+        ip_address=ip, user_agent=ua, path=path, method="POST",
+        reason="Password verified, awaiting second factor",
+    )
 
-    login_limiter.record(ip)
+    admin.last_login_at = now
+    await db.commit()
 
     return {
         "status": "second_factor_required",
@@ -174,6 +291,12 @@ async def login_otp_send(request: Request, db: AsyncSession = Depends(get_db)):
     challenge_id = body.get("challenge_id")
     if not challenge_id:
         raise HTTPException(400, "challenge_id_required")
+
+    ip = request.client.host if request.client else "unknown"
+
+    allowed, retry_after = await otp_send_limiter.check_and_record(f"otp:{challenge_id}")
+    if not allowed:
+        raise HTTPException(429, f"resend_cooldown_{int(retry_after)}s")
 
     challenge = await get_challenge(db, UUID(challenge_id))
     if not challenge:
@@ -193,7 +316,7 @@ async def login_otp_send(request: Request, db: AsyncSession = Depends(get_db)):
         raise HTTPException(502, "telegram_send_failed")
 
     await set_otp_on_challenge(db, challenge.id, otp_code, OtpDelivery.telegram)
-    _audit(db, AuditEvent.otp_sent, admin_id=admin.id, ip=request.client.host if request.client else None)
+    _audit(db, AuditEvent.otp_sent, admin_id=admin.id, ip=ip)
 
     return {"status": "sent", "cooldown_seconds": settings.TELEGRAM_OTP_RESEND_SECONDS}
 
@@ -204,24 +327,44 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
     if not challenge:
         raise HTTPException(400, "invalid_challenge")
 
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")
+
+    allowed, retry_after = await otp_verify_limiter.check_and_record(f"otp_verify:{body.challenge_id}")
+    if not allowed:
+        raise HTTPException(429, f"verify_cooldown_{int(retry_after)}s")
+
     valid = await verify_otp(db, challenge.id, body.code)
     if not valid:
+        await log_security_event(
+            db, "otp_failure", "medium",
+            admin_id=challenge.admin_id, ip_address=ip, user_agent=ua,
+            reason="Invalid OTP code",
+        )
         raise HTTPException(401, "invalid_otp")
 
     admin = (await db.execute(select(AdminUser).where(AdminUser.id == challenge.admin_id))).scalar_one_or_none()
+
+    device_token = request.cookies.get("__Host-device")
+    device, is_new, new_device_token = await identify_or_create_device(
+        db, device_token, admin.id, ip, ua,
+    )
+
     if admin.totp_enabled:
         return {"status": "totp_required", "challenge_id": str(challenge.id)}
 
     await consume_challenge(db, challenge.id)
     token = await create_session(
-        db, admin.id,
-        request.client.host if request.client else None,
-        request.headers.get("user-agent"),
-        body.remember_me,
+        db, admin.id, ip, ua, body.remember_me, device_id=device.id,
     )
-    _audit(db, AuditEvent.otp_verified, admin_id=admin.id, ip=request.client.host if request.client else None)
+    _audit(db, AuditEvent.otp_verified, admin_id=admin.id, ip=ip)
+    await log_security_event(
+        db, "session_created", "low",
+        admin_id=admin.id, device_id=device.id,
+        ip_address=ip, user_agent=ua,
+        reason="Session created after OTP verification",
+    )
 
-    from starlette.responses import JSONResponse
     resp = JSONResponse(content={
         "status": "ok",
         "admin": {"id": str(admin.id), "username": admin.username, "role": admin.role},
@@ -230,6 +373,12 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
         "vks_session", token,
         httponly=True, secure=True, samesite="lax",
         max_age=12 * 3600 if body.remember_me else 2 * 3600,
+    )
+    resp.set_cookie(
+        "__Host-device", new_device_token,
+        httponly=True, secure=True, samesite="lax",
+        max_age=365 * 24 * 3600,
+        path="/",
     )
     return resp
 
@@ -242,6 +391,13 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
     if not challenge.otp_verified_at:
         raise HTTPException(400, "otp_not_verified")
 
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")
+
+    allowed, retry_after = await totp_verify_limiter.check_and_record(f"totp:{challenge.admin_id}")
+    if not allowed:
+        raise HTTPException(429, f"verify_cooldown_{int(retry_after)}s")
+
     admin = (await db.execute(select(AdminUser).where(AdminUser.id == challenge.admin_id))).scalar_one_or_none()
     if not admin or not admin.totp_enabled or not admin.totp_secret_ciphertext:
         raise HTTPException(400, "totp_not_enabled")
@@ -251,18 +407,30 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
     if not verify_totp(secret, body.code):
         challenge.totp_attempts += 1
         await db.commit()
+        await log_security_event(
+            db, "totp_failure", "medium",
+            admin_id=admin.id, ip_address=ip, user_agent=ua,
+            reason="Invalid TOTP code",
+        )
         raise HTTPException(401, "invalid_totp")
+
+    device_token = request.cookies.get("__Host-device")
+    device, is_new, new_device_token = await identify_or_create_device(
+        db, device_token, admin.id, ip, ua,
+    )
 
     await consume_challenge(db, challenge.id)
     token = await create_session(
-        db, admin.id,
-        request.client.host if request.client else None,
-        request.headers.get("user-agent"),
-        body.remember_me,
+        db, admin.id, ip, ua, body.remember_me, device_id=device.id,
     )
-    _audit(db, AuditEvent.totp_verified, admin_id=admin.id, ip=request.client.host if request.client else None)
+    _audit(db, AuditEvent.totp_verified, admin_id=admin.id, ip=ip)
+    await log_security_event(
+        db, "session_created", "low",
+        admin_id=admin.id, device_id=device.id,
+        ip_address=ip, user_agent=ua,
+        reason="Session created after TOTP verification",
+    )
 
-    from starlette.responses import JSONResponse
     resp = JSONResponse(content={
         "status": "ok",
         "admin": {"id": str(admin.id), "username": admin.username, "role": admin.role},
@@ -272,7 +440,61 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
         httponly=True, secure=True, samesite="lax",
         max_age=12 * 3600 if body.remember_me else 2 * 3600,
     )
+    resp.set_cookie(
+        "__Host-device", new_device_token,
+        httponly=True, secure=True, samesite="lax",
+        max_age=365 * 24 * 3600,
+        path="/",
+    )
     return resp
+
+
+@router.post("/trust-device")
+async def trust_device_endpoint(
+    body: TrustDeviceRequest,
+    request: Request,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")
+
+    device_token = request.cookies.get("__Host-device")
+    if not device_token:
+        raise HTTPException(400, "no_device_cookie")
+
+    from app.security.devices import get_device_by_token
+    device = await get_device_by_token(db, device_token)
+    if not device or device.admin_id != admin.id:
+        raise HTTPException(404, "device_not_found")
+
+    if body.trust:
+        count = await count_active_trusted_devices(db, admin.id)
+        if count >= settings.MAX_TRUSTED_DEVICES:
+            raise HTTPException(400, "max_trusted_devices_reached")
+
+        trust_secret, trust = await create_trust(db, device.id, admin.id, ip, ua)
+        await log_security_event(
+            db, "device_trusted", "low",
+            admin_id=admin.id, device_id=device.id,
+            ip_address=ip, user_agent=ua,
+            reason="Device trusted by user",
+        )
+
+        resp = JSONResponse(content={"status": "trusted", "device_id": str(device.id)})
+        resp.set_cookie(
+            "__Host-trusted-device", trust_secret,
+            httponly=True, secure=True, samesite="lax",
+            max_age=settings.TRUST_EXPIRY_DAYS * 24 * 3600,
+            path="/",
+        )
+        return resp
+    else:
+        from app.security.devices import revoke_all_trust_for_device
+        await revoke_all_trust_for_device(db, device.id)
+        resp = JSONResponse(content={"status": "trust_removed"})
+        resp.delete_cookie("__Host-trusted-device", path="/")
+        return resp
 
 
 @router.get("/me")
@@ -290,18 +512,25 @@ async def get_me(admin: AdminUser = Depends(get_current_admin)):
 
 @router.post("/logout")
 async def logout(request: Request, db: AsyncSession = Depends(get_db)):
-    from starlette.responses import JSONResponse
     token = request.cookies.get("vks_session")
+    ip = request.client.host if request.client else "unknown"
+
     if token:
         await revoke_session(db, token)
-        _audit(db, AuditEvent.logout, ip=request.client.host if request.client else None)
+        _audit(db, AuditEvent.logout, ip=ip)
+        await log_security_event(
+            db, "session_revoked", "low",
+            ip_address=ip, reason="User logout",
+        )
     resp = JSONResponse(content={"status": "ok"})
     resp.delete_cookie("vks_session")
+    resp.delete_cookie("__Host-trusted-device", path="/")
     return resp
 
 
 @router.post("/password/forgot-verify")
-async def forgot_verify(body: ForgotVerifyRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_verify(body: ForgotVerifyRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
     stmt = select(AdminUser).where(AdminUser.username == body.username)
     admin = (await db.execute(stmt)).scalar_one_or_none()
     if not admin:
@@ -319,7 +548,8 @@ async def forgot_verify(body: ForgotVerifyRequest, db: AsyncSession = Depends(ge
 
 
 @router.post("/password/forgot-reset")
-async def forgot_reset(body: ForgotResetRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_reset(body: ForgotResetRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
     challenge = await get_challenge(db, UUID(body.challenge_id))
     if not challenge or challenge.otp_purpose != OtpPurpose.password_reset:
         raise HTTPException(400, "invalid_challenge")
@@ -332,5 +562,8 @@ async def forgot_reset(body: ForgotResetRequest, db: AsyncSession = Depends(get_
     admin.password_changed_at = datetime.now(timezone.utc)
     await consume_challenge(db, challenge.id)
     _audit(db, AuditEvent.password_changed, admin_id=admin.id)
+
+    from app.security.sessions import revoke_all_sessions
+    await revoke_all_sessions(db, admin.id)
 
     return {"status": "ok"}

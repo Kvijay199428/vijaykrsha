@@ -1,7 +1,7 @@
 import structlog
 import secrets
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,7 @@ from app.models import (
     ContactMessage, WebsiteUser, MessageChannel, MessageStatus,
     MessagePriority,
 )
-from app.security.rate_limit import otp_limiter
+from app.security.rate_limit import contact_limiter
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/vks/api/contact", tags=["public"])
@@ -39,12 +39,9 @@ async def submit_contact(body: ContactRequest, request: Request, db: AsyncSessio
         return {"status": "accepted"}
 
     ip = request.client.host if request.client else "unknown"
-    allowed, wait = otp_limiter.check(f"contact:{ip}")
+    allowed, wait = await contact_limiter.check_and_record(f"contact:{ip}")
     if not allowed:
-        from fastapi import HTTPException
         raise HTTPException(429, "rate_limited")
-
-    otp_limiter.record(f"contact:{ip}")
 
     user = None
     if body.email:

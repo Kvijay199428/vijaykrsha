@@ -17,6 +17,8 @@ dependencies = [
     "httpx",
     "python-multipart",
     "structlog",
+    "redis[hiredis]>=5.0.0",
+    "user-agents",
 ]
 
 [project.optional-dependencies]

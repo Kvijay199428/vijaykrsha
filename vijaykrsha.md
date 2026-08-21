@@ -403,7 +403,7 @@ server {
 
 ```tsx
 // File: src\App.tsx
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import Layout from "@/components/Layout";
 import Home from "@/pages/Home";
 import About from "@/pages/About";
@@ -414,28 +414,40 @@ import Contact from "@/pages/Contact";
 import NotFound from "@/pages/NotFound";
 import AdminLogin from "@/pages/AdminLogin";
 import Setup from "@/pages/admin/Setup";
+import ProtectedRoute from "@/components/admin/ProtectedRoute";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Dashboard from "@/pages/admin/Dashboard";
 import Inbox from "@/pages/admin/Inbox";
 import MessageDetail from "@/pages/admin/MessageDetail";
 import Settings from "@/pages/admin/Settings";
-import AdminUsersPage from "@/pages/admin/AdminUsers";
+import UsersPage from "@/pages/admin/Users";
 import AuditLogs from "@/pages/admin/AuditLogs";
 
 export default function App() {
   return (
     <Routes>
+      {/* Public admin routes */}
       <Route path="/vega/admin/login" element={<AdminLogin />} />
       <Route path="/vega/admin/setup" element={<Setup />} />
-      <Route path="/vega/admin" element={<AdminLayout />}>
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="inbox" element={<Inbox />} />
-        <Route path="messages/:id" element={<MessageDetail />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="admin-users" element={<AdminUsersPage />} />
-        <Route path="audit-logs" element={<AuditLogs />} />
-        <Route index element={<Dashboard />} />
+
+      {/* Protected admin routes */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/vega/admin" element={<AdminLayout />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="inbox" element={<Inbox />} />
+          <Route path="messages/:id" element={<MessageDetail />} />
+          <Route path="settings" element={<Settings />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route
+            path="admin-users"
+            element={<Navigate to="/vega/admin/users" replace />}
+          />
+          <Route path="audit-logs" element={<AuditLogs />} />
+        </Route>
       </Route>
+
+      {/* Public site routes */}
       <Route
         path="*"
         element={
@@ -454,6 +466,40 @@ export default function App() {
       />
     </Routes>
   );
+}
+```
+
+```tsx
+// File: src\components\admin\ProtectedRoute.tsx
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
+
+export default function ProtectedRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Checking session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Navigate
+        to="/vega/admin/login"
+        replace
+        state={{ from: location.pathname }}
+      />
+    );
+  }
+
+  return <Outlet />;
 }
 ```
 
@@ -794,15 +840,15 @@ interface AlertProps extends HTMLAttributes<HTMLDivElement> {
 const Alert = forwardRef<HTMLDivElement, AlertProps>(
   ({ className = "", variant = "default", ...props }, ref) => {
     const variants: Record<string, string> = {
-      default: "bg-background text-foreground border",
+      default: "neu-flat text-foreground border-0",
       destructive:
-        "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+        "bg-destructive/10 text-destructive border-destructive/20 rounded-xl",
     };
     return (
       <div
         ref={ref}
         role="alert"
-        className={`relative w-full rounded-lg border p-4 ${variants[variant]} ${className}`}
+        className={`relative w-full rounded-xl p-4 ${variants[variant]} ${className}`}
         {...props}
       />
     );
@@ -831,14 +877,16 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className = "", variant = "default", disabled, ...props }, ref) => {
     const base =
-      "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none h-10 px-4 py-2";
+      "inline-flex items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none h-10 px-4 py-2 cursor-pointer";
     const variants: Record<string, string> = {
-      default: "bg-primary text-primary-foreground hover:bg-primary/90",
+      default:
+        "neu-btn text-primary-foreground font-semibold shadow-none border-0",
       destructive:
-        "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        "bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-xl",
       outline:
-        "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-      ghost: "hover:bg-accent hover:text-accent-foreground",
+        "neu-btn text-foreground border-0",
+      ghost:
+        "bg-transparent hover:bg-muted/50 text-muted-foreground hover:text-foreground rounded-xl",
     };
 
     return (
@@ -864,7 +912,7 @@ const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className = "", ...props }, ref) => (
     <div
       ref={ref}
-      className={`rounded-lg border bg-card text-card-foreground shadow-sm ${className}`}
+      className={`neu-flat text-foreground ${className}`}
       {...props}
     />
   )
@@ -929,7 +977,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div
-        className="fixed inset-0 bg-black/80"
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm"
         onClick={() => onOpenChange(false)}
       />
       <div ref={ref} className="relative z-50">{children}</div>
@@ -941,7 +989,7 @@ const DialogContent = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>
   ({ className = "", ...props }, ref) => (
     <div
       ref={ref}
-      className={`fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg ${className}`}
+      className={`fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg neu-convex p-6 ${className}`}
       {...props}
     />
   )
@@ -979,7 +1027,7 @@ const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>
     return (
       <input
         ref={ref}
-        className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+        className={`flex h-10 w-full rounded-xl neu-concave border-0 bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
         {...props}
       />
     );
@@ -1042,7 +1090,7 @@ function Tabs({ defaultValue, children, className = "" }: TabsProps) {
 function TabsList({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={`inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground ${className}`}
+      className={`inline-flex h-10 items-center justify-center rounded-xl neu-concave p-1 text-muted-foreground ${className}`}
     >
       {children}
     </div>
@@ -1062,10 +1110,10 @@ function TabsTrigger({
   const isActive = ctx.value === value;
   return (
     <button
-      className={`inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+      className={`inline-flex items-center justify-center whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
         isActive
-          ? "bg-background text-foreground shadow-sm"
-          : "hover:text-foreground"
+          ? "neu-btn text-foreground font-semibold"
+          : "text-muted-foreground hover:text-foreground"
       } ${className}`}
       onClick={() => ctx.onValueChange(value)}
     >
@@ -1087,7 +1135,7 @@ function TabsContent({
   if (ctx.value !== value) return null;
   return (
     <div
-      className={`mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${className}`}
+      className={`mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${className}`}
     >
       {children}
     </div>
@@ -1851,6 +1899,7 @@ export default function useSpriteAnimation(
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+  /* ── Public site palette (unchanged) ── */
   --color-cream-50: #fdfbf7;
   --color-cream-100: #f7f3eb;
   --color-cream-200: #ede7d9;
@@ -1870,6 +1919,41 @@ export default function useSpriteAnimation(
 
   --color-mist-500: #6b8299;
   --color-mist-400: #8ba3b8;
+
+  /* ── Neumorphism admin palette ── */
+  --color-background: #E8E8E8;
+  --color-foreground: #2D3436;
+  --color-card: #E8E8E8;
+  --color-card-foreground: #2D3436;
+  --color-primary: #7C3AED;
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary: #8B5CF6;
+  --color-secondary-foreground: #FFFFFF;
+  --color-muted: #F5E0E8;
+  --color-muted-foreground: #636E72;
+  --color-accent: #059669;
+  --color-accent-foreground: #FFFFFF;
+  --color-destructive: #DC2626;
+  --color-destructive-foreground: #FFFFFF;
+  --color-border: #D0D0D0;
+  --color-input: #E8E8E8;
+  --color-ring: #7C3AED;
+
+  /* ── Neumorphism shadow sources ── */
+  --color-neu-light: #FFFFFF;
+  --color-neu-dark: #A3A3A3;
+
+  /* ── Dark mode neumorphism ── */
+  --color-dark-background: #2D2D2D;
+  --color-dark-foreground: #E0E0E0;
+  --color-dark-card: #2D2D2D;
+  --color-dark-card-foreground: #E0E0E0;
+  --color-dark-muted: #3A3A3A;
+  --color-dark-muted-foreground: #A0A0A0;
+  --color-dark-border: #404040;
+  --color-dark-input: #2D2D2D;
+  --color-dark-neu-light: #3A3A3A;
+  --color-dark-neu-dark: #202020;
 }
 
 html {
@@ -1878,6 +1962,207 @@ html {
 
 body {
   @apply bg-cream-50 text-night-800 dark:bg-night-900 dark:text-cream-100 transition-colors duration-300;
+}
+
+/* =========================================================
+   ADMIN CONSOLE THEME
+   Scopes admin colors separately from the public site.
+   ========================================================= */
+
+.admin-theme {
+  --admin-background: #e8e8e8;
+  --admin-foreground: #2D3436;
+  --admin-card: #e8e8e8;
+  --admin-card-foreground: #2D3436;
+  --admin-muted: #F5E0E8;
+  --admin-muted-foreground: #636E72;
+  --admin-border: #D0D0D0;
+  --admin-input: #e8e8e8;
+
+  color: var(--admin-foreground);
+  background: var(--admin-background);
+}
+
+.dark .admin-theme {
+  --admin-background: #2D2D2D;
+  --admin-foreground: #f1f5f9;
+  --admin-card: #2D2D2D;
+  --admin-card-foreground: #f1f5f9;
+  --admin-muted: #3A3A3A;
+  --admin-muted-foreground: #cbd5e1;
+  --admin-border: #484848;
+  --admin-input: #2D2D2D;
+
+  color: var(--admin-foreground);
+  background: var(--admin-background);
+}
+
+/* Map admin-theme overrides onto Tailwind semantic tokens */
+.admin-theme {
+  --color-background: #e8e8e8;
+  --color-foreground: #2D3436;
+  --color-card: #e8e8e8;
+  --color-card-foreground: #2D3436;
+  --color-muted: #F5E0E8;
+  --color-muted-foreground: #636E72;
+  --color-border: #D0D0D0;
+  --color-input: #e8e8e8;
+  --color-neu-light: #FFFFFF;
+  --color-neu-dark: #A3A3A3;
+}
+
+.dark .admin-theme {
+  --color-background: #2D2D2D;
+  --color-foreground: #f1f5f9;
+  --color-card: #2D2D2D;
+  --color-card-foreground: #f1f5f9;
+  --color-muted: #3A3A3A;
+  --color-muted-foreground: #cbd5e1;
+  --color-border: #484848;
+  --color-input: #2D2D2D;
+  --color-neu-light: #3A3A3A;
+  --color-neu-dark: #202020;
+}
+
+/* Explicit text visibility inside admin scope */
+.admin-theme .text-foreground {
+  color: var(--color-foreground) !important;
+}
+.admin-theme .text-card-foreground {
+  color: var(--color-card-foreground) !important;
+}
+.admin-theme .text-muted-foreground {
+  color: var(--color-muted-foreground) !important;
+}
+
+/* Inputs / selects / textareas inside admin */
+.admin-theme input,
+.admin-theme textarea,
+.admin-theme select {
+  color: var(--color-foreground);
+}
+.admin-theme input::placeholder,
+.admin-theme textarea::placeholder {
+  color: var(--color-muted-foreground);
+  opacity: 0.9;
+}
+.admin-theme select option {
+  color: #2D3436;
+  background: #ffffff;
+}
+.dark .admin-theme select option {
+  color: #f1f5f9;
+  background: #2D2D2D;
+}
+
+/* Disabled controls */
+.admin-theme button:disabled,
+.admin-theme input:disabled,
+.admin-theme select:disabled,
+.admin-theme textarea:disabled {
+  opacity: 0.55;
+}
+
+/* ── Neumorphism Utilities ─────────────────────── */
+
+.neu-flat {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  border-radius: 14px;
+  box-shadow:
+    -5px -5px 15px var(--color-neu-light),
+    5px 5px 15px var(--color-neu-dark);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dark .neu-flat {
+  background: var(--color-dark-background);
+  box-shadow:
+    -5px -5px 15px var(--color-dark-neu-light),
+    5px 5px 15px var(--color-dark-neu-dark);
+}
+
+.neu-convex {
+  background: linear-gradient(145deg, #f0f0f0, #d4d4d4);
+  border-radius: 14px;
+  box-shadow:
+    -5px -5px 15px var(--color-neu-light),
+    5px 5px 15px var(--color-neu-dark);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dark .neu-convex {
+  background: linear-gradient(145deg, #333, #272727);
+  box-shadow:
+    -5px -5px 15px var(--color-dark-neu-light),
+    5px 5px 15px var(--color-dark-neu-dark);
+}
+
+.neu-concave {
+  background: linear-gradient(145deg, #d4d4d4, #f0f0f0);
+  border-radius: 14px;
+  box-shadow:
+    inset -3px -3px 7px var(--color-neu-light),
+    inset 3px 3px 7px var(--color-neu-dark);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.dark .neu-concave {
+  background: linear-gradient(145deg, #272727, #333);
+  box-shadow:
+    inset -3px -3px 7px var(--color-dark-neu-light),
+    inset 3px 3px 7px var(--color-dark-neu-dark);
+}
+
+.neu-pressed {
+  background: var(--color-background);
+  border-radius: 14px;
+  box-shadow:
+    inset -3px -3px 7px var(--color-neu-light),
+    inset 3px 3px 7px var(--color-neu-dark);
+  transition: box-shadow 0.15s ease;
+}
+.dark .neu-pressed {
+  background: var(--color-dark-background);
+  box-shadow:
+    inset -3px -3px 7px var(--color-dark-neu-light),
+    inset 3px 3px 7px var(--color-dark-neu-dark);
+}
+
+.neu-btn {
+  background: linear-gradient(145deg, #f0f0f0, #d4d4d4);
+  border-radius: 12px;
+  box-shadow:
+    -4px -4px 10px var(--color-neu-light),
+    4px 4px 10px var(--color-neu-dark);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  user-select: none;
+}
+.neu-btn:hover {
+  box-shadow:
+    -6px -6px 14px var(--color-neu-light),
+    6px 6px 14px var(--color-neu-dark);
+}
+.neu-btn:active {
+  background: linear-gradient(145deg, #d4d4d4, #f0f0f0);
+  box-shadow:
+    inset -3px -3px 7px var(--color-neu-light),
+    inset 3px 3px 7px var(--color-neu-dark);
+}
+.dark .neu-btn {
+  background: linear-gradient(145deg, #333, #272727);
+  box-shadow:
+    -4px -4px 10px var(--color-dark-neu-light),
+    4px 4px 10px var(--color-dark-neu-dark);
+}
+.dark .neu-btn:hover {
+  box-shadow:
+    -6px -6px 14px var(--color-dark-neu-light),
+    6px 6px 14px var(--color-dark-neu-dark);
+}
+.dark .neu-btn:active {
+  background: linear-gradient(145deg, #272727, #333);
+  box-shadow:
+    inset -3px -3px 7px var(--color-dark-neu-light),
+    inset 3px 3px 7px var(--color-dark-neu-dark);
 }
 
 /* ── Typing Animation ─────────────────────────────── */
@@ -1906,7 +2191,7 @@ body {
   animation: typing-loop 4s ease-in-out infinite, typing-glow 4s ease-in-out infinite;
 }
 
-/* ── Card & Button Interactions ───────────────────── */
+/* ── Card & Button Interactions (Public) ──────────── */
 
 .card-hover {
   transition: box-shadow 0.2s ease, transform 0.2s ease;
@@ -2024,13 +2309,15 @@ body {
   .card-hover:hover,
   .btn-primary:hover,
   .btn-outline:hover,
-  .nav-link:hover {
+  .nav-link:hover,
+  .neu-btn:hover {
     transform: none;
-    box-shadow: none;
+    box-shadow: inherit;
   }
   .btn-primary:active,
   .btn-outline:active,
-  .nav-link:active {
+  .nav-link:active,
+  .neu-btn:active {
     transform: none;
   }
   .back-to-top {
@@ -2041,6 +2328,26 @@ body {
   .animated-logo canvas {
     display: none;
   }
+}
+```
+
+```typescript
+// File: src\lib\adminApi.ts
+export async function apiFetch(
+  url: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const response = await fetch(url, {
+    ...options,
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
+    window.location.assign("/vega/admin/login");
+    throw new Error("SESSION_EXPIRED");
+  }
+
+  return response;
 }
 ```
 
@@ -2066,11 +2373,30 @@ export const ROUTES = {
   ADMINAPIMESSAGES: `${API}/admin/api/messages`,
   ADMINAPISETTINGS: `${API}/admin/api/settings`,
   ADMINAPIAUDITLOGS: `${API}/admin/api/audit-logs`,
-  ADMINAPIADMINUSERS: `${API}/admin/api/admin-users`,
+  ADMINAPICHANGEPASSWORD: `${API}/admin/api/settings/change-password`,
+
+  // User management
+  ADMINAPIUSERS: `${API}/admin/api/users`,
+  ADMINAPIUSERSBYID: (id: string) => `${API}/admin/api/users/${id}`,
+  ADMINAPIUSERDISABLE: (id: string) => `${API}/admin/api/users/${id}/disable`,
+  ADMINAPIUSERENABLE: (id: string) => `${API}/admin/api/users/${id}/enable`,
+  ADMINAPIUSERREVOKE: (id: string) => `${API}/admin/api/users/${id}/revoke-sessions`,
+  ADMINAPIUSERRESETPW: (id: string) => `${API}/admin/api/users/${id}/reset-password`,
+
+  // Per-user TOTP
+  ADMINAPIUSERTOTPSETUP: (id: string) => `${API}/admin/api/users/${id}/totp/setup`,
+  ADMINAPIUSERTOTPENABLE: (id: string) => `${API}/admin/api/users/${id}/totp/enable`,
+  ADMINAPIUSERTOTPDISABLE: (id: string) => `${API}/admin/api/users/${id}/totp/disable`,
+  ADMINAPIUSERTOTPRESET: (id: string) => `${API}/admin/api/users/${id}/totp/reset`,
+
+  // Global TOTP (owner's own settings)
   ADMINAPITOTPSETUP: `${API}/admin/api/settings/totp/setup`,
   ADMINAPITOTPENABLE: `${API}/admin/api/settings/totp/enable`,
   ADMINAPITOTPDISABLE: `${API}/admin/api/settings/totp/disable`,
-  ADMINAPICHANGEPASSWORD: `${API}/admin/api/settings/change-password`,
+
+  // Roles & permissions
+  ADMINAPIROLES: `${API}/admin/api/roles`,
+  ADMINAPIPERMISSIONS: `${API}/admin/api/permissions`,
 } as const;
 ```
 
@@ -2337,9 +2663,9 @@ export default function About() {
 
 ```tsx
 // File: src\pages\admin\AdminLayout.tsx
-import { useEffect } from "react";
-import { Outlet, useNavigate, Link, useLocation } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useState, useEffect } from "react";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   LayoutDashboard,
   Inbox,
@@ -2347,6 +2673,8 @@ import {
   Users,
   ScrollText,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Shield,
 } from "lucide-react";
 
@@ -2354,76 +2682,129 @@ const navItems = [
   { to: "/vega/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/vega/admin/inbox", label: "Inbox", icon: Inbox },
   { to: "/vega/admin/settings", label: "Settings", icon: Settings },
-  { to: "/vega/admin/admin-users", label: "Admin Users", icon: Users },
+  { to: "/vega/admin/users", label: "Users", icon: Users },
   { to: "/vega/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
 ];
 
+const MOBILE_BREAKPOINT = 768;
+
 export default function AdminLayout() {
-  const { isAuthenticated, isLoading, admin, logout } = useAuth();
+  const { admin, logout } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [collapsed, setCollapsed] = useState(() => {
+    const saved = localStorage.getItem("admin-sidebar-collapsed");
+    if (saved !== null) return saved === "true";
+    return window.innerWidth < MOBILE_BREAKPOINT;
+  });
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      navigate("/vega/admin/login", { replace: true });
-    }
-  }, [isLoading, isAuthenticated, navigate]);
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    const handler = (e: MediaQueryListEvent) => {
+      setCollapsed(e.matches);
+      localStorage.setItem("admin-sidebar-collapsed", String(e.matches));
+    };
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
+  function toggleSidebar() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("admin-sidebar-collapsed", String(next));
+      return next;
+    });
   }
 
-  if (!isAuthenticated) return null;
+  function handleLogout() {
+    logout();
+    navigate("/vega/admin/login");
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
-      <aside className="w-64 bg-card border-r flex flex-col">
-        <div className="p-6 border-b">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <Shield className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="font-semibold text-sm">Vega Admin</h1>
-              <p className="text-xs text-muted-foreground">{admin?.username}</p>
-            </div>
+    <div className="admin-theme flex h-screen overflow-hidden bg-background text-foreground">
+      <aside
+        className={`${
+          collapsed ? "w-16" : "w-64"
+        } neu-flat border-0 flex flex-col transition-all duration-200 shrink-0 m-2 rounded-2xl`}
+      >
+        {/* Header */}
+        <div
+          className={`flex items-center border-b border-border/50 min-h-[57px] ${
+            collapsed
+              ? "flex-col py-3 px-2 gap-2"
+              : "flex-row gap-2 px-3 py-4"
+          }`}
+        >
+          <div className="p-1.5 neu-btn rounded-xl">
+            <Shield className="w-4 h-4 text-primary shrink-0" />
           </div>
+          {!collapsed && (
+            <span className="font-semibold text-sm truncate">Vega Admin</span>
+          )}
+          {!collapsed && (
+            <button
+              onClick={toggleSidebar}
+              className="ml-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+              title="Collapse sidebar"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          )}
         </div>
-        <nav className="flex-1 p-4 space-y-1">
-          {navItems.map((item) => {
-            const active = location.pathname.startsWith(item.to);
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t">
+        {collapsed && (
           <button
-            onClick={() => logout()}
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted w-full"
+            onClick={toggleSidebar}
+            className="mx-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+            title="Expand sidebar"
           >
-            <LogOut className="h-4 w-4" />
-            Logout
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Navigation */}
+        <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
+                  isActive
+                    ? "neu-pressed text-primary font-semibold"
+                    : "text-foreground/75 hover:text-foreground hover:bg-muted/40"
+                } ${collapsed ? "justify-center" : ""}`
+              }
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon className="w-5 h-5 shrink-0" />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="border-t border-border/50 px-2 py-3 space-y-1">
+          {!collapsed && admin && (
+            <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">
+              {admin.username} &middot; {admin.role}
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm text-muted-foreground hover:text-destructive transition-colors ${
+              collapsed ? "justify-center" : ""
+            }`}
+            title={collapsed ? "Logout" : undefined}
+          >
+            <LogOut className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>Logout</span>}
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-y-auto p-2">
+        <div className="h-full neu-flat rounded-2xl p-6">
           <Outlet />
         </div>
       </main>
@@ -2454,7 +2835,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPIADMINUSERS, { credentials: "include" })
+    fetch(ROUTES.ADMINAPIUSERS, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setUsers(data.items ?? []))
       .catch(() => {})
@@ -2526,6 +2907,7 @@ export default function AdminUsers() {
 // File: src\pages\admin\AuditLogs.tsx
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 
 interface AuditLog {
   id: number;
@@ -2544,7 +2926,7 @@ export default function AuditLogs() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${ROUTES.ADMINAPIAUDITLOGS}?page=${page}&limit=50`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIAUDITLOGS}?page=${page}&limit=50`)
       .then((r) => r.json())
       .then((data) => {
         setLogs(data.items ?? []);
@@ -2563,22 +2945,22 @@ export default function AuditLogs() {
         <p className="text-muted-foreground text-sm">{total} total entries</p>
       </div>
 
-      <div className="rounded-xl bg-card border overflow-hidden">
+      <div className="neu-flat overflow-hidden text-foreground">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : (
           <table className="w-full">
-            <thead className="border-b bg-muted/50">
+            <thead className="border-b border-border/50 bg-muted/30">
               <tr>
-                <th className="text-left p-4 text-sm font-medium">Event</th>
-                <th className="text-left p-4 text-sm font-medium">Actor</th>
-                <th className="text-left p-4 text-sm font-medium">IP</th>
-                <th className="text-left p-4 text-sm font-medium">Time</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">Event</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">Actor</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">IP</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">Time</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-border/50">
               {logs.map((log) => (
-                <tr key={log.id} className="hover:bg-muted/30">
+                <tr key={log.id} className="hover:bg-muted/20 transition-colors">
                   <td className="p-4 text-sm">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       log.event.includes("success") || log.event.includes("verified") ? "bg-green-100 text-green-700" :
@@ -2607,7 +2989,7 @@ export default function AuditLogs() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Previous
           </button>
@@ -2615,7 +2997,7 @@ export default function AuditLogs() {
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Next
           </button>
@@ -2631,6 +3013,7 @@ export default function AuditLogs() {
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight } from "lucide-react";
 
 interface Stats {
@@ -2656,21 +3039,21 @@ export default function Dashboard() {
   const [recent, setRecent] = useState<Message[]>([]);
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPISTATS, { credentials: "include" })
+    apiFetch(ROUTES.ADMINAPISTATS)
       .then((r) => r.json())
       .then(setStats)
       .catch(() => {});
-    fetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`)
       .then((r) => r.json())
       .then((data) => setRecent(data.items ?? []))
       .catch(() => {});
   }, []);
 
   const cards = [
-    { label: "Total Messages", value: stats?.total_messages ?? 0, icon: MessageSquare, color: "text-blue-600" },
-    { label: "New", value: stats?.new_messages ?? 0, icon: Mail, color: "text-orange-600" },
-    { label: "In Progress", value: stats?.in_progress ?? 0, icon: Clock, color: "text-yellow-600" },
-    { label: "Resolved", value: stats?.resolved ?? 0, icon: CheckCircle, color: "text-green-600" },
+    { label: "Total Messages", value: stats?.total_messages ?? 0, icon: MessageSquare, color: "text-primary" },
+    { label: "New", value: stats?.new_messages ?? 0, icon: Mail, color: "text-orange-500" },
+    { label: "In Progress", value: stats?.in_progress ?? 0, icon: Clock, color: "text-yellow-500" },
+    { label: "Resolved", value: stats?.resolved ?? 0, icon: CheckCircle, color: "text-accent" },
   ];
 
   return (
@@ -2682,7 +3065,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => (
-          <div key={card.label} className="rounded-xl bg-card border p-6">
+          <div key={card.label} className="neu-convex p-6">
             <div className="flex items-center justify-between mb-4">
               <span className="text-sm text-muted-foreground">{card.label}</span>
               <card.icon className={`h-5 w-5 ${card.color}`} />
@@ -2692,14 +3075,14 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="rounded-xl bg-card border">
-        <div className="flex items-center justify-between p-6 border-b">
+      <div className="neu-flat">
+        <div className="flex items-center justify-between p-6 border-b border-border/50">
           <h2 className="font-semibold">Recent Messages</h2>
           <Link to="/vega/admin/inbox" className="text-sm text-primary hover:underline flex items-center gap-1">
             View all <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
-        <div className="divide-y">
+        <div className="divide-y divide-border/50">
           {recent.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">No messages yet.</p>
           ) : (
@@ -2707,7 +3090,7 @@ export default function Dashboard() {
               <Link
                 key={msg.id}
                 to={`/vega/admin/messages/${msg.id}`}
-                className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{msg.sender_name || "Anonymous"}</p>
@@ -2740,6 +3123,7 @@ export default function Dashboard() {
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { Search } from "lucide-react";
 
 interface Message {
@@ -2767,7 +3151,7 @@ export default function Inbox() {
     const params = new URLSearchParams({ page: String(page), limit: "20" });
     if (search) params.set("search", search);
     if (statusFilter) params.set("status", statusFilter);
-    fetch(`${ROUTES.ADMINAPIMESSAGES}?${params}`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIMESSAGES}?${params}`)
       .then((r) => r.json())
       .then((data) => {
         setMessages(data.items ?? []);
@@ -2793,13 +3177,13 @@ export default function Inbox() {
             placeholder="Search messages..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-10 pr-4 py-2 border rounded-lg bg-background text-sm"
+            className="w-full pl-10 pr-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-4 py-2 border rounded-lg bg-background text-sm"
+          className="px-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
         >
           <option value="">All Statuses</option>
           <option value="new">New</option>
@@ -2810,18 +3194,18 @@ export default function Inbox() {
         </select>
       </div>
 
-      <div className="rounded-xl bg-card border overflow-hidden">
+      <div className="neu-flat overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : messages.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">No messages found.</div>
         ) : (
-          <div className="divide-y">
+          <div className="divide-y divide-border/50">
             {messages.map((msg) => (
               <Link
                 key={msg.id}
                 to={`/vega/admin/messages/${msg.id}`}
-                className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -2861,7 +3245,7 @@ export default function Inbox() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Previous
           </button>
@@ -2871,7 +3255,7 @@ export default function Inbox() {
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1 border rounded text-sm disabled:opacity-50"
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
           >
             Next
           </button>
@@ -2887,6 +3271,7 @@ export default function Inbox() {
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { ArrowLeft, Send, Tag, MessageSquare } from "lucide-react";
 
 interface Note {
@@ -2931,7 +3316,7 @@ export default function MessageDetail() {
 
   useEffect(() => {
     if (!id) return;
-    fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`)
       .then((r) => r.json())
       .then((data) => {
         setMessage(data);
@@ -2944,9 +3329,8 @@ export default function MessageDetail() {
 
   async function updateField(field: string, value: string) {
     if (!id) return;
-    await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, {
+    await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, {
       method: "PATCH",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
     });
@@ -2956,9 +3340,8 @@ export default function MessageDetail() {
   async function addNote(e: React.FormEvent) {
     e.preventDefault();
     if (!id || !noteBody.trim()) return;
-    const res = await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/notes`, {
+    const res = await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/notes`, {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: noteBody }),
     });
@@ -2970,14 +3353,13 @@ export default function MessageDetail() {
   async function addTag(e: React.FormEvent) {
     e.preventDefault();
     if (!id || !newTag.trim()) return;
-    await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/tags`, {
+    await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/tags`, {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag_name: newTag }),
     });
     setNewTag("");
-    const refreshed = await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, { credentials: "include" }).then((r) => r.json());
+    const refreshed = await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`).then((r) => r.json());
     setMessage(refreshed);
   }
 
@@ -2998,14 +3380,14 @@ export default function MessageDetail() {
           </p>
         </div>
         <div className="flex gap-2">
-          <select value={status} onChange={(e) => { setStatus(e.target.value); updateField("status", e.target.value); }} className="px-3 py-1 border rounded-lg text-sm">
+          <select value={status} onChange={(e) => { setStatus(e.target.value); updateField("status", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm">
             <option value="new">New</option>
             <option value="in_progress">In Progress</option>
             <option value="waiting">Waiting</option>
             <option value="resolved">Resolved</option>
             <option value="spam">Spam</option>
           </select>
-          <select value={priority} onChange={(e) => { setPriority(e.target.value); updateField("priority", e.target.value); }} className="px-3 py-1 border rounded-lg text-sm">
+          <select value={priority} onChange={(e) => { setPriority(e.target.value); updateField("priority", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm">
             <option value="low">Low</option>
             <option value="normal">Normal</option>
             <option value="high">High</option>
@@ -3014,16 +3396,16 @@ export default function MessageDetail() {
         </div>
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.body}</p>
-        <div className="mt-4 pt-4 border-t flex gap-4 text-xs text-muted-foreground">
+      <div className="neu-flat rounded-xl p-6">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{message.body}</p>
+        <div className="mt-4 pt-4 border-t border-border/50 flex gap-4 text-xs text-muted-foreground">
           <span>Channel: {message.channel}</span>
           <span>Received: {new Date(message.created_at).toLocaleString()}</span>
           {message.sender_phone && <span>Phone: {message.sender_phone}</span>}
         </div>
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat rounded-xl p-6">
         <h2 className="font-semibold mb-4 flex items-center gap-2"><Tag className="h-4 w-4" /> Tags</h2>
         <div className="flex flex-wrap gap-2 mb-3">
           {message.tags.length === 0 && <span className="text-xs text-muted-foreground">No tags</span>}
@@ -3032,25 +3414,25 @@ export default function MessageDetail() {
           ))}
         </div>
         <form onSubmit={addTag} className="flex gap-2">
-          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-1 border rounded-lg text-sm" />
-          <button type="submit" className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-sm">Add</button>
+          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
+          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm">Add</button>
         </form>
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat rounded-xl p-6">
         <h2 className="font-semibold mb-4 flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Notes</h2>
         <div className="space-y-3 mb-4">
           {message.notes.length === 0 && <p className="text-xs text-muted-foreground">No notes yet</p>}
           {message.notes.map((n) => (
-            <div key={n.id} className="p-3 bg-muted/50 rounded-lg">
+            <div key={n.id} className="p-3 neu-concave rounded-xl">
               <p className="text-sm">{n.body}</p>
               <p className="text-xs text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
             </div>
           ))}
         </div>
         <form onSubmit={addNote} className="flex gap-2">
-          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-1 border rounded-lg text-sm" />
-          <button type="submit" className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-sm flex items-center gap-1">
+          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
+          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm flex items-center gap-1">
             <Send className="h-3 w-3" /> Add
           </button>
         </form>
@@ -3064,6 +3446,7 @@ export default function MessageDetail() {
 // File: src\pages\admin\Settings.tsx
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { Shield, Lock } from "lucide-react";
 
 export default function Settings() {
@@ -3080,7 +3463,7 @@ export default function Settings() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPISETTINGS, { credentials: "include" })
+    apiFetch(ROUTES.ADMINAPISETTINGS)
       .then((r) => r.json())
       .then((data) => setTotpEnabled(data.totp_enabled))
       .catch(() => {});
@@ -3090,7 +3473,7 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPITOTPSETUP, { credentials: "include" });
+      const res = await apiFetch(ROUTES.ADMINAPITOTPSETUP);
       const data = await res.json();
       setTotpSecret(data.secret);
       setShowSetup(true);
@@ -3106,9 +3489,8 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPITOTPENABLE, {
+      const res = await apiFetch(ROUTES.ADMINAPITOTPENABLE, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: totpCode, secret: totpSecret }),
       });
@@ -3131,9 +3513,8 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPITOTPDISABLE, {
+      const res = await apiFetch(ROUTES.ADMINAPITOTPDISABLE, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ totp_code: totpCode }),
       });
@@ -3161,9 +3542,8 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPICHANGEPASSWORD, {
+      const res = await apiFetch(ROUTES.ADMINAPICHANGEPASSWORD, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
       });
@@ -3189,12 +3569,14 @@ export default function Settings() {
         <p className="text-muted-foreground text-sm">Manage your security settings</p>
       </div>
 
-      {msg && <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-lg text-sm">{msg}</div>}
-      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>}
+      {msg && <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl text-sm">{msg}</div>}
+      {error && <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm">{error}</div>}
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Shield className="h-5 w-5 text-primary" />
+          <div className="p-2 neu-btn rounded-xl">
+            <Shield className="h-5 w-5 text-primary" />
+          </div>
           <h2 className="font-semibold">Two-Factor Authentication</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-4">
@@ -3209,22 +3591,22 @@ export default function Settings() {
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   placeholder="000000"
-                  className="px-3 py-1 border rounded-lg text-sm font-mono w-32"
+                  className="px-3 py-1 neu-concave rounded-xl text-foreground text-sm font-mono w-32 bg-transparent"
                   maxLength={6}
                 />
-                <button type="submit" disabled={loading} className="px-4 py-1 bg-red-600 text-white rounded-lg text-sm">
+                <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
                   Disable
                 </button>
               </form>
             </div>
           ) : (
-            <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm">
+            <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
               Enable TOTP
             </button>
           )
         ) : (
           <div className="space-y-4">
-            <div className="p-4 bg-muted rounded-lg">
+            <div className="neu-concave p-4 rounded-xl">
               <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
               <code className="text-sm font-mono break-all">{totpSecret}</code>
             </div>
@@ -3233,10 +3615,10 @@ export default function Settings() {
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="000000"
-                className="px-3 py-1 border rounded-lg text-sm font-mono w-32"
+                className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
                 maxLength={6}
               />
-              <button type="submit" disabled={loading} className="px-4 py-1 bg-primary text-primary-foreground rounded-lg text-sm">
+              <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-primary-foreground text-sm font-semibold">
                 Verify & Enable
               </button>
             </form>
@@ -3244,9 +3626,11 @@ export default function Settings() {
         )}
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat p-6">
         <div className="flex items-center gap-3 mb-4">
-          <Lock className="h-5 w-5 text-primary" />
+          <div className="p-2 neu-btn rounded-xl">
+            <Lock className="h-5 w-5 text-primary" />
+          </div>
           <h2 className="font-semibold">Change Password</h2>
         </div>
         <form onSubmit={changePassword} className="space-y-3">
@@ -3255,7 +3639,7 @@ export default function Settings() {
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             placeholder="Current password"
-            className="w-full px-3 py-2 border rounded-lg text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
           />
           <input
@@ -3263,7 +3647,7 @@ export default function Settings() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="New password"
-            className="w-full px-3 py-2 border rounded-lg text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
             minLength={6}
           />
@@ -3272,10 +3656,10 @@ export default function Settings() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Confirm new password"
-            className="w-full px-3 py-2 border rounded-lg text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
           />
-          <button type="submit" disabled={loading} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm">
+          <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
             Change Password
           </button>
         </form>
@@ -3416,148 +3800,688 @@ export default function Setup() {
 ```
 
 ```tsx
-// File: src\pages\AdminLogin.tsx
+// File: src\pages\admin\Users.tsx
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth, OtpCooldownError } from "@/contexts/AuthContext";
-import { ROUTES } from "@/lib/routes";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ROUTES } from "../../lib/routes";
+import { apiFetch } from "@/lib/adminApi";
+import { useAuth } from "../../contexts/AuthContext";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Eye,
-  EyeOff,
+  Users as UsersIcon,
+  Plus,
+  Search,
+  MoreVertical,
   Shield,
-  AlertTriangle,
-  ArrowLeft,
+  ShieldCheck,
+  ShieldAlert,
+  Eye,
+  UserCog,
   KeyRound,
-  Lock,
-  Fingerprint,
-  Send,
+  RefreshCw,
+  Ban,
+  CheckCircle,
+  X,
 } from "lucide-react";
 
-type OtpMethod = "telegram" | "totp";
-
-function formatCountdown(s: number) {
-  const m = Math.floor(s / 60);
-  const ss = s % 60;
-  return `${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+interface AdminUser {
+  id: string;
+  username: string;
+  email: string | null;
+  display_name: string;
+  role: string;
+  status: string;
+  telegram_chat_id: string | null;
+  totp_enabled: boolean;
+  last_login_at: string | null;
+  created_at: string | null;
 }
 
-export default function AdminLoginPage() {
-  const navigate = useNavigate();
-  const { login, loginTotp, loginOtpSend, loginOtpVerify } = useAuth();
+const ROLE_COLORS: Record<string, string> = {
+  owner: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  admin: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  manager: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
+  support: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  viewer: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400",
+};
 
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+const ROLE_ICONS: Record<string, typeof Shield> = {
+  owner: ShieldAlert,
+  admin: ShieldCheck,
+  manager: Shield,
+  support: Shield,
+  viewer: Eye,
+};
 
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [methods, setMethods] = useState<string[]>([]);
-  const [method, setMethod] = useState<OtpMethod>("telegram");
-  const [code, setCode] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpMsg, setOtpMsg] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+export default function UsersPage() {
+  const { admin: currentAdmin } = useAuth();
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  const [showForgotDialog, setShowForgotDialog] = useState(false);
-  const [forgotStep, setForgotStep] = useState<"verify" | "reset">("verify");
-  const [forgotChallengeId, setForgotChallengeId] = useState<string | null>(null);
-  const [forgotData, setForgotData] = useState({
-    username: "",
-    totpToken: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [setupRequired, setSetupRequired] = useState(false);
-
-  useEffect(() => {
-    fetch(ROUTES.ADMINAPISETUPREQUIRED, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.required) {
-          setSetupRequired(true);
-          navigate("/vega/admin/setup", { replace: true });
-        }
-      })
-      .catch(() => {});
-  }, [navigate]);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState<AdminUser | null>(null);
+  const [showTotpSetup, setShowTotpSetup] = useState<AdminUser | null>(null);
+  const [showResetPassword, setShowResetPassword] = useState<AdminUser | null>(null);
+  const [showTotpReset, setShowTotpReset] = useState<AdminUser | null>(null);
+  const [showDisable, setShowDisable] = useState<AdminUser | null>(null);
+  const [showRevoke, setShowRevoke] = useState<AdminUser | null>(null);
 
   useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setInterval(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
-    return () => clearInterval(timer);
-  }, [cooldown]);
+    loadUsers();
+  }, []);
 
-  const useTelegram = method === "telegram" && methods.includes("telegram_otp");
-
-  function resetSecondFactor() {
-    setChallengeId(null);
-    setMethods([]);
-    setMethod("telegram");
-    setCode("");
-    setOtpSent(false);
-    setOtpMsg(null);
-    setCooldown(0);
-    setError("");
-  }
-
-  async function handleSendOtp() {
-    if (!challengeId) return;
-    setError("");
-    setSending(true);
-    setOtpMsg(null);
+  async function loadUsers() {
     try {
-      const res = await loginOtpSend(challengeId);
-      setOtpSent(true);
-      setOtpMsg("Code sent to your Telegram. Check your chat and enter the code below.");
-      setCooldown(res.cooldown_seconds ?? 60);
-    } catch (err) {
-      if (err instanceof OtpCooldownError) {
-        setOtpSent(true);
-        setCooldown(err.cooldownSeconds);
-      } else {
-        setError(err instanceof Error ? err.message : "Failed to send code");
+      const res = await apiFetch(ROUTES.ADMINAPIUSERS);
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.items || []);
       }
+    } catch {
     } finally {
-      setSending(false);
+      setLoading(false);
     }
   }
 
-  async function handleLogin(e: React.FormEvent) {
+  const filtered = users.filter((u) => {
+    if (search && !u.username.toLowerCase().includes(search.toLowerCase()) &&
+        !u.display_name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (roleFilter && u.role !== roleFilter) return false;
+    if (statusFilter && u.status !== statusFilter) return false;
+    return true;
+  });
+
+  const canManage = currentAdmin?.role === "owner" || currentAdmin?.role === "admin";
+
+  return (
+    <div className="max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <UsersIcon className="w-6 h-6" />
+            Users
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {users.length} administrator accounts
+          </p>
+        </div>
+        {canManage && (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold"
+          >
+            <Plus className="w-4 h-4" />
+            Create User
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-3 mb-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search users..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+        >
+          <option value="">All Roles</option>
+          <option value="owner">Owner</option>
+          <option value="admin">Admin</option>
+          <option value="manager">Manager</option>
+          <option value="support">Support</option>
+          <option value="viewer">Viewer</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+        >
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="disabled">Disabled</option>
+        </select>
+      </div>
+
+      <div className="neu-flat overflow-hidden text-foreground">
+        <table className="w-full">
+          <thead>
+            <tr className="bg-muted/30 border-b border-border/50">
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">User</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Name</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Role</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Status</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">2FA</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Last Login</th>
+              {canManage && <th className="w-10"></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="text-center py-8 text-muted-foreground">No users found</td>
+              </tr>
+            ) : (
+              filtered.map((user) => {
+                const RoleIcon = ROLE_ICONS[user.role] || Shield;
+                return (
+                  <tr key={user.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <span className="font-medium text-sm">{user.username}</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">{user.display_name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[user.role] || ""}`}>
+                        <RoleIcon className="w-3 h-3" />
+                        {user.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        user.status === "active"
+                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                      }`}>
+                        {user.status === "active" ? <CheckCircle className="w-3 h-3" /> : <Ban className="w-3 h-3" />}
+                        {user.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {user.totp_enabled ? (
+                        <span className="text-green-600 dark:text-green-400 font-medium">T+T</span>
+                      ) : user.telegram_chat_id ? (
+                        <span className="text-blue-600 dark:text-blue-400 font-medium">T</span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
+                      {user.last_login_at
+                        ? new Date(user.last_login_at).toLocaleDateString()
+                        : "Never"}
+                    </td>
+                    {canManage && (
+                      <td className="px-4 py-3 relative">
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
+                          className="p-1.5 rounded-xl hover:bg-muted/50 transition-colors"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {openMenuId === user.id && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
+                            <div className="absolute right-0 top-full mt-1 z-50 w-52 neu-convex py-1">
+                              <MenuItem icon={UserCog} label="Edit" onClick={() => { setShowEdit(user); setOpenMenuId(null); }} />
+                              <MenuItem icon={KeyRound} label="Configure TOTP" onClick={() => { setShowTotpSetup(user); setOpenMenuId(null); }} />
+                              <MenuItem icon={RefreshCw} label="Reset Password" onClick={() => { setShowResetPassword(user); setOpenMenuId(null); }} />
+                              <MenuItem icon={RefreshCw} label="Reset TOTP" onClick={() => { setShowTotpReset(user); setOpenMenuId(null); }} danger={user.totp_enabled} />
+                              <MenuItem icon={Ban} label="Revoke Sessions" onClick={() => { setShowRevoke(user); setOpenMenuId(null); }} />
+                              {user.status === "active" ? (
+                                <MenuItem icon={Ban} label="Disable User" onClick={() => { setShowDisable(user); setOpenMenuId(null); }} danger />
+                              ) : (
+                                <MenuItem icon={CheckCircle} label="Enable User" onClick={async () => {
+                                  await apiFetch(ROUTES.ADMINAPIUSERENABLE(user.id), { method: "POST" });
+                                  loadUsers();
+                                  setOpenMenuId(null);
+                                }} />
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showCreate && (
+        <CreateUserDialog onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); loadUsers(); }} />
+      )}
+      {showEdit && (
+        <EditUserDialog user={showEdit} onClose={() => setShowEdit(null)} onUpdated={() => { setShowEdit(null); loadUsers(); }} />
+      )}
+      {showTotpSetup && (
+        <TotpSetupDialog user={showTotpSetup} onClose={() => setShowTotpSetup(null)} onDone={() => { setShowTotpSetup(null); loadUsers(); }} />
+      )}
+      {showResetPassword && (
+        <ResetPasswordDialog user={showResetPassword} onClose={() => setShowResetPassword(null)} onDone={() => { setShowResetPassword(null); loadUsers(); }} />
+      )}
+      {showTotpReset && (
+        <ConfirmDialog
+          title="Reset TOTP"
+          message="This will invalidate the user's authenticator configuration and require TOTP enrollment again."
+          confirmLabel="Reset TOTP"
+          danger
+          onClose={() => setShowTotpReset(null)}
+          onConfirm={async () => {
+            await apiFetch(ROUTES.ADMINAPIUSERTOTPRESET(showTotpReset.id), { method: "POST" });
+            setShowTotpReset(null);
+            loadUsers();
+          }}
+        />
+      )}
+      {showDisable && (
+        <ConfirmDialog
+          title={`Disable ${showDisable.username}?`}
+          message="The user will be logged out immediately and cannot log in until re-enabled."
+          confirmLabel="Disable"
+          danger
+          onClose={() => setShowDisable(null)}
+          onConfirm={async () => {
+            await apiFetch(ROUTES.ADMINAPIUSERDISABLE(showDisable.id), { method: "POST" });
+            setShowDisable(null);
+            loadUsers();
+          }}
+        />
+      )}
+      {showRevoke && (
+        <ConfirmDialog
+          title={`Revoke sessions for ${showRevoke.username}?`}
+          message="All active sessions for this user will be terminated."
+          confirmLabel="Revoke"
+          onClose={() => setShowRevoke(null)}
+          onConfirm={async () => {
+            await apiFetch(ROUTES.ADMINAPIUSERREVOKE(showRevoke.id), { method: "POST" });
+            setShowRevoke(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Shield; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-muted/30 transition-colors ${
+        danger ? "text-red-600 dark:text-red-400" : ""
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+    </button>
+  );
+}
+
+function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [form, setForm] = useState({
+    username: "", display_name: "", email: "", password: "", confirmPassword: "", role: "support", telegram_chat_id: "",
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (form.password !== form.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
     setLoading(true);
     try {
-      const result = await login(username, password, rememberMe);
-      if (result.status === "second_factor_required") {
-        setChallengeId(result.challenge_id);
-        const m = result.methods ?? [];
-        setMethods(m);
-        if (m.includes("telegram_otp")) {
-          setMethod("telegram");
-        } else if (m.includes("totp")) {
-          setMethod("totp");
-        }
-        if (m.includes("telegram_otp")) {
-          setTimeout(() => handleSendOtpWithChallenge(result.challenge_id), 100);
-        }
+      const res = await apiFetch(ROUTES.ADMINAPIUSERS, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: form.username,
+          display_name: form.display_name,
+          email: form.email || undefined,
+          password: form.password,
+          role: form.role,
+          telegram_chat_id: form.telegram_chat_id || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.detail || "Failed to create user");
+        return;
+      }
+      onCreated();
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">Create Admin User</h2>
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <NeuInput label="Username *" value={form.username} onChange={(v) => setForm({ ...form, username: v })} />
+        <NeuInput label="Display Name *" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
+        <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+        <NeuInput label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+        <NeuInput label="Confirm Password *" type="password" value={form.confirmPassword} onChange={(v) => setForm({ ...form, confirmPassword: v })} />
+        <div>
+          <label className="block text-sm font-medium mb-1">Role *</label>
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
+            <option value="owner">Owner</option>
+            <option value="admin">Admin</option>
+            <option value="manager">Manager</option>
+            <option value="support">Support</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        </div>
+        <NeuInput label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+          <button type="submit" disabled={loading} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+            {loading ? "Creating..." : "Create User"}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose: () => void; onUpdated: () => void }) {
+  const [form, setForm] = useState({ display_name: user.display_name, email: user.email || "", role: user.role });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERSBYID(user.id), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.detail || "Failed to update");
+        return;
+      }
+      onUpdated();
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">Edit {user.username}</h2>
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <NeuInput label="Display Name" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
+        <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+        <div>
+          <label className="block text-sm font-medium mb-1">Role</label>
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
+            <option value="owner">Owner</option>
+            <option value="admin">Admin</option>
+            <option value="manager">Manager</option>
+            <option value="support">Support</option>
+            <option value="viewer">Viewer</option>
+          </select>
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+          <button type="submit" disabled={loading} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+            {loading ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
+  const [secret, setSecret] = useState("");
+  const [code, setCode] = useState("");
+  const [step, setStep] = useState<"loading" | "scan" | "done">("loading");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiFetch(ROUTES.ADMINAPIUSERTOTPSETUP(user.id))
+      .then((r) => r.json())
+      .then((data) => {
+        setSecret(data.secret);
+        setStep("scan");
+      })
+      .catch(() => setError("Failed to load TOTP setup"));
+  }, [user.id]);
+
+  async function handleEnable() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERTOTPENABLE(user.id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, secret }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.detail || "Invalid code");
+        return;
+      }
+      setStep("done");
+      setTimeout(onDone, 1000);
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">Configure TOTP for {user.username}</h2>
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
+
+      {step === "loading" && <p className="text-muted-foreground text-sm">Loading...</p>}
+
+      {step === "scan" && (
+        <>
+          <p className="text-sm text-muted-foreground mb-3">
+            Add this account to your authenticator app (Google Authenticator, Authy, etc.):
+          </p>
+          <div className="neu-concave p-3 rounded-xl mb-3">
+            <p className="text-xs text-muted-foreground mb-1">Secret (manual entry):</p>
+            <code className="text-sm font-mono break-all">{secret}</code>
+          </div>
+          <div className="mb-3">
+            <label className="block text-sm font-medium mb-1">Enter 6-digit code from authenticator</label>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="000000"
+              maxLength={6}
+              className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm font-mono"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+            <button onClick={handleEnable} disabled={loading || code.length !== 6} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+              {loading ? "Verifying..." : "Verify & Enable"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === "done" && (
+        <div className="text-center py-4">
+          <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-2" />
+          <p className="font-medium">TOTP enabled successfully</p>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit() {
+    if (password !== confirm) { setError("Passwords do not match"); return; }
+    setLoading(true);
+    try {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERRESETPW(user.id), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ new_password: password }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.detail || "Failed");
+        return;
+      }
+      onDone();
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-4">Reset Password for {user.username}</h2>
+      {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
+      <p className="text-sm text-muted-foreground mb-3">The user will be logged out after password reset.</p>
+      <NeuInput label="New Password" type="password" value={password} onChange={setPassword} />
+      <NeuInput label="Confirm Password" type="password" value={confirm} onChange={setConfirm} />
+      <div className="flex justify-end gap-2 pt-3">
+        <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+        <button onClick={handleSubmit} disabled={loading || password.length < 6} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+          {loading ? "Resetting..." : "Reset Password"}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfirm }: {
+  title: string; message: string; confirmLabel: string; danger?: boolean;
+  onClose: () => void; onConfirm: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  return (
+    <Dialog onClose={onClose}>
+      <h2 className="text-lg font-semibold mb-2">{title}</h2>
+      <p className="text-sm text-muted-foreground mb-4">{message}</p>
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
+        <button
+          onClick={async () => { setLoading(true); await onConfirm(); }}
+          disabled={loading}
+          className={`px-4 py-2 text-sm neu-btn text-white font-semibold disabled:opacity-50 ${
+            danger ? "bg-destructive" : "bg-primary"
+          }`}
+        >
+          {loading ? "..." : confirmLabel}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+function Dialog({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative neu-convex w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-muted/50 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function NeuInput({ label, type = "text", value, onChange, placeholder }: {
+  label: string; type?: string; value: string; onChange: (v: string) => void; placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+      />
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\AdminLogin.tsx
+import { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { ArrowRight, Loader2, Shield, MessageSquare, KeyRound } from "lucide-react";
+
+type Step = "credentials" | "otp" | "totp";
+
+export default function AdminLogin() {
+  const { login, loginOtpSend, loginOtpVerify, loginTotp } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const from =
+    (location.state as { from?: string } | null)?.from ??
+    "/vega/admin/dashboard";
+
+  const [step, setStep] = useState<Step>("credentials");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+
+  const [otpCode, setOtpCode] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  async function handleCredentials(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const result = await login(username, password);
+      setChallengeId(result.challenge_id);
+
+      if (result.methods.includes("totp") && !result.methods.includes("telegram_otp")) {
+        setStep("totp");
+      } else if (result.methods.includes("telegram_otp")) {
+        setStep("otp");
+        startResendCooldown();
       } else {
-        navigate("/vega/admin/dashboard", { replace: true });
+        setError("No second-factor method configured for this account");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -3566,420 +4490,204 @@ export default function AdminLoginPage() {
     }
   }
 
-  async function handleSendOtpWithChallenge(cid: string) {
+  function startResendCooldown() {
+    setResendCooldown(60);
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }
+
+  async function handleResendOtp() {
+    if (resendCooldown > 0) return;
+    setError("");
     try {
-      const res = await loginOtpSend(cid);
-      setOtpSent(true);
-      setOtpMsg("Code sent to your Telegram. Check your chat and enter the code below.");
-      setCooldown(res.cooldown_seconds ?? 60);
+      const result = await loginOtpSend(challengeId);
+      setResendCooldown(result.cooldown_seconds);
+      startResendCooldown();
     } catch (err) {
-      if (err instanceof OtpCooldownError) {
-        setOtpSent(true);
-        setCooldown(err.cooldownSeconds);
-      } else {
-        setError(err instanceof Error ? err.message : "Failed to send code");
-      }
+      setError(err instanceof Error ? err.message : "Failed to resend code");
     }
   }
 
-  async function handleCodeSubmit(e: React.FormEvent) {
+  async function handleOtpVerify(e: React.FormEvent) {
     e.preventDefault();
-    if (!challengeId) return;
-    setError("");
     setLoading(true);
+    setError("");
     try {
-      if (useTelegram) {
-        const result = await loginOtpVerify(challengeId, code);
-        if (result.totpRequired && result.challenge_id) {
-          setChallengeId(result.challenge_id);
-          setMethod("totp");
-          setCode("");
-          setOtpSent(false);
-          setOtpMsg(null);
-          return;
-        }
+      const result = await loginOtpVerify(challengeId, otpCode);
+      if (result.totpRequired && result.challenge_id) {
+        setChallengeId(result.challenge_id);
+        setTotpCode("");
+        setStep("totp");
       } else {
-        await loginTotp(challengeId, code);
+        navigate(from, { replace: true });
       }
-      navigate("/vega/admin/dashboard", { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed");
+      setError(err instanceof Error ? err.message : "Invalid code");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleForgotPassword(e: React.FormEvent) {
+  async function handleTotpVerify(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     setLoading(true);
+    setError("");
     try {
-      if (forgotStep === "verify") {
-        const response = await fetch(ROUTES.ADMINAPIPASSWORDFORGOTVERIFY, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: forgotData.username,
-            totp_code: forgotData.totpToken,
-          }),
-        });
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ detail: "Verification failed" }));
-          throw new Error(typeof err.detail === "string" ? err.detail : "Verification failed");
-        }
-        const data = await response.json();
-        setForgotChallengeId(data.challenge_id);
-        setForgotStep("reset");
-        setSuccess("TOTP verified. Enter your new password.");
-      } else {
-        if (forgotData.newPassword !== forgotData.confirmPassword) {
-          setError("Passwords do not match");
-          setLoading(false);
-          return;
-        }
-        if (forgotData.newPassword.length < 6) {
-          setError("Password must be at least 6 characters");
-          setLoading(false);
-          return;
-        }
-        const response = await fetch(ROUTES.ADMINAPIPASSWORDFORGOTRESET, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            challenge_id: forgotChallengeId,
-            new_password: forgotData.newPassword,
-          }),
-        });
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ detail: "Reset failed" }));
-          throw new Error(typeof err.detail === "string" ? err.detail : "Reset failed");
-        }
-        setSuccess("Password reset successfully! Redirecting to login...");
-        setTimeout(() => {
-          setShowForgotDialog(false);
-          setForgotStep("verify");
-          setForgotChallengeId(null);
-          setForgotData({ username: "", totpToken: "", newPassword: "", confirmPassword: "" });
-          setSuccess("");
-        }, 2000);
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Operation failed");
+      await loginTotp(challengeId, totpCode);
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code");
     } finally {
       setLoading(false);
     }
   }
-
-  if (setupRequired) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 dark:from-slate-950 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-3 gap-4 auto-rows-[auto]">
-        <div className="md:col-span-1 md:row-span-2 rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/10 p-8 flex flex-col items-center justify-center text-center gap-4">
-          <div className="p-4 bg-primary/15 rounded-2xl">
-            <Shield className="h-12 w-12 text-primary" />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[var(--color-cream)] via-[var(--color-cream)] to-[var(--color-pink-muted)] p-4">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 neu-convex rounded-2xl mb-4">
+            <Shield className="w-8 h-8 text-primary" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Vega Admin</h1>
-            <p className="text-muted-foreground text-sm mt-1">Secure management console</p>
-          </div>
-          <div className="mt-4 space-y-3 text-sm text-muted-foreground">
-            <div className="flex items-center gap-3">
-              <Lock className="h-4 w-4 text-primary shrink-0" />
-              <span>End-to-end encrypted auth</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Fingerprint className="h-4 w-4 text-primary shrink-0" />
-              <span>Two-factor protection</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Shield className="h-4 w-4 text-primary shrink-0" />
-              <span>Session-based access control</span>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold">Admin Panel</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {step === "credentials" && "Sign in to your account"}
+            {step === "otp" && "Enter the code sent to Telegram"}
+            {step === "totp" && "Enter your authenticator code"}
+          </p>
         </div>
 
-        <div className="md:col-span-2 rounded-2xl bg-card border shadow-sm p-8">
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold">
-              {challengeId ? "Two-Factor Authentication" : "Sign in to your account"}
-            </h2>
-            <p className="text-muted-foreground text-sm mt-1">
-              {challengeId ? "Verify your identity to continue" : "Enter your credentials to continue"}
-            </p>
-          </div>
-
+        <div className="neu-convex p-8">
           {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">
+              {error}
+            </div>
           )}
 
-          {otpMsg && (
-            <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
-              <Send className="h-4 w-4 text-blue-600" />
-              <AlertDescription className="text-blue-800 dark:text-blue-200">{otpMsg}</AlertDescription>
-            </Alert>
-          )}
-
-          {!challengeId ? (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
-                  <Input
-                    id="username"
-                    placeholder="Enter username"
-                    value={username}
-                    onChange={(e) => { setUsername(e.target.value); setError(""); }}
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter password"
-                      value={password}
-                      onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
+          {step === "credentials" && (
+            <form onSubmit={handleCredentials} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Username</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  required
+                  autoFocus
+                />
               </div>
-              <div className="flex items-center justify-between">
-                <label className="flex items-center space-x-2 text-sm">
-                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-gray-300" />
-                  <span>Remember me</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => { setShowForgotDialog(true); setForgotStep("verify"); setError(""); setSuccess(""); }}
-                  className="text-sm text-primary hover:underline"
-                >
-                  Forgot password?
-                </button>
+              <div>
+                <label className="block text-sm font-medium mb-1">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  required
+                />
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Please wait..." : "Login"}
-              </Button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                {loading ? "Signing in..." : "Sign In"}
+              </button>
             </form>
-          ) : (
-            <form onSubmit={handleCodeSubmit} className="space-y-4">
-              {methods.length > 1 && (
-                <div className="flex gap-2 p-1 bg-muted rounded-lg">
-                  {methods.includes("telegram_otp") && (
-                    <button
-                      type="button"
-                      onClick={() => { setMethod("telegram"); setCode(""); setOtpSent(false); setOtpMsg(null); }}
-                      className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                        method === "telegram" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <Send className="h-4 w-4 inline-block mr-1.5" />
-                      Telegram OTP
-                    </button>
-                  )}
-                  {methods.includes("totp") && (
-                    <button
-                      type="button"
-                      onClick={() => { setMethod("totp"); setCode(""); setOtpSent(false); setOtpMsg(null); }}
-                      className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                        method === "totp" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <KeyRound className="h-4 w-4 inline-block mr-1.5" />
-                      Authenticator
-                    </button>
-                  )}
-                </div>
-              )}
+          )}
 
-              {useTelegram ? (
-                <>
-                  {!otpSent ? (
-                    <Button type="button" variant="outline" className="w-full" onClick={handleSendOtp} disabled={sending}>
-                      <Send className="h-4 w-4 mr-2" />
-                      {sending ? "Sending..." : "Send code via Telegram"}
-                    </Button>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        <Label htmlFor="otp-code" className="flex items-center gap-2">
-                          <Send className="h-4 w-4" />
-                          Telegram Code
-                        </Label>
-                        <Input
-                          id="otp-code"
-                          placeholder="000000"
-                          value={code}
-                          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                          required
-                          maxLength={6}
-                          pattern="\d{6}"
-                          className="font-mono text-lg tracking-widest max-w-xs text-center"
-                          autoFocus
-                        />
-                      </div>
-                      {cooldown > 0 ? (
-                        <p className="text-sm text-muted-foreground text-center">Resend available in {formatCountdown(cooldown)}</p>
-                      ) : (
-                        <Button type="button" variant="ghost" className="w-full" onClick={handleSendOtp}>
-                          <Send className="h-4 w-4 mr-2" />
-                          Resend OTP
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </>
-              ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="totp-code" className="flex items-center gap-2">
-                    <KeyRound className="h-4 w-4" />
-                    Authenticator Code
-                  </Label>
-                  <Input
-                    id="totp-code"
-                    placeholder="000000"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    required
-                    maxLength={6}
-                    pattern="\d{6}"
-                    className="font-mono text-lg tracking-widest max-w-xs text-center"
-                    autoFocus
-                  />
-                </div>
-              )}
-
-              {!(useTelegram && !otpSent) && (
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Verifying..." : "Verify"}
-                </Button>
-              )}
-
-              <Button type="button" variant="ghost" className="w-full" onClick={resetSecondFactor}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
+          {step === "otp" && (
+            <form onSubmit={handleOtpVerify} className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <MessageSquare className="w-4 h-4" />
+                <span>Code sent to your Telegram</span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">OTP Code</label>
+                <input
+                  type="text"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  maxLength={6}
+                  autoFocus
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || otpCode.length !== 6}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                {loading ? "Verifying..." : "Verify Code"}
+              </button>
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={resendCooldown > 0}
+                className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                {resendCooldown > 0
+                  ? `Resend code in ${resendCooldown}s`
+                  : "Resend code"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("credentials"); setOtpCode(""); setError(""); }}
+                className="w-full text-sm text-muted-foreground hover:text-foreground"
+              >
                 Back to login
-              </Button>
+              </button>
             </form>
           )}
-        </div>
 
-        <div className="md:col-span-1 rounded-2xl bg-card border shadow-sm p-6 flex flex-col justify-center">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-sm font-medium">System Online</span>
-          </div>
-          <p className="text-xs text-muted-foreground">All services operational. Session timeout: 30 minutes.</p>
+          {step === "totp" && (
+            <form onSubmit={handleTotpVerify} className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <KeyRound className="w-4 h-4" />
+                <span>Enter code from your authenticator app</span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">TOTP Code</label>
+                <input
+                  type="text"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  maxLength={6}
+                  autoFocus
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || totpCode.length !== 6}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                {loading ? "Verifying..." : "Verify & Sign In"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("credentials"); setTotpCode(""); setError(""); }}
+                className="w-full text-sm text-muted-foreground hover:text-foreground"
+              >
+                Back to login
+              </button>
+            </form>
+          )}
         </div>
       </div>
-
-      <Dialog open={showForgotDialog} onOpenChange={setShowForgotDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reset Password</DialogTitle>
-            <DialogDescription>
-              {forgotStep === "verify"
-                ? "Enter your username and TOTP code to verify your identity."
-                : "Create a new password for your account."}
-            </DialogDescription>
-          </DialogHeader>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          {success && (
-            <Alert className="mb-4 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800">
-              <AlertDescription className="text-green-800 dark:text-green-200">{success}</AlertDescription>
-            </Alert>
-          )}
-          <form onSubmit={handleForgotPassword} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="forgot-username">Username</Label>
-              <Input
-                id="forgot-username"
-                placeholder="Enter your username"
-                value={forgotData.username}
-                onChange={(e) => setForgotData({ ...forgotData, username: e.target.value })}
-                required
-                disabled={forgotStep === "reset"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="forgot-totp" className="flex items-center gap-2">
-                <KeyRound className="h-4 w-4" />
-                TOTP Code
-              </Label>
-              <Input
-                id="forgot-totp"
-                placeholder="6-digit code from authenticator"
-                value={forgotData.totpToken}
-                onChange={(e) => setForgotData({ ...forgotData, totpToken: e.target.value })}
-                required
-                maxLength={6}
-                pattern="\d{6}"
-                className="font-mono tracking-widest"
-                disabled={forgotStep === "reset"}
-              />
-            </div>
-            {forgotStep === "reset" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">New Password</Label>
-                  <div className="relative">
-                    <Input
-                      id="new-password"
-                      type={showNewPassword ? "text" : "password"}
-                      placeholder="Minimum 6 characters"
-                      value={forgotData.newPassword}
-                      onChange={(e) => setForgotData({ ...forgotData, newPassword: e.target.value })}
-                      required
-                      minLength={6}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirm New Password</Label>
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    placeholder="Confirm your new password"
-                    value={forgotData.confirmPassword}
-                    onChange={(e) => setForgotData({ ...forgotData, confirmPassword: e.target.value })}
-                    required
-                  />
-                </div>
-              </>
-            )}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Please wait..." : forgotStep === "verify" ? "Verify TOTP" : "Reset Password"}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

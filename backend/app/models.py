@@ -87,6 +87,41 @@ class AuditEvent(str, enum.Enum):
     totp_disabled = "totp_disabled"
 
 
+class DeviceState(str, enum.Enum):
+    unknown = "unknown"
+    verified = "verified"
+    trusted = "trusted"
+    suspicious = "suspicious"
+    blocked = "blocked"
+    revoked = "revoked"
+
+
+class SecurityEventType(str, enum.Enum):
+    login_success = "login_success"
+    login_failure = "login_failure"
+    login_lockout = "login_lockout"
+    otp_failure = "otp_failure"
+    otp_rate_limit = "otp_rate_limit"
+    totp_failure = "totp_failure"
+    new_device = "new_device"
+    device_trusted = "device_trusted"
+    device_revoked = "device_revoked"
+    device_blocked = "device_blocked"
+    session_created = "session_created"
+    session_revoked = "session_revoked"
+    rate_limited = "rate_limited"
+    bot_suspected = "bot_suspected"
+    suspicious_request = "suspicious_request"
+    account_locked = "account_locked"
+
+
+class SecuritySeverity(str, enum.Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
 class AdminUser(Base):
     __tablename__ = "admin_users"
 
@@ -112,6 +147,7 @@ class AdminUser(Base):
 
     sessions = relationship("AdminSession", back_populates="admin", cascade="all, delete-orphan")
     challenges = relationship("AuthChallenge", back_populates="admin", cascade="all, delete-orphan")
+    devices = relationship("Device", back_populates="admin", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint("length(username) BETWEEN 3 AND 64"),
@@ -123,6 +159,7 @@ class AdminSession(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
+    device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True)
     session_hash = Column(String(64), nullable=False, unique=True, index=True)
     ip_address = Column(INET)
     user_agent = Column(Text)
@@ -132,6 +169,7 @@ class AdminSession(Base):
     revoked_at = Column(DateTime(timezone=True))
 
     admin = relationship("AdminUser", back_populates="sessions")
+    device = relationship("Device", back_populates="sessions")
 
     __table_args__ = (
         Index("idx_sessions_admin", "admin_id", "revoked_at", "expires_at"),
@@ -289,4 +327,83 @@ class AuditLog(Base):
 
     __table_args__ = (
         Index("idx_audit_logs_created", "created_at"),
+    )
+
+
+class Device(Base):
+    __tablename__ = "devices"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_hash = Column(String(64), nullable=False, unique=True, index=True)
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
+    first_seen_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    last_seen_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    first_ip = Column(INET)
+    last_ip = Column(INET)
+    user_agent = Column(Text)
+    browser_name = Column(String(64))
+    browser_version = Column(String(32))
+    os_name = Column(String(64))
+    os_version = Column(String(32))
+    device_type = Column(String(32))
+    country = Column(String(2))
+    state = Column(Enum(DeviceState), nullable=False, default=DeviceState.unknown)
+    risk_score = Column(Integer, nullable=False, default=0)
+    last_login_at = Column(DateTime(timezone=True))
+    last_activity_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    admin = relationship("AdminUser", back_populates="devices")
+    sessions = relationship("AdminSession", back_populates="device")
+    trusted = relationship("TrustedDevice", back_populates="device", uselist=False)
+
+    __table_args__ = (
+        Index("idx_devices_admin", "admin_id"),
+        Index("idx_devices_hash", "device_hash"),
+    )
+
+
+class TrustedDevice(Base):
+    __tablename__ = "trusted_devices"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, unique=True)
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="CASCADE"), nullable=False)
+    trust_hash = Column(String(64), nullable=False, unique=True, index=True)
+    trusted_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+    last_used_at = Column(DateTime(timezone=True))
+    ip_address = Column(INET)
+    user_agent = Column(Text)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+    device = relationship("Device", back_populates="trusted")
+
+    __table_args__ = (
+        Index("idx_trusted_devices_admin", "admin_id"),
+    )
+
+
+class SecurityEvent(Base):
+    __tablename__ = "security_events"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    event_type = Column(Enum(SecurityEventType), nullable=False, index=True)
+    severity = Column(Enum(SecuritySeverity), nullable=False, default=SecuritySeverity.low)
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"), index=True)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("admin_sessions.id", ondelete="SET NULL"))
+    device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"))
+    ip_address = Column(INET, index=True)
+    user_agent = Column(Text)
+    path = Column(Text)
+    method = Column(String(8))
+    risk_score = Column(Integer, nullable=False, default=0)
+    reason = Column(Text)
+    metadata_ = Column("metadata", JSONB, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+
+    __table_args__ = (
+        Index("idx_security_events_type_created", "event_type", "created_at"),
     )
