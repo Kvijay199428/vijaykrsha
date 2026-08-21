@@ -9,6 +9,7 @@ import Contact from "@/pages/Contact";
 import NotFound from "@/pages/NotFound";
 import AdminLogin from "@/pages/AdminLogin";
 import Setup from "@/pages/admin/Setup";
+import ProtectedRoute from "@/components/admin/ProtectedRoute";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Dashboard from "@/pages/admin/Dashboard";
 import Inbox from "@/pages/admin/Inbox";
@@ -20,21 +21,28 @@ import AuditLogs from "@/pages/admin/AuditLogs";
 export default function App() {
   return (
     <Routes>
+      {/* Public admin routes */}
       <Route path="/vega/admin/login" element={<AdminLogin />} />
       <Route path="/vega/admin/setup" element={<Setup />} />
-      <Route path="/vega/admin" element={<AdminLayout />}>
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="inbox" element={<Inbox />} />
-        <Route path="messages/:id" element={<MessageDetail />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route
-          path="admin-users"
-          element={<Navigate to="/vega/admin/users" replace />}
-        />
-        <Route path="audit-logs" element={<AuditLogs />} />
-        <Route index element={<Dashboard />} />
+
+      {/* Protected admin routes */}
+      <Route element={<ProtectedRoute />}>
+        <Route path="/vega/admin" element={<AdminLayout />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="inbox" element={<Inbox />} />
+          <Route path="messages/:id" element={<MessageDetail />} />
+          <Route path="settings" element={<Settings />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route
+            path="admin-users"
+            element={<Navigate to="/vega/admin/users" replace />}
+          />
+          <Route path="audit-logs" element={<AuditLogs />} />
+        </Route>
       </Route>
+
+      {/* Public site routes */}
       <Route
         path="*"
         element={

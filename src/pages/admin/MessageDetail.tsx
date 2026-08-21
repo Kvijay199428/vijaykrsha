@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { ArrowLeft, Send, Tag, MessageSquare } from "lucide-react";
 
 interface Note {
@@ -45,7 +46,7 @@ export default function MessageDetail() {
 
   useEffect(() => {
     if (!id) return;
-    fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`)
       .then((r) => r.json())
       .then((data) => {
         setMessage(data);
@@ -58,9 +59,8 @@ export default function MessageDetail() {
 
   async function updateField(field: string, value: string) {
     if (!id) return;
-    await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, {
+    await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, {
       method: "PATCH",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
     });
@@ -70,9 +70,8 @@ export default function MessageDetail() {
   async function addNote(e: React.FormEvent) {
     e.preventDefault();
     if (!id || !noteBody.trim()) return;
-    const res = await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/notes`, {
+    const res = await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/notes`, {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: noteBody }),
     });
@@ -84,14 +83,13 @@ export default function MessageDetail() {
   async function addTag(e: React.FormEvent) {
     e.preventDefault();
     if (!id || !newTag.trim()) return;
-    await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/tags`, {
+    await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/tags`, {
       method: "POST",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag_name: newTag }),
     });
     setNewTag("");
-    const refreshed = await fetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`, { credentials: "include" }).then((r) => r.json());
+    const refreshed = await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`).then((r) => r.json());
     setMessage(refreshed);
   }
 
@@ -112,14 +110,14 @@ export default function MessageDetail() {
           </p>
         </div>
         <div className="flex gap-2">
-          <select value={status} onChange={(e) => { setStatus(e.target.value); updateField("status", e.target.value); }} className="px-3 py-1 border rounded-lg text-sm">
+          <select value={status} onChange={(e) => { setStatus(e.target.value); updateField("status", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-sm">
             <option value="new">New</option>
             <option value="in_progress">In Progress</option>
             <option value="waiting">Waiting</option>
             <option value="resolved">Resolved</option>
             <option value="spam">Spam</option>
           </select>
-          <select value={priority} onChange={(e) => { setPriority(e.target.value); updateField("priority", e.target.value); }} className="px-3 py-1 border rounded-lg text-sm">
+          <select value={priority} onChange={(e) => { setPriority(e.target.value); updateField("priority", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-sm">
             <option value="low">Low</option>
             <option value="normal">Normal</option>
             <option value="high">High</option>
@@ -128,16 +126,16 @@ export default function MessageDetail() {
         </div>
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat rounded-xl p-6">
         <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.body}</p>
-        <div className="mt-4 pt-4 border-t flex gap-4 text-xs text-muted-foreground">
+        <div className="mt-4 pt-4 border-t border-border/50 flex gap-4 text-xs text-muted-foreground">
           <span>Channel: {message.channel}</span>
           <span>Received: {new Date(message.created_at).toLocaleString()}</span>
           {message.sender_phone && <span>Phone: {message.sender_phone}</span>}
         </div>
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat rounded-xl p-6">
         <h2 className="font-semibold mb-4 flex items-center gap-2"><Tag className="h-4 w-4" /> Tags</h2>
         <div className="flex flex-wrap gap-2 mb-3">
           {message.tags.length === 0 && <span className="text-xs text-muted-foreground">No tags</span>}
@@ -146,25 +144,25 @@ export default function MessageDetail() {
           ))}
         </div>
         <form onSubmit={addTag} className="flex gap-2">
-          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-1 border rounded-lg text-sm" />
-          <button type="submit" className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-sm">Add</button>
+          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-sm" />
+          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm">Add</button>
         </form>
       </div>
 
-      <div className="rounded-xl bg-card border p-6">
+      <div className="neu-flat rounded-xl p-6">
         <h2 className="font-semibold mb-4 flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Notes</h2>
         <div className="space-y-3 mb-4">
           {message.notes.length === 0 && <p className="text-xs text-muted-foreground">No notes yet</p>}
           {message.notes.map((n) => (
-            <div key={n.id} className="p-3 bg-muted/50 rounded-lg">
+            <div key={n.id} className="p-3 neu-concave rounded-xl">
               <p className="text-sm">{n.body}</p>
               <p className="text-xs text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
             </div>
           ))}
         </div>
         <form onSubmit={addNote} className="flex gap-2">
-          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-1 border rounded-lg text-sm" />
-          <button type="submit" className="px-3 py-1 bg-primary text-primary-foreground rounded-lg text-sm flex items-center gap-1">
+          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-sm" />
+          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm flex items-center gap-1">
             <Send className="h-3 w-3" /> Add
           </button>
         </form>

@@ -1,65 +1,107 @@
 import { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { ArrowRight, Loader2, Shield } from "lucide-react";
+import { ArrowRight, Loader2, Shield, MessageSquare, KeyRound } from "lucide-react";
+
+type Step = "credentials" | "otp" | "totp";
 
 export default function AdminLogin() {
-  const { login } = useAuth();
-  const [step, setStep] = useState<"credentials" | "otp">("credentials");
+  const { login, loginOtpSend, loginOtpVerify, loginTotp } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const from =
+    (location.state as { from?: string } | null)?.from ??
+    "/vega/admin/dashboard";
+
+  const [step, setStep] = useState<Step>("credentials");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+
+  const [otpCode, setOtpCode] = useState("");
   const [totpCode, setTotpCode] = useState("");
-  const [passwordToken, setPasswordToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.detail || "Invalid credentials");
-        return;
-      }
-      if (data.requires_totp) {
-        setPasswordToken(data.password_token);
+      const result = await login(username, password);
+      setChallengeId(result.challenge_id);
+
+      if (result.methods.includes("totp") && !result.methods.includes("telegram_otp")) {
+        setStep("totp");
+      } else if (result.methods.includes("telegram_otp")) {
         setStep("otp");
+        startResendCooldown();
       } else {
-        login(data.admin, data.token);
+        setError("No second-factor method configured for this account");
       }
-    } catch {
-      setError("Connection failed");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleOtp(e: React.FormEvent) {
+  function startResendCooldown() {
+    setResendCooldown(60);
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }
+
+  async function handleResendOtp() {
+    if (resendCooldown > 0) return;
+    setError("");
+    try {
+      const result = await loginOtpSend(challengeId);
+      setResendCooldown(result.cooldown_seconds);
+      startResendCooldown();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend code");
+    }
+  }
+
+  async function handleOtpVerify(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/auth/verify-totp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ password_token: passwordToken, totp_code: totpCode }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.detail || "Invalid code");
-        return;
+      const result = await loginOtpVerify(challengeId, otpCode);
+      if (result.totpRequired && result.challenge_id) {
+        setChallengeId(result.challenge_id);
+        setTotpCode("");
+        setStep("totp");
+      } else {
+        navigate(from, { replace: true });
       }
-      login(data.admin, data.token);
-    } catch {
-      setError("Connection failed");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleTotpVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      await loginTotp(challengeId, totpCode);
+      navigate(from, { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code");
     } finally {
       setLoading(false);
     }
@@ -74,7 +116,9 @@ export default function AdminLogin() {
           </div>
           <h1 className="text-2xl font-bold">Admin Panel</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {step === "credentials" ? "Sign in to your account" : "Enter your 2FA code"}
+            {step === "credentials" && "Sign in to your account"}
+            {step === "otp" && "Enter the code sent to Telegram"}
+            {step === "totp" && "Enter your authenticator code"}
           </p>
         </div>
 
@@ -85,7 +129,7 @@ export default function AdminLogin() {
             </div>
           )}
 
-          {step === "credentials" ? (
+          {step === "credentials" && (
             <form onSubmit={handleCredentials} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Username</label>
@@ -117,10 +161,62 @@ export default function AdminLogin() {
                 {loading ? "Signing in..." : "Sign In"}
               </button>
             </form>
-          ) : (
-            <form onSubmit={handleOtp} className="space-y-4">
+          )}
+
+          {step === "otp" && (
+            <form onSubmit={handleOtpVerify} className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <MessageSquare className="w-4 h-4" />
+                <span>Code sent to your Telegram</span>
+              </div>
               <div>
-                <label className="block text-sm font-medium mb-1">2FA Code</label>
+                <label className="block text-sm font-medium mb-1">OTP Code</label>
+                <input
+                  type="text"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  maxLength={6}
+                  autoFocus
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || otpCode.length !== 6}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                {loading ? "Verifying..." : "Verify Code"}
+              </button>
+              <button
+                type="button"
+                onClick={handleResendOtp}
+                disabled={resendCooldown > 0}
+                className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                {resendCooldown > 0
+                  ? `Resend code in ${resendCooldown}s`
+                  : "Resend code"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("credentials"); setOtpCode(""); setError(""); }}
+                className="w-full text-sm text-muted-foreground hover:text-foreground"
+              >
+                Back to login
+              </button>
+            </form>
+          )}
+
+          {step === "totp" && (
+            <form onSubmit={handleTotpVerify} className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                <KeyRound className="w-4 h-4" />
+                <span>Enter code from your authenticator app</span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">TOTP Code</label>
                 <input
                   type="text"
                   value={totpCode}

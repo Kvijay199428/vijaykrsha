@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight } from "lucide-react";
 
 interface Stats {
@@ -26,11 +27,11 @@ export default function Dashboard() {
   const [recent, setRecent] = useState<Message[]>([]);
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPISTATS, { credentials: "include" })
+    apiFetch(ROUTES.ADMINAPISTATS)
       .then((r) => r.json())
       .then(setStats)
       .catch(() => {});
-    fetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`)
       .then((r) => r.json())
       .then((data) => setRecent(data.items ?? []))
       .catch(() => {});

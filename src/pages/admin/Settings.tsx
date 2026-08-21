@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { Shield, Lock } from "lucide-react";
 
 export default function Settings() {
@@ -16,7 +17,7 @@ export default function Settings() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPISETTINGS, { credentials: "include" })
+    apiFetch(ROUTES.ADMINAPISETTINGS)
       .then((r) => r.json())
       .then((data) => setTotpEnabled(data.totp_enabled))
       .catch(() => {});
@@ -26,7 +27,7 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPITOTPSETUP, { credentials: "include" });
+      const res = await apiFetch(ROUTES.ADMINAPITOTPSETUP);
       const data = await res.json();
       setTotpSecret(data.secret);
       setShowSetup(true);
@@ -42,9 +43,8 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPITOTPENABLE, {
+      const res = await apiFetch(ROUTES.ADMINAPITOTPENABLE, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: totpCode, secret: totpSecret }),
       });
@@ -67,9 +67,8 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPITOTPDISABLE, {
+      const res = await apiFetch(ROUTES.ADMINAPITOTPDISABLE, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ totp_code: totpCode }),
       });
@@ -97,9 +96,8 @@ export default function Settings() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPICHANGEPASSWORD, {
+      const res = await apiFetch(ROUTES.ADMINAPICHANGEPASSWORD, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
       });

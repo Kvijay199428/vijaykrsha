@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { ROUTES } from "../../lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   Users as UsersIcon,
@@ -56,7 +57,6 @@ export default function UsersPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // Dialogs
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState<AdminUser | null>(null);
   const [showTotpSetup, setShowTotpSetup] = useState<AdminUser | null>(null);
@@ -71,7 +71,7 @@ export default function UsersPage() {
 
   async function loadUsers() {
     try {
-      const res = await fetch(ROUTES.ADMINAPIUSERS, { credentials: "include" });
+      const res = await apiFetch(ROUTES.ADMINAPIUSERS);
       if (res.ok) {
         const data = await res.json();
         setUsers(data.items || []);
@@ -94,7 +94,6 @@ export default function UsersPage() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -116,7 +115,6 @@ export default function UsersPage() {
         )}
       </div>
 
-      {/* Filters */}
       <div className="flex gap-3 mb-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -151,7 +149,6 @@ export default function UsersPage() {
         </select>
       </div>
 
-      {/* Table */}
       <div className="neu-flat overflow-hidden">
         <table className="w-full">
           <thead>
@@ -234,7 +231,7 @@ export default function UsersPage() {
                                 <MenuItem icon={Ban} label="Disable User" onClick={() => { setShowDisable(user); setOpenMenuId(null); }} danger />
                               ) : (
                                 <MenuItem icon={CheckCircle} label="Enable User" onClick={async () => {
-                                  await fetch(ROUTES.ADMINAPIUSERENABLE(user.id), { method: "POST", credentials: "include" });
+                                  await apiFetch(ROUTES.ADMINAPIUSERENABLE(user.id), { method: "POST" });
                                   loadUsers();
                                   setOpenMenuId(null);
                                 }} />
@@ -252,7 +249,6 @@ export default function UsersPage() {
         </table>
       </div>
 
-      {/* Dialogs */}
       {showCreate && (
         <CreateUserDialog onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); loadUsers(); }} />
       )}
@@ -273,7 +269,7 @@ export default function UsersPage() {
           danger
           onClose={() => setShowTotpReset(null)}
           onConfirm={async () => {
-            await fetch(ROUTES.ADMINAPIUSERTOTPRESET(showTotpReset.id), { method: "POST", credentials: "include" });
+            await apiFetch(ROUTES.ADMINAPIUSERTOTPRESET(showTotpReset.id), { method: "POST" });
             setShowTotpReset(null);
             loadUsers();
           }}
@@ -287,7 +283,7 @@ export default function UsersPage() {
           danger
           onClose={() => setShowDisable(null)}
           onConfirm={async () => {
-            await fetch(ROUTES.ADMINAPIUSERDISABLE(showDisable.id), { method: "POST", credentials: "include" });
+            await apiFetch(ROUTES.ADMINAPIUSERDISABLE(showDisable.id), { method: "POST" });
             setShowDisable(null);
             loadUsers();
           }}
@@ -300,7 +296,7 @@ export default function UsersPage() {
           confirmLabel="Revoke"
           onClose={() => setShowRevoke(null)}
           onConfirm={async () => {
-            await fetch(ROUTES.ADMINAPIUSERREVOKE(showRevoke.id), { method: "POST", credentials: "include" });
+            await apiFetch(ROUTES.ADMINAPIUSERREVOKE(showRevoke.id), { method: "POST" });
             setShowRevoke(null);
           }}
         />
@@ -323,8 +319,6 @@ function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Shield;
   );
 }
 
-// ── Create User Dialog ───────────────────────────────────────────────────────
-
 function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({
     username: "", display_name: "", email: "", password: "", confirmPassword: "", role: "support", telegram_chat_id: "",
@@ -341,9 +335,8 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
     }
     setLoading(true);
     try {
-      const res = await fetch(ROUTES.ADMINAPIUSERS, {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERS, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: form.username,
@@ -399,8 +392,6 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
   );
 }
 
-// ── Edit User Dialog ─────────────────────────────────────────────────────────
-
 function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose: () => void; onUpdated: () => void }) {
   const [form, setForm] = useState({ display_name: user.display_name, email: user.email || "", role: user.role });
   const [error, setError] = useState("");
@@ -410,9 +401,8 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch(ROUTES.ADMINAPIUSERSBYID(user.id), {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERSBYID(user.id), {
         method: "PUT",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
@@ -457,8 +447,6 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
   );
 }
 
-// ── TOTP Setup Dialog ────────────────────────────────────────────────────────
-
 function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
   const [secret, setSecret] = useState("");
   const [code, setCode] = useState("");
@@ -467,7 +455,7 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPIUSERTOTPSETUP(user.id), { credentials: "include" })
+    apiFetch(ROUTES.ADMINAPIUSERTOTPSETUP(user.id))
       .then((r) => r.json())
       .then((data) => {
         setSecret(data.secret);
@@ -480,9 +468,8 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPIUSERTOTPENABLE(user.id), {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERTOTPENABLE(user.id), {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, secret }),
       });
@@ -546,8 +533,6 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
   );
 }
 
-// ── Reset Password Dialog ────────────────────────────────────────────────────
-
 function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -558,9 +543,8 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
     if (password !== confirm) { setError("Passwords do not match"); return; }
     setLoading(true);
     try {
-      const res = await fetch(ROUTES.ADMINAPIUSERRESETPW(user.id), {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERRESETPW(user.id), {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ new_password: password }),
       });
@@ -594,8 +578,6 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
   );
 }
 
-// ── Confirm Dialog ───────────────────────────────────────────────────────────
-
 function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfirm }: {
   title: string; message: string; confirmLabel: string; danger?: boolean;
   onClose: () => void; onConfirm: () => void;
@@ -621,8 +603,6 @@ function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfir
   );
 }
 
-// ── Shared Dialog wrapper ────────────────────────────────────────────────────
-
 function Dialog({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -636,8 +616,6 @@ function Dialog({ onClose, children }: { onClose: () => void; children: React.Re
     </div>
   );
 }
-
-// ── Shared NeuInput ──────────────────────────────────────────────────────────
 
 function NeuInput({ label, type = "text", value, onChange, placeholder }: {
   label: string; type?: string; value: string; onChange: (v: string) => void; placeholder?: string;

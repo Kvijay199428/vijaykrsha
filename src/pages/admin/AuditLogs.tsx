@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 
 interface AuditLog {
   id: number;
@@ -18,7 +19,7 @@ export default function AuditLogs() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${ROUTES.ADMINAPIAUDITLOGS}?page=${page}&limit=50`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIAUDITLOGS}?page=${page}&limit=50`)
       .then((r) => r.json())
       .then((data) => {
         setLogs(data.items ?? []);

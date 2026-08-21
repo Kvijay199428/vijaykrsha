@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 import { Search } from "lucide-react";
 
 interface Message {
@@ -28,7 +29,7 @@ export default function Inbox() {
     const params = new URLSearchParams({ page: String(page), limit: "20" });
     if (search) params.set("search", search);
     if (statusFilter) params.set("status", statusFilter);
-    fetch(`${ROUTES.ADMINAPIMESSAGES}?${params}`, { credentials: "include" })
+    apiFetch(`${ROUTES.ADMINAPIMESSAGES}?${params}`)
       .then((r) => r.json())
       .then((data) => {
         setMessages(data.items ?? []);
