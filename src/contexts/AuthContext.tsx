@@ -14,11 +14,25 @@ interface SecondFactorResult {
   methods: string[];
 }
 
-export class OtpCooldownError extends Error {
-  cooldownSeconds: number;
+export interface RateLimitDetail {
+  detail: string;
+  type: "rate_limited" | "account_locked" | "resend_cooldown" | "verify_cooldown" | "ip_blocked";
+  retry_after: number;
+}
+
+export class RateLimitError extends Error {
+  retryAfter: number;
+  limitType: RateLimitDetail["type"];
+  constructor(msg: string, retryAfter: number, limitType: RateLimitDetail["type"]) {
+    super(msg);
+    this.retryAfter = retryAfter;
+    this.limitType = limitType;
+  }
+}
+
+export class OtpCooldownError extends RateLimitError {
   constructor(cooldownSeconds: number) {
-    super(`Please wait ${cooldownSeconds}s before requesting a new code.`);
-    this.cooldownSeconds = cooldownSeconds;
+    super("Please wait before requesting a new code.", cooldownSeconds, "resend_cooldown");
   }
 }
 
@@ -82,7 +96,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Login failed" }));
-        throw new Error(typeof err.detail === "string" ? err.detail : "Login failed");
+        const msg = typeof err.detail === "string" ? err.detail : "Login failed";
+        if (response.status === 429 || response.status === 423) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "rate_limited");
+          }
+        }
+        throw new Error(msg);
       }
 
       return await response.json();
@@ -102,9 +123,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Failed to send code" }));
         const msg = typeof err.detail === "string" ? err.detail : "Failed to send code";
-        if (msg.includes("resend_cooldown")) {
-          const match = msg.match(/(\d+)/);
-          throw new OtpCooldownError(match ? parseInt(match[1]) : 60);
+        if (response.status === 429) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new OtpCooldownError(data.retry_after);
+          }
         }
         throw new Error(msg);
       }
@@ -125,7 +148,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "OTP verification failed" }));
-        throw new Error(typeof err.detail === "string" ? err.detail : "OTP verification failed");
+        const msg = typeof err.detail === "string" ? err.detail : "OTP verification failed";
+        if (response.status === 429) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
+          }
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();
@@ -151,7 +181,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "TOTP verification failed" }));
-        throw new Error(typeof err.detail === "string" ? err.detail : "TOTP verification failed");
+        const msg = typeof err.detail === "string" ? err.detail : "TOTP verification failed";
+        if (response.status === 429) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
+          }
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();

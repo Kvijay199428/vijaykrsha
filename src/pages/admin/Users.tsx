@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { ROUTES } from "../../lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { getApiErrorMessage } from "@/lib/apiError";
+import { isPasswordValid } from "@/lib/passwordValidation";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   Users as UsersIcon,
@@ -17,6 +19,7 @@ import {
   Ban,
   CheckCircle,
   X,
+  Check,
 } from "lucide-react";
 
 interface AdminUser {
@@ -349,7 +352,7 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Failed to create user");
+        setError(getApiErrorMessage(data, "Failed to create user"));
         return;
       }
       onCreated();
@@ -368,7 +371,10 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
         <NeuInput label="Username *" value={form.username} onChange={(v) => setForm({ ...form, username: v })} />
         <NeuInput label="Display Name *" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
         <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
-        <NeuInput label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+        <div>
+          <NeuInput label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+          <PasswordRequirements password={form.password} username={form.username} />
+        </div>
         <NeuInput label="Confirm Password *" type="password" value={form.confirmPassword} onChange={(v) => setForm({ ...form, confirmPassword: v })} />
         <div>
           <label className="block text-sm font-medium mb-1">Role *</label>
@@ -383,7 +389,7 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
         <NeuInput label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
-          <button type="submit" disabled={loading} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+          <button type="submit" disabled={loading || !form.username || !form.display_name || !(isPasswordValid(form.password, form.username) && form.password === form.confirmPassword)} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
             {loading ? "Creating..." : "Create User"}
           </button>
         </div>
@@ -408,7 +414,7 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Failed to update");
+        setError(getApiErrorMessage(data, "Failed to update"));
         return;
       }
       onUpdated();
@@ -475,7 +481,7 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Invalid code");
+        setError(getApiErrorMessage(data, "Invalid code"));
         return;
       }
       setStep("done");
@@ -550,7 +556,7 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Failed");
+        setError(getApiErrorMessage(data, "Failed"));
         return;
       }
       onDone();
@@ -600,6 +606,35 @@ function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfir
         </button>
       </div>
     </Dialog>
+  );
+}
+
+function PasswordRequirements({ password, username }: { password: string; username: string }) {
+  if (!password) return null;
+
+  return (
+    <div className="mt-1 space-y-1">
+      {[
+        { label: "At least 12 characters", ok: password.length >= 12 },
+        { label: "Uppercase letter", ok: /[A-Z]/.test(password) },
+        { label: "Lowercase letter", ok: /[a-z]/.test(password) },
+        { label: "Number", ok: /[0-9]/.test(password) },
+        { label: "Special character", ok: /[^A-Za-z0-9]/.test(password) },
+        { label: "No leading/trailing whitespace", ok: password === password.trim() },
+        { label: "Not the same as username", ok: !username || password.toLowerCase() !== username.toLowerCase() },
+      ].map((r) => (
+        <div key={r.label} className="flex items-center gap-1.5 text-xs">
+          {r.ok ? (
+            <Check className="w-3 h-3 text-green-500" />
+          ) : (
+            <X className="w-3 h-3 text-red-400" />
+          )}
+          <span className={r.ok ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}>
+            {r.label}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 

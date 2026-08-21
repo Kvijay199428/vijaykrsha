@@ -1,9 +1,74 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { ArrowRight, Loader2, Shield, MessageSquare, KeyRound } from "lucide-react";
+import { RateLimitError } from "../contexts/AuthContext";
+import {
+  ArrowRight, Loader2, Shield, MessageSquare, KeyRound,
+  Clock, AlertTriangle, Lock,
+} from "lucide-react";
 
 type Step = "credentials" | "otp" | "totp";
+
+function CooldownTimer({
+  seconds,
+  maxSeconds,
+  variant,
+}: {
+  seconds: number;
+  maxSeconds: number;
+  variant: "warning" | "danger";
+}) {
+  const pct = maxSeconds > 0 ? (seconds / maxSeconds) * 100 : 0;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  const colors =
+    variant === "danger"
+      ? {
+          bg: "bg-red-50 dark:bg-red-950/30",
+          border: "border-red-200 dark:border-red-800/40",
+          text: "text-red-700 dark:text-red-400",
+          bar: "bg-red-500 dark:bg-red-400",
+          icon: "text-red-500 dark:text-red-400",
+        }
+      : {
+          bg: "bg-amber-50 dark:bg-amber-950/30",
+          border: "border-amber-200 dark:border-amber-800/40",
+          text: "text-amber-700 dark:text-amber-400",
+          bar: "bg-amber-500 dark:bg-amber-400",
+          icon: "text-amber-500 dark:text-amber-400",
+        };
+
+  return (
+    <div className={`rounded-xl border p-4 ${colors.bg} ${colors.border}`}>
+      <div className="flex items-center gap-3 mb-3">
+        {variant === "danger" ? (
+          <Lock className={`w-5 h-5 ${colors.icon}`} />
+        ) : (
+          <Clock className={`w-5 h-5 ${colors.icon}`} />
+        )}
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium ${colors.text}`}>
+            {variant === "danger" ? "Account temporarily locked" : "Please wait"}
+          </p>
+          <p className={`text-xs mt-0.5 ${colors.text} opacity-80`}>
+            Too many failed attempts
+          </p>
+        </div>
+        <span className={`text-2xl font-bold tabular-nums ${colors.text}`}>
+          {timeStr}
+        </span>
+      </div>
+      <div className={`h-1.5 rounded-full overflow-hidden ${variant === "danger" ? "bg-red-100 dark:bg-red-900/40" : "bg-amber-100 dark:bg-amber-900/40"}`}>
+        <div
+          className={`h-full rounded-full transition-all duration-1000 ease-linear ${colors.bar}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function AdminLogin() {
   const { login, loginOtpSend, loginOtpVerify, loginTotp } = useAuth();
@@ -25,6 +90,49 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
+  // Rate limit cooldown state
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [cooldownMax, setCooldownMax] = useState(0);
+  const [cooldownType, setCooldownType] = useState<"rate_limited" | "account_locked">("rate_limited");
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearCooldownTimer = useCallback(() => {
+    if (cooldownRef.current) {
+      clearInterval(cooldownRef.current);
+      cooldownRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => clearCooldownTimer();
+  }, [clearCooldownTimer]);
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) {
+      clearCooldownTimer();
+      return;
+    }
+    cooldownRef.current = setInterval(() => {
+      setCooldownSeconds((prev) => {
+        if (prev <= 1) {
+          clearCooldownTimer();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearCooldownTimer();
+  }, [cooldownMax, clearCooldownTimer]);
+
+  function handleCooldownError(err: RateLimitError) {
+    setCooldownSeconds(err.retryAfter);
+    setCooldownMax(err.retryAfter);
+    setCooldownType(
+      err.limitType === "account_locked" ? "account_locked" : "rate_limited"
+    );
+    setError("");
+  }
+
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -42,7 +150,11 @@ export default function AdminLogin() {
         setError("No second-factor method configured for this account");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -69,7 +181,11 @@ export default function AdminLogin() {
       setResendCooldown(result.cooldown_seconds);
       startResendCooldown();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to resend code");
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to resend code");
+      }
     }
   }
 
@@ -87,7 +203,11 @@ export default function AdminLogin() {
         navigate(from, { replace: true });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid code");
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Invalid code");
+      }
     } finally {
       setLoading(false);
     }
@@ -101,11 +221,17 @@ export default function AdminLogin() {
       await loginTotp(challengeId, totpCode);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid code");
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Invalid code");
+      }
     } finally {
       setLoading(false);
     }
   }
+
+  const isLocked = cooldownSeconds > 0;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[var(--color-cream)] via-[var(--color-cream)] to-[var(--color-pink-muted)] p-4">
@@ -123,9 +249,20 @@ export default function AdminLogin() {
         </div>
 
         <div className="neu-convex p-8">
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">
-              {error}
+          {isLocked && (
+            <div className="mb-4">
+              <CooldownTimer
+                seconds={cooldownSeconds}
+                maxSeconds={cooldownMax}
+                variant={cooldownType === "account_locked" ? "danger" : "warning"}
+              />
+            </div>
+          )}
+
+          {error && !isLocked && (
+            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
@@ -140,6 +277,7 @@ export default function AdminLogin() {
                   className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   required
                   autoFocus
+                  disabled={isLocked}
                 />
               </div>
               <div>
@@ -150,15 +288,16 @@ export default function AdminLogin() {
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   required
+                  disabled={isLocked}
                 />
               </div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || isLocked}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                {loading ? "Signing in..." : "Sign In"}
+                {loading ? "Signing in..." : isLocked ? `Locked — wait ${cooldownSeconds}s` : "Sign In"}
               </button>
             </form>
           )}
@@ -179,11 +318,12 @@ export default function AdminLogin() {
                   className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
                   maxLength={6}
                   autoFocus
+                  disabled={isLocked}
                 />
               </div>
               <button
                 type="submit"
-                disabled={loading || otpCode.length !== 6}
+                disabled={loading || otpCode.length !== 6 || isLocked}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -192,7 +332,7 @@ export default function AdminLogin() {
               <button
                 type="button"
                 onClick={handleResendOtp}
-                disabled={resendCooldown > 0}
+                disabled={resendCooldown > 0 || isLocked}
                 className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
                 {resendCooldown > 0
@@ -201,7 +341,7 @@ export default function AdminLogin() {
               </button>
               <button
                 type="button"
-                onClick={() => { setStep("credentials"); setOtpCode(""); setError(""); }}
+                onClick={() => { setStep("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
                 className="w-full text-sm text-muted-foreground hover:text-foreground"
               >
                 Back to login
@@ -225,11 +365,12 @@ export default function AdminLogin() {
                   className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
                   maxLength={6}
                   autoFocus
+                  disabled={isLocked}
                 />
               </div>
               <button
                 type="submit"
-                disabled={loading || totpCode.length !== 6}
+                disabled={loading || totpCode.length !== 6 || isLocked}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -237,7 +378,7 @@ export default function AdminLogin() {
               </button>
               <button
                 type="button"
-                onClick={() => { setStep("credentials"); setTotpCode(""); setError(""); }}
+                onClick={() => { setStep("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
                 className="w-full text-sm text-muted-foreground hover:text-foreground"
               >
                 Back to login

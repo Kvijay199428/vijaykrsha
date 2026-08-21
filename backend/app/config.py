@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     OTP_PEPPER: str = "vijaykrsha-otp-pepper-change-me"
 
     # Redis
-    REDIS_URL: str = "redis://redis:6379/0"
+    REDIS_URL: str = "redis://redis-prod:6379/0"
 
     # Rate limiting
     RATE_LIMIT_LOGIN_IP: int = 10

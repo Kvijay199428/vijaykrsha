@@ -68,6 +68,21 @@ services:
     networks:
       - dev-network
 
+  redis-dev:
+    image: redis:7-alpine
+    container_name: redis-dev
+    restart: unless-stopped
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:27004:6379"
+    networks:
+      - dev-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend-dev:
     build:
       context: ./backend
@@ -79,6 +94,8 @@ services:
         condition: service_healthy
       storage-dev:
         condition: service_started
+      redis-dev:
+        condition: service_healthy
     ports:
       - "26001:8000"
     env_file:
@@ -142,6 +159,19 @@ services:
     networks:
       - prod-network
 
+  redis-prod:
+    image: redis:7-alpine
+    container_name: redis-prod
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - prod-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend-prod:
     build:
       context: ./backend
@@ -153,6 +183,8 @@ services:
         condition: service_healthy
       storage-prod:
         condition: service_started
+      redis-prod:
+        condition: service_healthy
     ports:
       - "26011:8000"
     env_file:

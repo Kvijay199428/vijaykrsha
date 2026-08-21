@@ -1,8 +1,9 @@
 import structlog
+import re
 from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
@@ -14,14 +15,31 @@ from app.security.passwords import hash_password
 logger = structlog.get_logger()
 router = APIRouter(prefix="/admin/api", tags=["admin-users"])
 
+_PASSWORD_MIN = 12
+
 
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     display_name: str = Field(min_length=1, max_length=160)
     email: str | None = None
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=_PASSWORD_MIN, max_length=256)
     role: str = "support"
     telegram_chat_id: str | None = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain an uppercase letter")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Password must contain a lowercase letter")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Password must contain a number")
+        if not re.search(r"[^A-Za-z0-9]", v):
+            raise ValueError("Password must contain a special character")
+        if v != v.strip():
+            raise ValueError("Password must not have leading or trailing whitespace")
+        return v
 
 
 class UpdateUserRequest(BaseModel):
@@ -32,7 +50,22 @@ class UpdateUserRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    new_password: str = Field(min_length=6)
+    new_password: str = Field(min_length=_PASSWORD_MIN, max_length=256)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain an uppercase letter")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Password must contain a lowercase letter")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Password must contain a number")
+        if not re.search(r"[^A-Za-z0-9]", v):
+            raise ValueError("Password must contain a special character")
+        if v != v.strip():
+            raise ValueError("Password must not have leading or trailing whitespace")
+        return v
 
 
 def _audit(db: AsyncSession, event: AuditEvent, actor_id=None, target_id=None, ip=None, meta=None):

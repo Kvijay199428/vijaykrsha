@@ -1,6 +1,11 @@
+import { getApiErrorMessage } from "@/lib/apiError";
+
 export async function apiGet<T = unknown>(url: string): Promise<T> {
   const response = await fetch(url, { credentials: "include" });
-  if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(getApiErrorMessage(data, `GET ${url} failed: ${response.status}`));
+  }
   return response.json();
 }
 
@@ -14,6 +19,9 @@ export async function apiPost<T = unknown>(
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!response.ok) throw new Error(`POST ${url} failed: ${response.status}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new Error(getApiErrorMessage(data, `POST ${url} failed: ${response.status}`));
+  }
   return response.json();
 }

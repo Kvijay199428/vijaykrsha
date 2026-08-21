@@ -130,7 +130,11 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
 
     allowed, retry_after = await setup_limiter.check_and_record(ip)
     if not allowed:
-        raise HTTPException(429, f"rate_limited_retry_{int(retry_after)}s")
+        raise HTTPException(429, detail={
+            "detail": "Too many setup attempts. Please wait before trying again.",
+            "type": "rate_limited",
+            "retry_after": int(retry_after),
+        })
 
     result = await db.execute(select(func.count(AdminUser.id)))
     count = result.scalar()
@@ -185,7 +189,11 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     path = request.url.path
 
     if await RedisBlocklist.is_blocked(f"ip:{ip}"):
-        raise HTTPException(429, "ip_temporarily_blocked")
+        raise HTTPException(429, detail={
+            "detail": "Your IP has been temporarily blocked due to suspicious activity.",
+            "type": "ip_blocked",
+            "retry_after": await RedisBlocklist.get_block_ttl(f"ip:{ip}"),
+        })
 
     allowed, retry_after = await login_ip_limiter.check_and_record(ip)
     if not allowed:
@@ -194,11 +202,19 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             ip_address=ip, user_agent=ua, path=path, method="POST",
             reason=f"Login IP rate limited: {ip}",
         )
-        raise HTTPException(429, f"rate_limited_retry_{int(retry_after)}s")
+        raise HTTPException(429, detail={
+            "detail": "Too many login attempts from this IP. Please wait before trying again.",
+            "type": "rate_limited",
+            "retry_after": int(retry_after),
+        })
 
     allowed_user, retry_user = await login_user_limiter.check_and_record(body.username)
     if not allowed_user:
-        raise HTTPException(429, f"rate_limited_retry_{int(retry_user)}s")
+        raise HTTPException(429, detail={
+            "detail": "Too many failed attempts for this account. Please wait before trying again.",
+            "type": "rate_limited",
+            "retry_after": int(retry_user),
+        })
 
     stmt = select(AdminUser).where(AdminUser.username == body.username)
     result = await db.execute(stmt)
@@ -240,7 +256,11 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             reason="Login attempt on locked account",
             metadata={"remaining_seconds": remaining},
         )
-        raise HTTPException(423, f"account_locked_retry_{remaining}s")
+        raise HTTPException(423, detail={
+            "detail": "Account is temporarily locked due to too many failed attempts.",
+            "type": "account_locked",
+            "retry_after": remaining,
+        })
 
     admin.failed_login_count = 0
     admin.locked_until = None
@@ -296,7 +316,11 @@ async def login_otp_send(request: Request, db: AsyncSession = Depends(get_db)):
 
     allowed, retry_after = await otp_send_limiter.check_and_record(f"otp:{challenge_id}")
     if not allowed:
-        raise HTTPException(429, f"resend_cooldown_{int(retry_after)}s")
+        raise HTTPException(429, detail={
+            "detail": "Please wait before requesting a new code.",
+            "type": "resend_cooldown",
+            "retry_after": int(retry_after),
+        })
 
     challenge = await get_challenge(db, UUID(challenge_id))
     if not challenge:
@@ -308,7 +332,11 @@ async def login_otp_send(request: Request, db: AsyncSession = Depends(get_db)):
 
     can_send, wait = await can_resend_otp(db, challenge.id, settings.TELEGRAM_OTP_RESEND_SECONDS)
     if not can_send:
-        raise HTTPException(429, f"resend_cooldown_{int(wait)}s")
+        raise HTTPException(429, detail={
+            "detail": "Please wait before requesting a new code.",
+            "type": "resend_cooldown",
+            "retry_after": int(wait),
+        })
 
     otp_code = generate_otp(settings.TELEGRAM_OTP_LENGTH)
     sent = await send_otp(admin.telegram_chat_id, otp_code)
@@ -332,7 +360,11 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
 
     allowed, retry_after = await otp_verify_limiter.check_and_record(f"otp_verify:{body.challenge_id}")
     if not allowed:
-        raise HTTPException(429, f"verify_cooldown_{int(retry_after)}s")
+        raise HTTPException(429, detail={
+            "detail": "Too many verification attempts. Please wait before trying again.",
+            "type": "verify_cooldown",
+            "retry_after": int(retry_after),
+        })
 
     valid = await verify_otp(db, challenge.id, body.code)
     if not valid:
@@ -396,7 +428,11 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
 
     allowed, retry_after = await totp_verify_limiter.check_and_record(f"totp:{challenge.admin_id}")
     if not allowed:
-        raise HTTPException(429, f"verify_cooldown_{int(retry_after)}s")
+        raise HTTPException(429, detail={
+            "detail": "Too many verification attempts. Please wait before trying again.",
+            "type": "verify_cooldown",
+            "retry_after": int(retry_after),
+        })
 
     admin = (await db.execute(select(AdminUser).where(AdminUser.id == challenge.admin_id))).scalar_one_or_none()
     if not admin or not admin.totp_enabled or not admin.totp_secret_ciphertext:
