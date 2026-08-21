@@ -54,6 +54,11 @@ EXCLUDE_DIRS = {
     ".opencode",
 }
 
+EXCLUDE_FILES = {
+    "env/.env.prod",
+    "env/.env.dev",
+}
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,6 +112,8 @@ def create_zip():
                     continue
                 local_path = os.path.join(root, file)
                 arcname = os.path.relpath(local_path, LOCAL_DIR).replace("\\", "/")
+                if arcname in EXCLUDE_FILES:
+                    continue
                 zipf.write(local_path, arcname=arcname)
     print(f"ZIP created ({os.path.getsize(ZIP_FILE) // 1024} KB).")
 
