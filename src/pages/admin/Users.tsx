@@ -338,7 +338,7 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
     }
     setLoading(true);
     try {
-      const res = await apiFetch(ROUTES.ADMINAPIUSERS, {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERSCREATE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

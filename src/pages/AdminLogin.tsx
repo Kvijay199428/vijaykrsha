@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { RateLimitError } from "../contexts/AuthContext";
+import OtpDigitInput from "../components/OtpDigitInput";
 import {
   ArrowRight, Loader2, Shield, MessageSquare, KeyRound,
   Clock, AlertTriangle, Lock,
@@ -80,12 +81,15 @@ export default function AdminLogin() {
     "/vega/admin/dashboard";
 
   const [step, setStep] = useState<Step>("credentials");
+  const [transitioning, setTransitioning] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [challengeId, setChallengeId] = useState("");
 
   const [otpCode, setOtpCode] = useState("");
   const [totpCode, setTotpCode] = useState("");
+  const [otpError, setOtpError] = useState(false);
+  const [totpError, setTotpError] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -124,6 +128,14 @@ export default function AdminLogin() {
     return () => clearCooldownTimer();
   }, [cooldownMax, clearCooldownTimer]);
 
+  function transitionTo(nextStep: Step) {
+    setTransitioning(true);
+    setTimeout(() => {
+      setStep(nextStep);
+      setTransitioning(false);
+    }, 150);
+  }
+
   function handleCooldownError(err: RateLimitError) {
     setCooldownSeconds(err.retryAfter);
     setCooldownMax(err.retryAfter);
@@ -142,9 +154,9 @@ export default function AdminLogin() {
       setChallengeId(result.challenge_id);
 
       if (result.methods.includes("totp") && !result.methods.includes("telegram_otp")) {
-        setStep("totp");
+        transitionTo("totp");
       } else if (result.methods.includes("telegram_otp")) {
-        setStep("otp");
+        transitionTo("otp");
         startResendCooldown();
       } else {
         setError("No second-factor method configured for this account");
@@ -193,16 +205,18 @@ export default function AdminLogin() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setOtpError(false);
     try {
       const result = await loginOtpVerify(challengeId, otpCode);
       if (result.totpRequired && result.challenge_id) {
         setChallengeId(result.challenge_id);
         setTotpCode("");
-        setStep("totp");
+        transitionTo("totp");
       } else {
         navigate(from, { replace: true });
       }
     } catch (err) {
+      setOtpError(true);
       if (err instanceof RateLimitError) {
         handleCooldownError(err);
       } else {
@@ -217,10 +231,12 @@ export default function AdminLogin() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setTotpError(false);
     try {
       await loginTotp(challengeId, totpCode);
       navigate(from, { replace: true });
     } catch (err) {
+      setTotpError(true);
       if (err instanceof RateLimitError) {
         handleCooldownError(err);
       } else {
@@ -266,125 +282,133 @@ export default function AdminLogin() {
             </div>
           )}
 
-          {step === "credentials" && (
-            <form onSubmit={handleCredentials} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Username</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  required
-                  autoFocus
-                  disabled={isLocked}
-                />
+          <div className="relative overflow-hidden">
+            {step === "credentials" && (
+              <div className={transitioning ? "login-step-exit" : "login-step-active"}>
+                <form onSubmit={handleCredentials} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Username</label>
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      required
+                      autoFocus
+                      disabled={isLocked}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Password</label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      required
+                      disabled={isLocked}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || isLocked}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    {loading ? "Signing in..." : isLocked ? `Locked — wait ${cooldownSeconds}s` : "Sign In"}
+                  </button>
+                </form>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  required
-                  disabled={isLocked}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || isLocked}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                {loading ? "Signing in..." : isLocked ? `Locked — wait ${cooldownSeconds}s` : "Sign In"}
-              </button>
-            </form>
-          )}
+            )}
 
-          {step === "otp" && (
-            <form onSubmit={handleOtpVerify} className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                <MessageSquare className="w-4 h-4" />
-                <span>Code sent to your Telegram</span>
+            {step === "otp" && (
+              <div className={transitioning ? "login-step-exit" : "login-step-active"}>
+                <form onSubmit={handleOtpVerify} className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Code sent to your Telegram</span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-center">OTP Code</label>
+                    <OtpDigitInput
+                      value={otpCode}
+                      onChange={(v) => {
+                        setOtpCode(v);
+                        setOtpError(false);
+                      }}
+                      autoFocus
+                      disabled={isLocked}
+                      error={otpError}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || otpCode.length !== 6 || isLocked}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    {loading ? "Verifying..." : "Verify Code"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={resendCooldown > 0 || isLocked}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  >
+                    {resendCooldown > 0
+                      ? `Resend code in ${resendCooldown}s`
+                      : "Resend code"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Back to login
+                  </button>
+                </form>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">OTP Code</label>
-                <input
-                  type="text"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  maxLength={6}
-                  autoFocus
-                  disabled={isLocked}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || otpCode.length !== 6 || isLocked}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                {loading ? "Verifying..." : "Verify Code"}
-              </button>
-              <button
-                type="button"
-                onClick={handleResendOtp}
-                disabled={resendCooldown > 0 || isLocked}
-                className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
-              >
-                {resendCooldown > 0
-                  ? `Resend code in ${resendCooldown}s`
-                  : "Resend code"}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setStep("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
-                className="w-full text-sm text-muted-foreground hover:text-foreground"
-              >
-                Back to login
-              </button>
-            </form>
-          )}
+            )}
 
-          {step === "totp" && (
-            <form onSubmit={handleTotpVerify} className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                <KeyRound className="w-4 h-4" />
-                <span>Enter code from your authenticator app</span>
+            {step === "totp" && (
+              <div className={transitioning ? "login-step-exit" : "login-step-active"}>
+                <form onSubmit={handleTotpVerify} className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                    <KeyRound className="w-4 h-4" />
+                    <span>Enter code from your authenticator app</span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-center">TOTP Code</label>
+                    <OtpDigitInput
+                      value={totpCode}
+                      onChange={(v) => {
+                        setTotpCode(v);
+                        setTotpError(false);
+                      }}
+                      autoFocus
+                      disabled={isLocked}
+                      error={totpError}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || totpCode.length !== 6 || isLocked}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    {loading ? "Verifying..." : "Verify & Sign In"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Back to login
+                  </button>
+                </form>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">TOTP Code</label>
-                <input
-                  type="text"
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  maxLength={6}
-                  autoFocus
-                  disabled={isLocked}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || totpCode.length !== 6 || isLocked}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                {loading ? "Verifying..." : "Verify & Sign In"}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setStep("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
-                className="w-full text-sm text-muted-foreground hover:text-foreground"
-              >
-                Back to login
-              </button>
-            </form>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

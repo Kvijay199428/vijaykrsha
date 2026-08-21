@@ -22,6 +22,7 @@ export const ROUTES = {
 
   // User management
   ADMINAPIUSERS: `${API}/admin/api/users`,
+  ADMINAPIUSERSCREATE: `${API}/admin/api/users/create`,
   ADMINAPIUSERSBYID: (id: string) => `${API}/admin/api/users/${id}`,
   ADMINAPIUSERDISABLE: (id: string) => `${API}/admin/api/users/${id}/disable`,
   ADMINAPIUSERENABLE: (id: string) => `${API}/admin/api/users/${id}/enable`,

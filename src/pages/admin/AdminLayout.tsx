@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import AnimatedLogo from "../../components/AnimatedLogo";
 import {
   LayoutDashboard,
   Inbox,
@@ -10,7 +11,6 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  Shield,
 } from "lucide-react";
 
 const navItems = [
@@ -70,11 +70,9 @@ export default function AdminLayout() {
               : "flex-row gap-2 px-3 py-4"
           }`}
         >
-          <div className="p-1.5 neu-btn rounded-xl">
-            <Shield className="w-4 h-4 text-primary shrink-0" />
-          </div>
+          <AnimatedLogo size={collapsed ? 32 : 28} />
           {!collapsed && (
-            <span className="font-semibold text-sm truncate">Vega Admin</span>
+            <span className="font-semibold text-sm truncate typing-text text-primary">VIJAYKRSHA.ONLINE</span>
           )}
           {!collapsed && (
             <button
@@ -118,10 +116,29 @@ export default function AdminLayout() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-border/50 px-2 py-3 space-y-1">
+        <div className="border-t border-border/50 px-2 py-3 space-y-2">
           {!collapsed && admin && (
-            <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">
-              {admin.username} &middot; {admin.role}
+            <div className="px-3 py-2 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-sm font-bold text-primary">
+                  {(admin.display_name || admin.username).charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">{admin.display_name || admin.username}</p>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary">
+                  {admin.role}
+                </span>
+              </div>
+            </div>
+          )}
+          {collapsed && admin && (
+            <div className="flex justify-center">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <span className="text-xs font-bold text-primary">
+                  {(admin.display_name || admin.username).charAt(0).toUpperCase()}
+                </span>
+              </div>
             </div>
           )}
           <button

@@ -397,6 +397,80 @@ body {
   @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-3;
 }
 
+/* ── Admin Scrollbar (Neumorphism) ──────────────── */
+
+.admin-theme ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.admin-theme ::-webkit-scrollbar-track {
+  background: var(--color-background);
+  border-radius: 4px;
+}
+.admin-theme ::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+  border: 2px solid var(--color-background);
+}
+.admin-theme ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+.admin-theme * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) var(--color-background);
+}
+
+/* ── OTP Digit Box Animations ──────────────────── */
+
+@keyframes otp-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@keyframes otp-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes otp-glow {
+  0% { box-shadow: inset -3px -3px 7px var(--color-neu-light), inset 3px 3px 7px var(--color-neu-dark); }
+  50% { box-shadow: inset -3px -3px 7px var(--color-neu-light), inset 3px 3px 7px var(--color-neu-dark), 0 0 12px rgba(5, 150, 105, 0.4); }
+  100% { box-shadow: inset -3px -3px 7px var(--color-neu-light), inset 3px 3px 7px var(--color-neu-dark); }
+}
+
+.otp-digit-pop {
+  animation: otp-pop 0.2s ease-out;
+}
+
+.otp-digit-shake {
+  animation: otp-shake 0.4s ease-out;
+}
+
+.otp-digit-glow {
+  animation: otp-glow 0.6s ease-out;
+}
+
+/* ── Login Step Transitions ────────────────────── */
+
+.login-step-enter {
+  opacity: 0;
+  transform: translateX(20px);
+}
+.login-step-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+.login-step-exit {
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
+}
+
 /* ── Accessibility ────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -431,5 +505,17 @@ body {
   }
   .animated-logo canvas {
     display: none;
+  }
+  .otp-digit-pop,
+  .otp-digit-shake,
+  .otp-digit-glow {
+    animation: none;
+  }
+  .login-step-enter,
+  .login-step-active,
+  .login-step-exit {
+    opacity: 1;
+    transform: none;
+    transition: none;
   }
 }

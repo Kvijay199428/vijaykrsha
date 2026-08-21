@@ -39,7 +39,7 @@ export class OtpCooldownError extends RateLimitError {
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
-  admin: { id: string; username: string; role: string } | null;
+  admin: { id: string; username: string; display_name: string; role: string } | null;
   login: (
     username: string,
     password: string,
@@ -62,7 +62,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [admin, setAdmin] = useState<{ id: string; username: string; role: string } | null>(null);
+  const [admin, setAdmin] = useState<{ id: string; username: string; display_name: string; role: string } | null>(null);
 
   useEffect(() => {
     fetch(ROUTES.ADMINAPIAUTHME, { credentials: "include" })

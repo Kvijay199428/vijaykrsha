@@ -84,8 +84,11 @@ async def get_session(db: AsyncSession, token: str) -> AdminSession | None:
 async def touch_session(db: AsyncSession, session: AdminSession) -> None:
     session.last_seen_at = datetime.now(timezone.utc)
     idle = timedelta(minutes=settings.SESSION_IDLE_MINUTES)
-    absolute = timedelta(hours=settings.SESSION_ABSOLUTE_HOURS)
-    session.expires_at = datetime.now(timezone.utc) + min(idle, absolute)
+    absolute_limit = session.created_at + timedelta(hours=settings.SESSION_ABSOLUTE_HOURS)
+    session.expires_at = min(
+        datetime.now(timezone.utc) + idle,
+        absolute_limit,
+    )
     await db.commit()
 
 

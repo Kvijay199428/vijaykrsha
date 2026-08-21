@@ -105,7 +105,7 @@ async def list_users(
     return {"items": [_user_to_dict(u) for u in users]}
 
 
-@router.post("/users")
+@router.post("/users/create")
 async def create_user(
     body: CreateUserRequest,
     request: Request,
