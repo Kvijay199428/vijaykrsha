@@ -42,7 +42,7 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+    <div className="admin-theme flex h-screen overflow-hidden bg-background text-foreground">
       <aside
         className={`${
           collapsed ? "w-16" : "w-64"
@@ -78,8 +78,8 @@ export default function AdminLayout() {
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                   isActive
-                    ? "neu-pressed text-primary font-medium"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "neu-pressed text-primary font-semibold"
+                    : "text-foreground/75 hover:text-foreground hover:bg-muted/40"
                 } ${collapsed ? "justify-center" : ""}`
               }
               title={collapsed ? item.label : undefined}

@@ -68,10 +68,110 @@ body {
   @apply bg-cream-50 text-night-800 dark:bg-night-900 dark:text-cream-100 transition-colors duration-300;
 }
 
+/* =========================================================
+   ADMIN CONSOLE THEME
+   Scopes admin colors separately from the public site.
+   ========================================================= */
+
+.admin-theme {
+  --admin-background: #e8e8e8;
+  --admin-foreground: #2D3436;
+  --admin-card: #e8e8e8;
+  --admin-card-foreground: #2D3436;
+  --admin-muted: #F5E0E8;
+  --admin-muted-foreground: #636E72;
+  --admin-border: #D0D0D0;
+  --admin-input: #e8e8e8;
+
+  color: var(--admin-foreground);
+  background: var(--admin-background);
+}
+
+.dark .admin-theme {
+  --admin-background: #2D2D2D;
+  --admin-foreground: #f1f5f9;
+  --admin-card: #2D2D2D;
+  --admin-card-foreground: #f1f5f9;
+  --admin-muted: #3A3A3A;
+  --admin-muted-foreground: #cbd5e1;
+  --admin-border: #484848;
+  --admin-input: #2D2D2D;
+
+  color: var(--admin-foreground);
+  background: var(--admin-background);
+}
+
+/* Map admin-theme overrides onto Tailwind semantic tokens */
+.admin-theme {
+  --color-background: #e8e8e8;
+  --color-foreground: #2D3436;
+  --color-card: #e8e8e8;
+  --color-card-foreground: #2D3436;
+  --color-muted: #F5E0E8;
+  --color-muted-foreground: #636E72;
+  --color-border: #D0D0D0;
+  --color-input: #e8e8e8;
+  --color-neu-light: #FFFFFF;
+  --color-neu-dark: #A3A3A3;
+}
+
+.dark .admin-theme {
+  --color-background: #2D2D2D;
+  --color-foreground: #f1f5f9;
+  --color-card: #2D2D2D;
+  --color-card-foreground: #f1f5f9;
+  --color-muted: #3A3A3A;
+  --color-muted-foreground: #cbd5e1;
+  --color-border: #484848;
+  --color-input: #2D2D2D;
+  --color-neu-light: #3A3A3A;
+  --color-neu-dark: #202020;
+}
+
+/* Explicit text visibility inside admin scope */
+.admin-theme .text-foreground {
+  color: var(--color-foreground) !important;
+}
+.admin-theme .text-card-foreground {
+  color: var(--color-card-foreground) !important;
+}
+.admin-theme .text-muted-foreground {
+  color: var(--color-muted-foreground) !important;
+}
+
+/* Inputs / selects / textareas inside admin */
+.admin-theme input,
+.admin-theme textarea,
+.admin-theme select {
+  color: var(--color-foreground);
+}
+.admin-theme input::placeholder,
+.admin-theme textarea::placeholder {
+  color: var(--color-muted-foreground);
+  opacity: 0.9;
+}
+.admin-theme select option {
+  color: #2D3436;
+  background: #ffffff;
+}
+.dark .admin-theme select option {
+  color: #f1f5f9;
+  background: #2D2D2D;
+}
+
+/* Disabled controls */
+.admin-theme button:disabled,
+.admin-theme input:disabled,
+.admin-theme select:disabled,
+.admin-theme textarea:disabled {
+  opacity: 0.55;
+}
+
 /* ── Neumorphism Utilities ─────────────────────── */
 
 .neu-flat {
   background: var(--color-background);
+  color: var(--color-foreground);
   border-radius: 14px;
   box-shadow:
     -5px -5px 15px var(--color-neu-light),

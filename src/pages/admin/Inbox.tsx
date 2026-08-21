@@ -55,13 +55,13 @@ export default function Inbox() {
             placeholder="Search messages..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="w-full pl-10 pr-4 py-2 neu-concave rounded-xl bg-transparent text-sm"
+            className="w-full pl-10 pr-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-4 py-2 neu-concave rounded-xl bg-transparent text-sm"
+          className="px-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
         >
           <option value="">All Statuses</option>
           <option value="new">New</option>

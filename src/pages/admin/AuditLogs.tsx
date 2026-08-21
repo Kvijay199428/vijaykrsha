@@ -38,17 +38,17 @@ export default function AuditLogs() {
         <p className="text-muted-foreground text-sm">{total} total entries</p>
       </div>
 
-      <div className="neu-flat overflow-hidden">
+      <div className="neu-flat overflow-hidden text-foreground">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : (
           <table className="w-full">
             <thead className="border-b border-border/50 bg-muted/30">
               <tr>
-                <th className="text-left p-4 text-sm font-medium">Event</th>
-                <th className="text-left p-4 text-sm font-medium">Actor</th>
-                <th className="text-left p-4 text-sm font-medium">IP</th>
-                <th className="text-left p-4 text-sm font-medium">Time</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">Event</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">Actor</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">IP</th>
+                <th className="text-left p-4 text-sm font-semibold text-foreground">Time</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">

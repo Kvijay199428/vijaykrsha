@@ -123,13 +123,13 @@ export default function UsersPage() {
             placeholder="Search users..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full pl-9 pr-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
         <select
           value={roleFilter}
           onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
+          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
         >
           <option value="">All Roles</option>
           <option value="owner">Owner</option>
@@ -141,7 +141,7 @@ export default function UsersPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
+          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
         >
           <option value="">All Status</option>
           <option value="active">Active</option>
@@ -149,16 +149,16 @@ export default function UsersPage() {
         </select>
       </div>
 
-      <div className="neu-flat overflow-hidden">
+      <div className="neu-flat overflow-hidden text-foreground">
         <table className="w-full">
           <thead>
             <tr className="bg-muted/30 border-b border-border/50">
-              <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">User</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Name</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Role</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Status</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">2FA</th>
-              <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Last Login</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">User</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Name</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Role</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Status</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">2FA</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Last Login</th>
               {canManage && <th className="w-10"></th>}
             </tr>
           </thead>
@@ -511,7 +511,7 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
               onChange={(e) => setCode(e.target.value)}
               placeholder="000000"
               maxLength={6}
-              className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm font-mono"
+              className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm font-mono"
             />
           </div>
           <div className="flex justify-end gap-2">
@@ -628,7 +628,7 @@ function NeuInput({ label, type = "text", value, onChange, placeholder }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+        className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
       />
     </div>
   );

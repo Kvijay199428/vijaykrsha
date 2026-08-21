@@ -4,7 +4,7 @@ const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
   ({ className = "", ...props }, ref) => (
     <div
       ref={ref}
-      className={`neu-flat text-card-foreground ${className}`}
+      className={`neu-flat text-foreground ${className}`}
       {...props}
     />
   )

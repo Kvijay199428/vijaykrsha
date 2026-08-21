@@ -145,7 +145,7 @@ export default function Settings() {
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   placeholder="000000"
-                  className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
+                  className="px-3 py-1 neu-concave rounded-xl text-foreground text-sm font-mono w-32 bg-transparent"
                   maxLength={6}
                 />
                 <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
@@ -193,7 +193,7 @@ export default function Settings() {
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
             placeholder="Current password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
           />
           <input
@@ -201,7 +201,7 @@ export default function Settings() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="New password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
             minLength={6}
           />
@@ -210,7 +210,7 @@ export default function Settings() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Confirm new password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
           />
           <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
