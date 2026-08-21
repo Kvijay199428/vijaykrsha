@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -21,12 +21,26 @@ const navItems = [
   { to: "/vega/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
 ];
 
+const MOBILE_BREAKPOINT = 768;
+
 export default function AdminLayout() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
-    return localStorage.getItem("admin-sidebar-collapsed") === "true";
+    const saved = localStorage.getItem("admin-sidebar-collapsed");
+    if (saved !== null) return saved === "true";
+    return window.innerWidth < MOBILE_BREAKPOINT;
   });
+
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+    const handler = (e: MediaQueryListEvent) => {
+      setCollapsed(e.matches);
+      localStorage.setItem("admin-sidebar-collapsed", String(e.matches));
+    };
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
 
   function toggleSidebar() {
     setCollapsed((prev) => {
@@ -49,25 +63,38 @@ export default function AdminLayout() {
         } neu-flat border-0 flex flex-col transition-all duration-200 shrink-0 m-2 rounded-2xl`}
       >
         {/* Header */}
-        <div className="flex items-center gap-2 px-3 py-4 border-b border-border/50 min-h-[57px]">
+        <div
+          className={`flex items-center border-b border-border/50 min-h-[57px] ${
+            collapsed
+              ? "flex-col py-3 px-2 gap-2"
+              : "flex-row gap-2 px-3 py-4"
+          }`}
+        >
           <div className="p-1.5 neu-btn rounded-xl">
             <Shield className="w-4 h-4 text-primary shrink-0" />
           </div>
           {!collapsed && (
             <span className="font-semibold text-sm truncate">Vega Admin</span>
           )}
+          {!collapsed && (
+            <button
+              onClick={toggleSidebar}
+              className="ml-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+              title="Collapse sidebar"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {collapsed && (
           <button
             onClick={toggleSidebar}
-            className="ml-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
-            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="mx-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+            title="Expand sidebar"
           >
-            {collapsed ? (
-              <PanelLeftOpen className="w-4 h-4" />
-            ) : (
-              <PanelLeftClose className="w-4 h-4" />
-            )}
+            <PanelLeftOpen className="w-4 h-4" />
           </button>
-        </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
