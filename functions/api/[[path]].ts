@@ -57,15 +57,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const response = await fetch(proxyRequest);
   const newResponse = new Response(response.body, response);
 
-  // Belt-and-braces: some runtimes collapse multiple Set-Cookie headers when
-  // copying a Response. Re-append each explicitly so the session cookie can
-  // never be lost between backend and browser.
-  const upstreamCookies =
-    typeof response.headers.getSetCookie === "function"
-      ? response.headers.getSetCookie()
-      : [];
-  for (const cookie of upstreamCookies) {
-    newResponse.headers.append("set-cookie", cookie);
+  // Deterministic Set-Cookie passthrough: the Response copy-constructor may
+  // or may not preserve multiplicity depending on runtime. Strip whatever
+  // survived the copy and re-append each upstream cookie exactly once.
+  if (typeof response.headers.getSetCookie === "function") {
+    const upstreamCookies = response.headers.getSetCookie();
+    if (upstreamCookies.length > 0) {
+      newResponse.headers.delete("set-cookie");
+      for (const cookie of upstreamCookies) {
+        newResponse.headers.append("set-cookie", cookie);
+      }
+    }
   }
 
   for (const [key, value] of Object.entries(corsHeaders(origin))) {
