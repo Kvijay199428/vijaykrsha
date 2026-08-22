@@ -167,9 +167,10 @@ def deploy_docker(host, env, clean=False):
         (f"python3 -c \"import zipfile; zipfile.ZipFile('{REMOTE_ZIP}','r').extractall('{REMOTE_DIR}')\"", "Extracting files"),
         (f"rm -f {REMOTE_ZIP}", "Cleaning up zip"),
         # Build BEFORE migrating: compose run uses the existing image, so a
-        # stale image would skip new migrations.
+        # stale image would skip new migrations. Use `python -m alembic` so
+        # /app is importable (the console script lacks CWD on sys.path).
         (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} build {backend_service}", f"Building {env} backend image"),
-        (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} run --rm {backend_service} alembic upgrade head", "Applying database migrations"),
+        (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} run --rm {backend_service} python -m alembic upgrade head", "Applying database migrations"),
         (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} up -d {service}", f"Starting {env} containers"),
     ]
 
