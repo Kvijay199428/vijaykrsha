@@ -172,3 +172,13 @@ contact_limiter = RedisRateLimiter(
     window_seconds=300,
     scope="contact",
 )
+forgot_verify_limiter = RedisRateLimiter(
+    max_requests=3,
+    window_seconds=300,
+    scope="forgot_verify",
+)
+forgot_reset_limiter = RedisRateLimiter(
+    max_requests=5,
+    window_seconds=600,
+    scope="forgot_reset",
+)

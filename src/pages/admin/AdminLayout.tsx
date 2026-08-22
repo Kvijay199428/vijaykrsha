@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import AnimatedLogo from "../../components/AnimatedLogo";
+import SessionExpiryWarning from "../../components/SessionExpiryWarning";
 import {
   LayoutDashboard,
   Inbox,
@@ -156,7 +157,8 @@ export default function AdminLayout() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-2">
-        <div className="h-full neu-flat rounded-2xl p-6">
+        <div className="h-full neu-flat rounded-2xl p-6 flex flex-col gap-3">
+          <SessionExpiryWarning />
           <Outlet />
         </div>
       </main>

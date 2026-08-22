@@ -8,6 +8,7 @@ from app.api import (
     admin_users, admin_totp, admin_devices, admin_security,
 )
 from app.security.middleware import RequestValidationMiddleware
+from app.security.csrf import CSRFMiddleware
 from app.security.rate_limit import close_redis
 
 settings = get_settings()
@@ -15,8 +16,9 @@ settings = get_settings()
 app = FastAPI(
     title="vijaykrsha.online API",
     version="0.2.0",
-    docs_url="/admin/api/docs",
-    openapi_url="/admin/api/openapi.json",
+    docs_url="/admin/api/docs" if not settings.PRODUCTION else None,
+    redoc_url=None,
+    openapi_url="/admin/api/openapi.json" if not settings.PRODUCTION else None,
 )
 
 
@@ -31,6 +33,7 @@ class DirectAccessGuard(BaseHTTPMiddleware):
 
 app.add_middleware(DirectAccessGuard)
 app.add_middleware(RequestValidationMiddleware)
+app.add_middleware(CSRFMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

@@ -166,6 +166,7 @@ class AdminSession(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     last_seen_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     expires_at = Column(DateTime(timezone=True), nullable=False)
+    absolute_expires_at = Column(DateTime(timezone=True))
     revoked_at = Column(DateTime(timezone=True))
 
     admin = relationship("AdminUser", back_populates="sessions")

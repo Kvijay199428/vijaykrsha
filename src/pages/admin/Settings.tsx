@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { getPasswordErrors } from "@/lib/passwordValidation";
 import { Shield, Lock } from "lucide-react";
 
 export default function Settings() {
@@ -46,7 +47,7 @@ export default function Settings() {
       const res = await apiFetch(ROUTES.ADMINAPITOTPENABLE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: totpCode, secret: totpSecret }),
+        body: JSON.stringify({ code: totpCode }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: "Failed" }));
@@ -91,6 +92,11 @@ export default function Settings() {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match");
+      return;
+    }
+    const pwErrors = getPasswordErrors(newPassword);
+    if (pwErrors.length > 0) {
+      setError(`Password requirements not met: ${pwErrors.join(", ")}`);
       return;
     }
     setLoading(true);

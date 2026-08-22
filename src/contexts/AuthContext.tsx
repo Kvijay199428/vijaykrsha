@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 
 interface SecondFactorResult {
   status: "second_factor_required";
@@ -40,6 +41,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   admin: { id: string; username: string; display_name: string; role: string } | null;
+  sessionExpiresAt: string | null;
+  refreshAuth: () => Promise<boolean>;
   login: (
     username: string,
     password: string,
@@ -63,23 +66,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [admin, setAdmin] = useState<{ id: string; username: string; display_name: string; role: string } | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
+
+  const refreshAuth = useCallback(async (): Promise<boolean> => {
+    try {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHME, {
+        credentials: "include",
+        redirectOn401: false,
+      });
+      if (!response.ok) throw new Error("not authenticated");
+      const data = await response.json();
+      setIsAuthenticated(true);
+      setAdmin(data);
+      setSessionExpiresAt(data.session?.expires_at ?? null);
+      return true;
+    } catch {
+      setIsAuthenticated(false);
+      setAdmin(null);
+      setSessionExpiresAt(null);
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPIAUTHME, { credentials: "include" })
-      .then((response) => {
-        if (response.ok) return response.json();
-        throw new Error("not authenticated");
-      })
-      .then((data) => {
-        setIsAuthenticated(true);
-        setAdmin(data);
-      })
-      .catch(() => {
-        setIsAuthenticated(false);
-        setAdmin(null);
-      })
-      .finally(() => setIsLoading(false));
-  }, []);
+    refreshAuth().finally(() => setIsLoading(false));
+  }, [refreshAuth]);
 
   const login = useCallback(
     async (
@@ -87,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: string,
       rememberMe = false
     ): Promise<SecondFactorResult> => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGIN, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGIN, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -113,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginOtpSend = useCallback(
     async (challengeId: string): Promise<{ cooldown_seconds: number }> => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINOTPSEND, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPSEND, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -139,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginOtpVerify = useCallback(
     async (challengeId: string, code: string) => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINOTPVERIFY, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPVERIFY, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -163,16 +174,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { totpRequired: true, challenge_id: data.challenge_id };
       }
 
-      setIsAuthenticated(true);
-      setAdmin(data.admin ?? null);
+      await refreshAuth();
       return { totpRequired: false };
     },
-    []
+    [refreshAuth]
   );
 
   const loginTotp = useCallback(
     async (challengeId: string, code: string) => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINTOTP, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINTOTP, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -191,20 +201,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(msg);
       }
 
-      const data = await response.json();
-      setIsAuthenticated(true);
-      setAdmin(data.admin ?? null);
+      await refreshAuth();
     },
-    []
+    [refreshAuth]
   );
 
   const logout = useCallback(async () => {
-    await fetch(ROUTES.ADMINAPIAUTHLOGOUT, {
+    await apiFetch(ROUTES.ADMINAPIAUTHLOGOUT, {
       method: "POST",
       credentials: "include",
     });
     setIsAuthenticated(false);
     setAdmin(null);
+    setSessionExpiresAt(null);
     window.location.assign("/vega/admin/login");
   }, []);
 
@@ -214,6 +223,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         isLoading,
         admin,
+        sessionExpiresAt,
+        refreshAuth,
         login,
         loginOtpSend,
         loginOtpVerify,

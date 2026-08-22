@@ -1,9 +1,22 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pydantic import model_validator
+
+
+_INSECURE_DEFAULTS = frozenset({
+    "",
+    "change-me-in-production",
+    "change-me",
+    "changeme",
+    "secret",
+    "totp_encryption_key",
+})
 
 
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    PRODUCTION: bool = False
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@db:5432/vijaykrsha"
 
@@ -15,7 +28,6 @@ class Settings(BaseSettings):
     TELEGRAM_OTP_LENGTH: int = 6
 
     TOTP_ENCRYPTION_KEY: str = "change-me-in-production"
-
     S3_ENDPOINT: str = "http://storage:9000"
     S3_REGION: str = "us-east-1"
     S3_BUCKET: str = "vijaykrsha-private"
@@ -24,7 +36,6 @@ class Settings(BaseSettings):
     S3_USE_SSL: bool = False
     MAX_ATTACHMENT_BYTES: int = 10_485_760
 
-    SESSION_SECRET: str = "change-me-in-production"
     SESSION_IDLE_MINUTES: int = 30
     SESSION_ABSOLUTE_HOURS: int = 12
 
@@ -74,6 +85,29 @@ class Settings(BaseSettings):
     RISK_THRESHOLD_CHALLENGE: int = 50
     RISK_THRESHOLD_BLOCK_TEMP: int = 70
     RISK_THRESHOLD_BLOCK_PERM: int = 90
+
+    @model_validator(mode="after")
+    def check_insecure_defaults(self) -> "Settings":
+        if not self.PRODUCTION:
+            return self
+        insecure: list[str] = []
+        if self.TOTP_ENCRYPTION_KEY in _INSECURE_DEFAULTS:
+            insecure.append("TOTP_ENCRYPTION_KEY")
+        elif len(self.TOTP_ENCRYPTION_KEY) < 32:
+            insecure.append("TOTP_ENCRYPTION_KEY (too short, need >= 32 chars)")
+        if self.OTP_PEPPER in _INSECURE_DEFAULTS or self.OTP_PEPPER.startswith("vijaykrsha-otp-pepper"):
+            insecure.append("OTP_PEPPER")
+        elif len(self.OTP_PEPPER) < 24:
+            insecure.append("OTP_PEPPER (too short, need >= 24 chars)")
+        if self.S3_ACCESS_KEY == "minioadmin" or self.S3_SECRET_KEY == "minioadmin":
+            insecure.append("S3_ACCESS_KEY/S3_SECRET_KEY (minioadmin default)")
+        if insecure:
+            raise RuntimeError(
+                "Refusing to start in production with insecure defaults: "
+                + "; ".join(insecure)
+                + ". Generate strong values before setting PRODUCTION=true."
+            )
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

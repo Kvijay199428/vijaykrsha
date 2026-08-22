@@ -477,7 +477,7 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
       const res = await apiFetch(ROUTES.ADMINAPIUSERTOTPENABLE(user.id), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, secret }),
+        body: JSON.stringify({ code }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -573,10 +573,11 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
       {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
       <p className="text-sm text-muted-foreground mb-3">The user will be logged out after password reset.</p>
       <NeuInput label="New Password" type="password" value={password} onChange={setPassword} />
+      <PasswordRequirements password={password} username={user.username} />
       <NeuInput label="Confirm Password" type="password" value={confirm} onChange={setConfirm} />
       <div className="flex justify-end gap-2 pt-3">
         <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
-        <button onClick={handleSubmit} disabled={loading || password.length < 6} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+        <button onClick={handleSubmit} disabled={loading || !isPasswordValid(password, user.username) || password !== confirm} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
           {loading ? "Resetting..." : "Reset Password"}
         </button>
       </div>

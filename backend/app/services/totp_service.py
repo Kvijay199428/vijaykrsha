@@ -8,6 +8,8 @@ from app.config import get_settings
 
 settings = get_settings()
 
+PENDING_TOTP_TTL_SECONDS = 600
+
 
 def _derive_key() -> bytes:
     password = settings.TOTP_ENCRYPTION_KEY.encode()
@@ -44,3 +46,33 @@ def verify_totp(secret: str, code: str) -> bool:
 def get_provisioning_uri(secret: str, username: str) -> str:
     totp = pyotp.TOTP(secret)
     return totp.provisioning_uri(name=username, issuer_name="vijaykrsha.online")
+
+
+def _pending_key(admin_id: str) -> str:
+    return f"totp_pending:{admin_id}"
+
+
+async def store_pending_secret(admin_id: str, secret: str) -> None:
+    """Store the enrollment secret server-side (encrypted, short TTL).
+
+    The client never round-trips the secret back on enable; only the code.
+    """
+    from app.security.rate_limit import get_redis
+    r = await get_redis()
+    ciphertext = encrypt_secret(secret).decode()
+    await r.setex(_pending_key(admin_id), PENDING_TOTP_TTL_SECONDS, ciphertext)
+
+
+async def get_pending_secret(admin_id: str) -> str | None:
+    from app.security.rate_limit import get_redis
+    r = await get_redis()
+    val = await r.get(_pending_key(admin_id))
+    if not val:
+        return None
+    return decrypt_secret(val.encode())
+
+
+async def clear_pending_secret(admin_id: str) -> None:
+    from app.security.rate_limit import get_redis
+    r = await get_redis()
+    await r.delete(_pending_key(admin_id))

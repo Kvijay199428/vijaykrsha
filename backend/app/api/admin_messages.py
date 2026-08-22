@@ -9,7 +9,8 @@ from app.models import (
     ContactMessage, MessageStatus, MessagePriority, MessageNote,
     AuditEvent, AuditLog, MessageTag, ContactMessageTag, AdminUser,
 )
-from app.api.deps import get_current_admin
+from app.api.deps import require_permission
+from app.models_rbac import Permission
 
 router = APIRouter(prefix="/admin/api/messages", tags=["messages"])
 
@@ -35,7 +36,7 @@ async def list_messages(
     search: str | None = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_VIEW)),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(ContactMessage)
@@ -89,7 +90,7 @@ async def list_messages(
 @router.get("/{message_id}")
 async def get_message(
     message_id: UUID,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_VIEW)),
     db: AsyncSession = Depends(get_db),
 ):
     msg = (await db.execute(
@@ -140,7 +141,7 @@ async def get_message(
 async def update_message(
     message_id: UUID,
     body: MessageUpdate,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_UPDATE)),
     db: AsyncSession = Depends(get_db),
 ):
     msg = (await db.execute(
@@ -164,9 +165,9 @@ async def update_message(
         await db.execute(
             update(ContactMessage).where(ContactMessage.id == message_id).values(**values)
         )
-        await db.commit()
 
     _audit(db, AuditEvent.message_updated, admin.id, message_id, admin.id)
+    await db.commit()
 
     return {"status": "ok"}
 
@@ -174,7 +175,7 @@ async def update_message(
 @router.delete("/{message_id}")
 async def delete_message(
     message_id: UUID,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_DELETE)),
     db: AsyncSession = Depends(get_db),
 ):
     msg = (await db.execute(
@@ -185,9 +186,9 @@ async def delete_message(
 
     msg.status = MessageStatus.archived
     msg.updated_at = datetime.now(timezone.utc)
-    await db.commit()
 
     _audit(db, AuditEvent.message_deleted, admin.id, message_id, admin.id)
+    await db.commit()
     return {"status": "ok"}
 
 
@@ -195,7 +196,7 @@ async def delete_message(
 async def add_note(
     message_id: UUID,
     body: NoteRequest,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_NOTES)),
     db: AsyncSession = Depends(get_db),
 ):
     msg = (await db.execute(
@@ -224,7 +225,7 @@ async def add_note(
 async def add_tag(
     message_id: UUID,
     body: TagRequest,
-    admin: AdminUser = Depends(get_current_admin),
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_TAGS)),
     db: AsyncSession = Depends(get_db),
 ):
     msg = (await db.execute(

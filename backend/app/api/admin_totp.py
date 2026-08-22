@@ -1,22 +1,25 @@
 import structlog
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models import AdminUser, AuditEvent, AuditLog
 from app.models_rbac import Permission
 from app.api.deps import require_permission
-from app.services.totp_service import generate_secret, encrypt_secret, decrypt_secret, verify_totp
+from app.services.totp_service import (
+    generate_secret, encrypt_secret, verify_totp,
+    get_provisioning_uri, store_pending_secret, get_pending_secret,
+    clear_pending_secret,
+)
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/admin/api/users", tags=["user-totp"])
 
 
 class TotpEnableRequest(BaseModel):
-    code: str
-    secret: str
+    code: str = Field(min_length=6, max_length=8)
 
 
 def _audit(db: AsyncSession, event: AuditEvent, actor_id=None, target_id=None, ip=None, meta=None):
@@ -41,7 +44,8 @@ async def totp_setup(
         raise HTTPException(404, "user_not_found")
 
     secret = generate_secret()
-    provisioning_uri = f"otpauth://totp/vijaykrsha.online:{user.username}?secret={secret}&issuer=vijaykrsha.online"
+    await store_pending_secret(str(user.id), secret)
+    provisioning_uri = get_provisioning_uri(secret, user.username)
 
     return {
         "user_id": str(user.id),
@@ -67,10 +71,14 @@ async def totp_enable(
     if user.totp_enabled:
         raise HTTPException(400, "totp_already_enabled")
 
-    if not verify_totp(body.secret, body.code):
+    pending = await get_pending_secret(str(user.id))
+    if not pending:
+        raise HTTPException(400, "totp_setup_expired")
+
+    if not verify_totp(pending, body.code):
         raise HTTPException(401, "invalid_totp_code")
 
-    user.totp_secret_ciphertext = encrypt_secret(body.secret)
+    user.totp_secret_ciphertext = encrypt_secret(pending)
     user.totp_enabled = True
     from datetime import datetime, timezone
     user.totp_enabled_at = datetime.now(timezone.utc)
@@ -80,6 +88,7 @@ async def totp_enable(
            meta={"target_username": user.username})
 
     await db.commit()
+    await clear_pending_secret(str(user.id))
     return {"status": "totp_enabled"}
 
 

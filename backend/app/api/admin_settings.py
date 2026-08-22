@@ -1,20 +1,26 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models import AdminSetting, AuditEvent, AuditLog, AdminUser
 from app.api.deps import get_current_admin, require_owner
-from app.services.totp_service import generate_secret, encrypt_secret, decrypt_secret, verify_totp, get_provisioning_uri
-from app.security.sessions import revoke_all_sessions
+from app.security.password_policy import (
+    PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, validate_password_strength,
+)
+from app.services.totp_service import (
+    generate_secret, encrypt_secret, decrypt_secret, verify_totp,
+    get_provisioning_uri, store_pending_secret, get_pending_secret,
+    clear_pending_secret,
+)
+from app.security.sessions import revoke_other_sessions
 
 router = APIRouter(prefix="/admin/api", tags=["settings"])
 
 
 class TotpEnableRequest(BaseModel):
-    code: str
-    secret: str
+    code: str = Field(min_length=6, max_length=8)
 
 
 class TotpDisableRequest(BaseModel):
@@ -22,8 +28,13 @@ class TotpDisableRequest(BaseModel):
 
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(min_length=1, max_length=PASSWORD_MAX_LENGTH)
+    new_password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 @router.get("/settings")
@@ -47,6 +58,7 @@ async def get_settings(admin: AdminUser = Depends(get_current_admin), db: AsyncS
 @router.get("/settings/totp/setup")
 async def totp_setup(admin: AdminUser = Depends(get_current_admin)):
     secret = generate_secret()
+    await store_pending_secret(str(admin.id), secret)
     uri = get_provisioning_uri(secret, admin.username)
     return {
         "secret": secret,
@@ -60,11 +72,14 @@ async def totp_enable(
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    if not verify_totp(body.secret, body.code):
-        from fastapi import HTTPException
+    pending = await get_pending_secret(str(admin.id))
+    if not pending:
+        raise HTTPException(400, "totp_setup_expired")
+
+    if not verify_totp(pending, body.code):
         raise HTTPException(400, "invalid_totp")
 
-    admin.totp_secret_ciphertext = encrypt_secret(body.secret)
+    admin.totp_secret_ciphertext = encrypt_secret(pending)
     admin.totp_enabled = True
     admin.totp_enabled_at = datetime.now(timezone.utc)
     admin.updated_at = datetime.now(timezone.utc)
@@ -74,28 +89,32 @@ async def totp_enable(
         actor_admin_id=admin.id,
     ))
     await db.commit()
+    await clear_pending_secret(str(admin.id))
     return {"status": "ok"}
 
 
 @router.post("/settings/totp/disable")
 async def totp_disable(
     body: TotpDisableRequest,
+    request: Request,
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     if not admin.totp_secret_ciphertext:
-        from fastapi import HTTPException
         raise HTTPException(400, "totp_not_enabled")
 
     secret = decrypt_secret(admin.totp_secret_ciphertext)
     if not verify_totp(secret, body.totp_code):
-        from fastapi import HTTPException
         raise HTTPException(400, "invalid_totp")
 
     admin.totp_secret_ciphertext = None
     admin.totp_enabled = False
     admin.totp_enabled_at = None
     admin.updated_at = datetime.now(timezone.utc)
+
+    current_token = request.cookies.get("vks_session")
+    if current_token:
+        await revoke_other_sessions(db, str(admin.id), current_token)
 
     db.add(AuditLog(
         event=AuditEvent.totp_disabled,
@@ -108,17 +127,21 @@ async def totp_disable(
 @router.post("/settings/change-password")
 async def change_password(
     body: PasswordChangeRequest,
+    request: Request,
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
     from app.security.passwords import hash_password, verify_password
     if not verify_password(body.current_password, admin.password_hash):
-        from fastapi import HTTPException
         raise HTTPException(400, "invalid_password")
 
     admin.password_hash = hash_password(body.new_password)
     admin.password_changed_at = datetime.now(timezone.utc)
     admin.updated_at = datetime.now(timezone.utc)
+
+    current_token = request.cookies.get("vks_session")
+    if current_token:
+        await revoke_other_sessions(db, str(admin.id), current_token)
 
     db.add(AuditLog(
         event=AuditEvent.password_changed,

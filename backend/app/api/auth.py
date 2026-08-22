@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
+from app.security.csrf import issue_csrf_cookie
 from app.db import get_db
 from app.models import (
     AdminUser, AdminStatus, AuthChallenge, OtpPurpose, OtpDelivery,
@@ -13,10 +14,14 @@ from app.models import (
 )
 from app.config import get_settings
 from app.security.passwords import hash_password, verify_password
+from app.security.password_policy import (
+    PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, validate_password_strength,
+)
 from app.security.sessions import create_session, revoke_session
 from app.security.rate_limit import (
     login_ip_limiter, login_user_limiter, otp_send_limiter,
     otp_verify_limiter, totp_verify_limiter, setup_limiter,
+    forgot_verify_limiter, forgot_reset_limiter,
     RedisBlocklist,
 )
 from app.security.devices import (
@@ -31,7 +36,7 @@ from app.services.otp_service import (
 )
 from app.services.totp_service import verify_totp, generate_secret, encrypt_secret
 from app.services.telegram_service import send_otp
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_admin, get_current_admin_with_session
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -51,7 +56,7 @@ class LoginRequest(BaseModel):
 
 class SetupRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
-    password: str = Field(min_length=8, max_length=256)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
     email: str | None = None
     display_name: str = Field(min_length=1, max_length=160)
 
@@ -59,6 +64,11 @@ class SetupRequest(BaseModel):
     @classmethod
     def validate_username(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class LoginOtpVerifyRequest(BaseModel):
@@ -92,7 +102,12 @@ class ForgotVerifyRequest(BaseModel):
 
 class ForgotResetRequest(BaseModel):
     challenge_id: str
-    new_password: str = Field(min_length=8, max_length=256)
+    new_password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return validate_password_strength(v)
 
 
 class TrustDeviceRequest(BaseModel):
@@ -172,7 +187,9 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
         "vks_session", token,
         httponly=True, secure=True, samesite="lax",
         max_age=12 * 3600,
+        path="/",
     )
+    issue_csrf_cookie(resp)
     resp.set_cookie(
         "__Host-device", new_device_token,
         httponly=True, secure=True, samesite="lax",
@@ -345,6 +362,7 @@ async def login_otp_send(request: Request, db: AsyncSession = Depends(get_db)):
 
     await set_otp_on_challenge(db, challenge.id, otp_code, OtpDelivery.telegram)
     _audit(db, AuditEvent.otp_sent, admin_id=admin.id, ip=ip)
+    await db.commit()
 
     return {"status": "sent", "cooldown_seconds": settings.TELEGRAM_OTP_RESEND_SECONDS}
 
@@ -405,7 +423,9 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
         "vks_session", token,
         httponly=True, secure=True, samesite="lax",
         max_age=12 * 3600 if body.remember_me else 2 * 3600,
+        path="/",
     )
+    issue_csrf_cookie(resp)
     resp.set_cookie(
         "__Host-device", new_device_token,
         httponly=True, secure=True, samesite="lax",
@@ -475,7 +495,9 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
         "vks_session", token,
         httponly=True, secure=True, samesite="lax",
         max_age=12 * 3600 if body.remember_me else 2 * 3600,
+        path="/",
     )
+    issue_csrf_cookie(resp)
     resp.set_cookie(
         "__Host-device", new_device_token,
         httponly=True, secure=True, samesite="lax",
@@ -534,7 +556,17 @@ async def trust_device_endpoint(
 
 
 @router.get("/me")
-async def get_me(admin: AdminUser = Depends(get_current_admin)):
+async def get_me(
+    deps: tuple = Depends(get_current_admin_with_session),
+):
+    admin, session = deps
+    now = datetime.now(timezone.utc)
+
+    if session.absolute_expires_at is not None and session.created_at is not None:
+        remember_me = (session.absolute_expires_at - session.created_at) > timedelta(hours=6)
+    else:
+        remember_me = True
+
     return {
         "id": str(admin.id),
         "username": admin.username,
@@ -543,6 +575,16 @@ async def get_me(admin: AdminUser = Depends(get_current_admin)):
         "role": admin.role,
         "totp_enabled": admin.totp_enabled,
         "telegram_chat_id": admin.telegram_chat_id,
+        "session": {
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "expires_at": session.expires_at.isoformat() if session.expires_at else None,
+            "absolute_expires_at": (
+                session.absolute_expires_at.isoformat()
+                if session.absolute_expires_at else None
+            ),
+            "remember_me": remember_me,
+            "server_time": now.isoformat(),
+        },
     }
 
 
@@ -567,6 +609,15 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
 @router.post("/password/forgot-verify")
 async def forgot_verify(body: ForgotVerifyRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
+
+    allowed, retry_after = await forgot_verify_limiter.check_and_record(ip)
+    if not allowed:
+        raise HTTPException(429, detail={
+            "detail": "Too many attempts. Please wait before trying again.",
+            "type": "rate_limited",
+            "retry_after": int(retry_after),
+        })
+
     stmt = select(AdminUser).where(AdminUser.username == body.username)
     admin = (await db.execute(stmt)).scalar_one_or_none()
     if not admin:
@@ -586,6 +637,15 @@ async def forgot_verify(body: ForgotVerifyRequest, request: Request, db: AsyncSe
 @router.post("/password/forgot-reset")
 async def forgot_reset(body: ForgotResetRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
+
+    allowed, retry_after = await forgot_reset_limiter.check_and_record(ip)
+    if not allowed:
+        raise HTTPException(429, detail={
+            "detail": "Too many attempts. Please wait before trying again.",
+            "type": "rate_limited",
+            "retry_after": int(retry_after),
+        })
+
     challenge = await get_challenge(db, UUID(body.challenge_id))
     if not challenge or challenge.otp_purpose != OtpPurpose.password_reset:
         raise HTTPException(400, "invalid_challenge")

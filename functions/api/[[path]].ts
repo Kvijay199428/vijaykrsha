@@ -8,15 +8,17 @@ const ALLOWED_ORIGINS = [
 ];
 
 function corsHeaders(origin: string | null): Record<string, string> {
-  const allowed = ALLOWED_ORIGINS.includes(origin || "")
-    ? origin!
-    : ALLOWED_ORIGINS[0];
-
+  // Only reflect an allowlisted origin. Unknown origins get NO CORS headers,
+  // so browsers block any cross-origin read of the response.
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    return {};
+  }
   return {
-    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token",
+    "Access-Control-Expose-Headers": "X-RateLimit-RetryAfter",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -30,7 +32,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   const url = new URL(request.url);
-  const path = url.searchParams.get("__proxy_path") || url.pathname.replace(/^\/api\//, "/");
+  const path = url.pathname.replace(/^\/api\//, "/");
 
   const backendUrl = new URL(path, context.env.API_ORIGIN || "https://api.vijaykrsha.online");
   backendUrl.search = url.search;
@@ -44,13 +46,29 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   proxyRequest.headers.delete("Origin");
   proxyRequest.headers.delete("Referer");
+  // Trust headers are set only by this proxy; never accept client-supplied ones.
+  proxyRequest.headers.delete("X-Forwarded-By");
+  proxyRequest.headers.delete("X-Original-Origin");
   proxyRequest.headers.set("X-Forwarded-By", "pages-proxy");
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    proxyRequest.headers.set("X-Original-Origin", origin);
+  }
 
   const response = await fetch(proxyRequest);
   const newResponse = new Response(response.body, response);
-  const headers = corsHeaders(origin);
 
-  for (const [key, value] of Object.entries(headers)) {
+  // Belt-and-braces: some runtimes collapse multiple Set-Cookie headers when
+  // copying a Response. Re-append each explicitly so the session cookie can
+  // never be lost between backend and browser.
+  const upstreamCookies =
+    typeof response.headers.getSetCookie === "function"
+      ? response.headers.getSetCookie()
+      : [];
+  for (const cookie of upstreamCookies) {
+    newResponse.headers.append("set-cookie", cookie);
+  }
+
+  for (const [key, value] of Object.entries(corsHeaders(origin))) {
     newResponse.headers.set(key, value);
   }
 

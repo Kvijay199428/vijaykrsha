@@ -9,14 +9,7 @@
     <meta name="description" content="Vijay Kumar Sharma — Legal researcher, contract drafter, and data analyst helping businesses and startups navigate complex legal and technology challenges. Based in India." />
     <meta name="author" content="Vijay Kumar Sharma" />
     <!-- FOUC prevention: set theme before paint -->
-    <script>
-      (function () {
-        const stored = localStorage.getItem("theme");
-        if (stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-          document.documentElement.classList.add("dark");
-        }
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

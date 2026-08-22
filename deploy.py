@@ -156,6 +156,7 @@ def deploy_docker(host, env, clean=False):
     compose_file = "docker-compose.dev.yml" if env == "dev" else "docker-compose.prod.yml"
     env_file = "env/.env.dev" if env == "dev" else "env/.env.prod"
     service = "backend-dev frontend-dev" if env == "dev" else "backend-prod"
+    backend_service = "backend-dev" if env == "dev" else "backend-prod"
 
     if clean:
         print("\n[CLEAN] Removing existing containers...")
@@ -165,6 +166,7 @@ def deploy_docker(host, env, clean=False):
         (f"mkdir -p {REMOTE_DIR}", "Ensuring directory exists"),
         (f"python3 -c \"import zipfile; zipfile.ZipFile('{REMOTE_ZIP}','r').extractall('{REMOTE_DIR}')\"", "Extracting files"),
         (f"rm -f {REMOTE_ZIP}", "Cleaning up zip"),
+        (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} run --rm {backend_service} alembic upgrade head", "Applying database migrations"),
         (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} up -d --build {service}", f"Building and starting {env} containers"),
     ]
 

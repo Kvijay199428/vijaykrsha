@@ -9,20 +9,17 @@ ingress:
 ```
 // File: .env.example
 # Database
-POSTGRES_PASSWORD=postgres
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/vijaykrsha
+POSTGRES_PASSWORD=<generate-a-strong-random-password>
+DATABASE_URL=postgresql+asyncpg://postgres:<same-password>@db:5432/vijaykrsha
 
 # Telegram
-TELEGRAM_BOT_TOKEN=8756048836:AAEspKI4tm_xUMyNG_lV0wEK6RisrRxSRUY
-TELEGRAM_ADMIN_CHAT_ID=1020626328
+TELEGRAM_BOT_TOKEN=<from-@BotFather-rotate-if-ever-committed>
+TELEGRAM_ADMIN_CHAT_ID=<your-chat-id>
 
 # Security
-SESSION_SECRET=change-me-in-production
-TOTP_ENCRYPTION_KEY=change-me-in-production
-
-# MinIO
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
+TOTP_ENCRYPTION_KEY=<run: python -c "import secrets; print(secrets.token_urlsafe(48))">
+OTP_PEPPER=<run: python -c "import secrets; print(secrets.token_urlsafe(32))">
+PRODUCTION=false
 S3_ENDPOINT=http://storage:9000
 S3_BUCKET=vijaykrsha-private
 
@@ -135,7 +132,7 @@ services:
     environment:
       POSTGRES_DB: vijaykrsha
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - vijaykrshaonline_pgdata:/var/lib/postgresql/data
     networks:
@@ -189,6 +186,8 @@ services:
       - "26011:8000"
     env_file:
       - ./env/.env.prod
+    environment:
+      PRODUCTION: "true"
     networks:
       - prod-network
 
@@ -212,11 +211,11 @@ services:
     environment:
       POSTGRES_DB: vijaykrsha
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -233,10 +232,20 @@ services:
     volumes:
       - miniodata:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -249,18 +258,21 @@ services:
         condition: service_healthy
       storage:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/vijaykrsha
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/vijaykrsha
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID}
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
-      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:-change-me-in-production}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY must be set}
+      OTP_PEPPER: ${OTP_PEPPER:-vijaykrsha-otp-pepper-change-me}
+      REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://storage:9000
       S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       S3_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://vijaykrsha.online}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,https://vijaykrsha.online}
 
   frontend:
     build:
@@ -305,15 +317,17 @@ const ALLOWED_ORIGINS = [
 ];
 
 function corsHeaders(origin: string | null): Record<string, string> {
-  const allowed = ALLOWED_ORIGINS.includes(origin || "")
-    ? origin!
-    : ALLOWED_ORIGINS[0];
-
+  // Only reflect an allowlisted origin. Unknown origins get NO CORS headers,
+  // so browsers block any cross-origin read of the response.
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    return {};
+  }
   return {
-    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CSRF-Token",
+    "Access-Control-Expose-Headers": "X-RateLimit-RetryAfter",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -327,7 +341,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   }
 
   const url = new URL(request.url);
-  const path = url.searchParams.get("__proxy_path") || url.pathname.replace(/^\/api\//, "/");
+  const path = url.pathname.replace(/^\/api\//, "/");
 
   const backendUrl = new URL(path, context.env.API_ORIGIN || "https://api.vijaykrsha.online");
   backendUrl.search = url.search;
@@ -341,13 +355,18 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   proxyRequest.headers.delete("Origin");
   proxyRequest.headers.delete("Referer");
+  // Trust headers are set only by this proxy; never accept client-supplied ones.
+  proxyRequest.headers.delete("X-Forwarded-By");
+  proxyRequest.headers.delete("X-Original-Origin");
   proxyRequest.headers.set("X-Forwarded-By", "pages-proxy");
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    proxyRequest.headers.set("X-Original-Origin", origin);
+  }
 
   const response = await fetch(proxyRequest);
   const newResponse = new Response(response.body, response);
-  const headers = corsHeaders(origin);
 
-  for (const [key, value] of Object.entries(headers)) {
+  for (const [key, value] of Object.entries(corsHeaders(origin))) {
     newResponse.headers.set(key, value);
   }
 
@@ -366,13 +385,30 @@ server {
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
     gzip_min_length 256;
 
+    # --- Security headers ---
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.vijaykrsha.online; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+
     location / {
         try_files $uri $uri/ /index.html;
     }
 
+    # Static assets are content-hashed by Vite, so immutable caching is safe.
+    # Security headers are repeated here: nginx does not merge add_header
+    # directives from parent blocks when a location defines its own.
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.vijaykrsha.online; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
     }
 }
 ```
@@ -431,6 +467,21 @@ server {
   "blendMode": "normal",
   "loop": true
 }
+```
+
+```javascript
+// File: public\theme-init.js
+(function () {
+  var stored = null;
+  try {
+    stored = localStorage.getItem("theme");
+  } catch (e) {
+    /* storage unavailable */
+  }
+  if (stored === "dark" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+    document.documentElement.classList.add("dark");
+  }
+})();
 ```
 
 ```tsx
@@ -856,6 +907,149 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       >
         <ArrowUpIcon />
       </button>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\components\OtpDigitInput.tsx
+import { useRef, useState, useEffect, useCallback } from "react";
+
+interface OtpDigitInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  length?: number;
+  autoFocus?: boolean;
+  disabled?: boolean;
+  error?: boolean;
+}
+
+export default function OtpDigitInput({
+  value,
+  onChange,
+  length = 6,
+  autoFocus = true,
+  disabled = false,
+  error = false,
+}: OtpDigitInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [digits, setDigits] = useState<string[]>(() =>
+    Array.from({ length }, (_, i) => value[i] || "")
+  );
+  const [popIndex, setPopIndex] = useState<number>(-1);
+  const [shaking, setShaking] = useState(false);
+
+  useEffect(() => {
+    setDigits(Array.from({ length }, (_, i) => value[i] || ""));
+  }, [value, length]);
+
+  useEffect(() => {
+    if (autoFocus && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [autoFocus]);
+
+  useEffect(() => {
+    if (error) {
+      setShaking(true);
+      const t = setTimeout(() => setShaking(false), 400);
+      return () => clearTimeout(t);
+    }
+  }, [error]);
+
+  const triggerPop = useCallback((index: number) => {
+    setPopIndex(index);
+    setTimeout(() => setPopIndex(-1), 200);
+  }, []);
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value.replace(/\D/g, "").slice(0, length);
+      if (raw.length > value.length) {
+        triggerPop(raw.length - 1);
+      }
+      onChange(raw);
+      if (inputRef.current) {
+        const pos = raw.length;
+        inputRef.current.setSelectionRange(pos, pos);
+      }
+    },
+    [onChange, length, value.length, triggerPop]
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Backspace" && value.length > 0) {
+        onChange(value.slice(0, -1));
+      }
+    },
+    [onChange, value]
+  );
+
+  const handleContainerClick = useCallback(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
+
+  const isComplete = value.length === length;
+
+  return (
+    <div
+      className={`flex items-center justify-center gap-2 ${shaking ? "otp-digit-shake" : ""}`}
+      onClick={handleContainerClick}
+    >
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        autoComplete="one-time-code"
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        maxLength={length}
+        disabled={disabled}
+        className="absolute w-0 h-0 opacity-0 pointer-events-none"
+        aria-label={`Enter ${length}-digit code`}
+      />
+      {Array.from({ length }, (_, i) => {
+        const digit = digits[i] || "";
+        const isCurrent = i === value.length && !isComplete;
+        const isPopping = i === popIndex;
+        const isFilled = i < value.length;
+
+        return (
+          <div
+            key={i}
+            className={`
+              w-11 h-14 flex items-center justify-center rounded-xl text-lg font-mono font-semibold
+              transition-all duration-150
+              ${isPopping ? "otp-digit-pop" : ""}
+              ${isFilled ? "otp-digit-glow" : ""}
+              ${isCurrent
+                ? "neu-concave ring-2 ring-primary/50"
+                : isFilled
+                  ? "neu-concave"
+                  : "neu-concave"
+              }
+              ${error ? "ring-2 ring-red-400/60" : ""}
+              ${disabled ? "opacity-50" : "cursor-text"}
+            `}
+            style={{ caretColor: "transparent" }}
+          >
+            {digit && (
+              <span className={isFilled ? "text-foreground" : "text-transparent"}>
+                {digit}
+              </span>
+            )}
+            {isCurrent && !disabled && (
+              <span className="w-0.5 h-5 bg-primary animate-pulse" />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1547,6 +1741,7 @@ import {
   type ReactNode,
 } from "react";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
 
 interface SecondFactorResult {
   status: "second_factor_required";
@@ -1554,18 +1749,32 @@ interface SecondFactorResult {
   methods: string[];
 }
 
-export class OtpCooldownError extends Error {
-  cooldownSeconds: number;
+export interface RateLimitDetail {
+  detail: string;
+  type: "rate_limited" | "account_locked" | "resend_cooldown" | "verify_cooldown" | "ip_blocked";
+  retry_after: number;
+}
+
+export class RateLimitError extends Error {
+  retryAfter: number;
+  limitType: RateLimitDetail["type"];
+  constructor(msg: string, retryAfter: number, limitType: RateLimitDetail["type"]) {
+    super(msg);
+    this.retryAfter = retryAfter;
+    this.limitType = limitType;
+  }
+}
+
+export class OtpCooldownError extends RateLimitError {
   constructor(cooldownSeconds: number) {
-    super(`Please wait ${cooldownSeconds}s before requesting a new code.`);
-    this.cooldownSeconds = cooldownSeconds;
+    super("Please wait before requesting a new code.", cooldownSeconds, "resend_cooldown");
   }
 }
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
-  admin: { id: string; username: string; role: string } | null;
+  admin: { id: string; username: string; display_name: string; role: string } | null;
   login: (
     username: string,
     password: string,
@@ -1588,10 +1797,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [admin, setAdmin] = useState<{ id: string; username: string; role: string } | null>(null);
+  const [admin, setAdmin] = useState<{ id: string; username: string; display_name: string; role: string } | null>(null);
 
   useEffect(() => {
-    fetch(ROUTES.ADMINAPIAUTHME, { credentials: "include" })
+    apiFetch(ROUTES.ADMINAPIAUTHME, { credentials: "include", redirectOn401: false })
       .then((response) => {
         if (response.ok) return response.json();
         throw new Error("not authenticated");
@@ -1613,7 +1822,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password: string,
       rememberMe = false
     ): Promise<SecondFactorResult> => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGIN, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGIN, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -1622,7 +1831,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Login failed" }));
-        throw new Error(typeof err.detail === "string" ? err.detail : "Login failed");
+        const msg = typeof err.detail === "string" ? err.detail : "Login failed";
+        if (response.status === 429 || response.status === 423) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "rate_limited");
+          }
+        }
+        throw new Error(msg);
       }
 
       return await response.json();
@@ -1632,7 +1848,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginOtpSend = useCallback(
     async (challengeId: string): Promise<{ cooldown_seconds: number }> => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINOTPSEND, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPSEND, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -1642,9 +1858,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Failed to send code" }));
         const msg = typeof err.detail === "string" ? err.detail : "Failed to send code";
-        if (msg.includes("resend_cooldown")) {
-          const match = msg.match(/(\d+)/);
-          throw new OtpCooldownError(match ? parseInt(match[1]) : 60);
+        if (response.status === 429) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new OtpCooldownError(data.retry_after);
+          }
         }
         throw new Error(msg);
       }
@@ -1656,7 +1874,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginOtpVerify = useCallback(
     async (challengeId: string, code: string) => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINOTPVERIFY, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPVERIFY, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -1665,7 +1883,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "OTP verification failed" }));
-        throw new Error(typeof err.detail === "string" ? err.detail : "OTP verification failed");
+        const msg = typeof err.detail === "string" ? err.detail : "OTP verification failed";
+        if (response.status === 429) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
+          }
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();
@@ -1682,7 +1907,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginTotp = useCallback(
     async (challengeId: string, code: string) => {
-      const response = await fetch(ROUTES.ADMINAPIAUTHLOGINTOTP, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINTOTP, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -1691,7 +1916,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "TOTP verification failed" }));
-        throw new Error(typeof err.detail === "string" ? err.detail : "TOTP verification failed");
+        const msg = typeof err.detail === "string" ? err.detail : "TOTP verification failed";
+        if (response.status === 429) {
+          const data = err as RateLimitDetail;
+          if (data.retry_after) {
+            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
+          }
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();
@@ -1702,7 +1934,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    await fetch(ROUTES.ADMINAPIAUTHLOGOUT, {
+    await apiFetch(ROUTES.ADMINAPIAUTHLOGOUT, {
       method: "POST",
       credentials: "include",
     });
@@ -1733,29 +1965,6 @@ export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
-}
-```
-
-```typescript
-// File: src\hooks\useApi.ts
-export async function apiGet<T = unknown>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "include" });
-  if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
-  return response.json();
-}
-
-export async function apiPost<T = unknown>(
-  url: string,
-  body?: Record<string, unknown>
-): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!response.ok) throw new Error(`POST ${url} failed: ${response.status}`);
-  return response.json();
 }
 ```
 
@@ -2325,6 +2534,80 @@ body {
   @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-3;
 }
 
+/* ── Admin Scrollbar (Neumorphism) ──────────────── */
+
+.admin-theme ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.admin-theme ::-webkit-scrollbar-track {
+  background: var(--color-background);
+  border-radius: 4px;
+}
+.admin-theme ::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+  border: 2px solid var(--color-background);
+}
+.admin-theme ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+.admin-theme * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) var(--color-background);
+}
+
+/* ── OTP Digit Box Animations ──────────────────── */
+
+@keyframes otp-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@keyframes otp-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes otp-glow {
+  0% { box-shadow: inset -3px -3px 7px var(--color-neu-light), inset 3px 3px 7px var(--color-neu-dark); }
+  50% { box-shadow: inset -3px -3px 7px var(--color-neu-light), inset 3px 3px 7px var(--color-neu-dark), 0 0 12px rgba(5, 150, 105, 0.4); }
+  100% { box-shadow: inset -3px -3px 7px var(--color-neu-light), inset 3px 3px 7px var(--color-neu-dark); }
+}
+
+.otp-digit-pop {
+  animation: otp-pop 0.2s ease-out;
+}
+
+.otp-digit-shake {
+  animation: otp-shake 0.4s ease-out;
+}
+
+.otp-digit-glow {
+  animation: otp-glow 0.6s ease-out;
+}
+
+/* ── Login Step Transitions ────────────────────── */
+
+.login-step-enter {
+  opacity: 0;
+  transform: translateX(20px);
+}
+.login-step-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+.login-step-exit {
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
+}
+
 /* ── Accessibility ────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
@@ -2360,26 +2643,156 @@ body {
   .animated-logo canvas {
     display: none;
   }
+  .otp-digit-pop,
+  .otp-digit-shake,
+  .otp-digit-glow {
+    animation: none;
+  }
+  .login-step-enter,
+  .login-step-active,
+  .login-step-exit {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 ```
 
 ```typescript
 // File: src\lib\adminApi.ts
+import { ROUTES } from "@/lib/routes";
+
+export interface ApiFetchOptions extends RequestInit {
+  /** Set false for auth-probing calls where 401 must not redirect. */
+  redirectOn401?: boolean;
+}
+
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function readCsrfToken(): string | null {
+  const value = /(?:^|;\s*)vks_csrf=([^;]*)/.exec(document.cookie)?.[1];
+  return value ? decodeURIComponent(value) : null;
+}
+
+function buildHeaders(init: RequestInit): Headers {
+  const headers = new Headers(init.headers);
+  const method = (init.method ?? "GET").toUpperCase();
+  // Backend rejects non-JSON content types on writes, even with empty bodies.
+  if (UNSAFE_METHODS.has(method) && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (UNSAFE_METHODS.has(method)) {
+    const token = readCsrfToken();
+    if (token) headers.set("X-CSRF-Token", token);
+  }
+  return headers;
+}
+
+async function doFetch(url: string, init: RequestInit): Promise<Response> {
+  return fetch(url, {
+    ...init,
+    credentials: "include",
+    headers: buildHeaders(init),
+  });
+}
+
+/**
+ * Single API client for every admin request: cookies included, CSRF
+ * double-submit header attached to state-changing methods, JSON content-type
+ * defaulted, and automatic redirect to login on session expiry.
+ */
 export async function apiFetch(
   url: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {}
 ): Promise<Response> {
-  const response = await fetch(url, {
-    ...options,
-    credentials: "include",
-  });
+  const { redirectOn401 = true, ...init } = options;
 
-  if (response.status === 401) {
+  let response = await doFetch(url, init);
+
+  // CSRF cookie missing (expired or first visit after deploy): the backend
+  // issues one on any authenticated GET — grab it via /me and retry once.
+  if (
+    response.status === 403 &&
+    !readCsrfToken() &&
+    url !== ROUTES.ADMINAPIAUTHME
+  ) {
+    await fetch(ROUTES.ADMINAPIAUTHME, { credentials: "include" });
+    response = await doFetch(url, init);
+  }
+
+  if (response.status === 401 && redirectOn401) {
     window.location.assign("/vega/admin/login");
     throw new Error("SESSION_EXPIRED");
   }
 
   return response;
+}
+```
+
+```typescript
+// File: src\lib\apiError.ts
+interface FastAPIValidationDetail {
+  type: string;
+  loc: (string | number)[];
+  msg: string;
+  input?: unknown;
+}
+
+export function getApiErrorMessage(data: unknown, fallback = "Something went wrong"): string {
+  if (!data || typeof data !== "object") return fallback;
+
+  const detail = (data as Record<string, unknown>).detail;
+
+  if (typeof detail === "string") return detail;
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as FastAPIValidationDetail;
+    if (first && typeof first === "object" && typeof first.msg === "string") {
+      const field = first.loc?.filter((s) => typeof s === "string" && s !== "body").join(" ");
+      const msg = first.msg.charAt(0).toUpperCase() + first.msg.slice(1);
+      return field ? `${field}: ${msg}` : msg;
+    }
+  }
+
+  if (typeof detail === "object" && detail !== null) {
+    const d = detail as Record<string, unknown>;
+    if (typeof d.message === "string") return d.message;
+    if (typeof d.error === "string") return d.error;
+  }
+
+  return fallback;
+}
+```
+
+```typescript
+// File: src\lib\passwordValidation.ts
+export interface PasswordRule {
+  label: string;
+  test: (pw: string) => boolean;
+}
+
+export const PASSWORD_RULES: PasswordRule[] = [
+  { label: "At least 12 characters", test: (pw) => pw.length >= 12 },
+  { label: "Uppercase letter", test: (pw) => /[A-Z]/.test(pw) },
+  { label: "Lowercase letter", test: (pw) => /[a-z]/.test(pw) },
+  { label: "Number", test: (pw) => /[0-9]/.test(pw) },
+  { label: "Special character (!@#$...)", test: (pw) => /[^A-Za-z0-9]/.test(pw) },
+  { label: "No whitespace at start/end", test: (pw) => pw === pw.trim() },
+];
+
+export function getPasswordErrors(pw: string, username?: string): string[] {
+  const errors: string[] = [];
+  for (const rule of PASSWORD_RULES) {
+    if (!rule.test(pw)) errors.push(rule.label);
+  }
+  if (username && pw.toLowerCase() === username.toLowerCase()) {
+    errors.push("Cannot be the same as username");
+  }
+  return errors;
+}
+
+export function isPasswordValid(pw: string, username?: string): boolean {
+  return getPasswordErrors(pw, username).length === 0;
 }
 ```
 
@@ -2409,6 +2822,7 @@ export const ROUTES = {
 
   // User management
   ADMINAPIUSERS: `${API}/admin/api/users`,
+  ADMINAPIUSERSCREATE: `${API}/admin/api/users/create`,
   ADMINAPIUSERSBYID: (id: string) => `${API}/admin/api/users/${id}`,
   ADMINAPIUSERDISABLE: (id: string) => `${API}/admin/api/users/${id}/disable`,
   ADMINAPIUSERENABLE: (id: string) => `${API}/admin/api/users/${id}/enable`,
@@ -2698,6 +3112,7 @@ export default function About() {
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import AnimatedLogo from "../../components/AnimatedLogo";
 import {
   LayoutDashboard,
   Inbox,
@@ -2707,7 +3122,6 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  Shield,
 } from "lucide-react";
 
 const navItems = [
@@ -2767,11 +3181,9 @@ export default function AdminLayout() {
               : "flex-row gap-2 px-3 py-4"
           }`}
         >
-          <div className="p-1.5 neu-btn rounded-xl">
-            <Shield className="w-4 h-4 text-primary shrink-0" />
-          </div>
+          <AnimatedLogo size={collapsed ? 32 : 28} />
           {!collapsed && (
-            <span className="font-semibold text-sm truncate">Vega Admin</span>
+            <span className="font-semibold text-sm truncate typing-text text-primary">VIJAYKRSHA.ONLINE</span>
           )}
           {!collapsed && (
             <button
@@ -2815,10 +3227,29 @@ export default function AdminLayout() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-border/50 px-2 py-3 space-y-1">
+        <div className="border-t border-border/50 px-2 py-3 space-y-2">
           {!collapsed && admin && (
-            <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">
-              {admin.username} &middot; {admin.role}
+            <div className="px-3 py-2 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-sm font-bold text-primary">
+                  {(admin.display_name || admin.username).charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">{admin.display_name || admin.username}</p>
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary">
+                  {admin.role}
+                </span>
+              </div>
+            </div>
+          )}
+          {collapsed && admin && (
+            <div className="flex justify-center">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <span className="text-xs font-bold text-primary">
+                  {(admin.display_name || admin.username).charAt(0).toUpperCase()}
+                </span>
+              </div>
             </div>
           )}
           <button
@@ -2840,96 +3271,6 @@ export default function AdminLayout() {
           <Outlet />
         </div>
       </main>
-    </div>
-  );
-}
-```
-
-```tsx
-// File: src\pages\admin\AdminUsers.tsx
-import { useEffect, useState } from "react";
-import { ROUTES } from "@/lib/routes";
-
-interface AdminUser {
-  id: string;
-  username: string;
-  email: string;
-  display_name: string;
-  role: string;
-  status: string;
-  totp_enabled: boolean;
-  last_login_at: string;
-  created_at: string;
-}
-
-export default function AdminUsers() {
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(ROUTES.ADMINAPIUSERS, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => setUsers(data.items ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Admin Users</h1>
-          <p className="text-muted-foreground text-sm">{users.length} admin accounts</p>
-        </div>
-      </div>
-
-      <div className="rounded-xl bg-card border overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
-        ) : (
-          <table className="w-full">
-            <thead className="border-b bg-muted/50">
-              <tr>
-                <th className="text-left p-4 text-sm font-medium">Username</th>
-                <th className="text-left p-4 text-sm font-medium">Display Name</th>
-                <th className="text-left p-4 text-sm font-medium">Role</th>
-                <th className="text-left p-4 text-sm font-medium">Status</th>
-                <th className="text-left p-4 text-sm font-medium">TOTP</th>
-                <th className="text-left p-4 text-sm font-medium">Last Login</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {users.map((u) => (
-                <tr key={u.id} className="hover:bg-muted/30">
-                  <td className="p-4 text-sm font-medium">{u.username}</td>
-                  <td className="p-4 text-sm">{u.display_name}</td>
-                  <td className="p-4 text-sm">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      u.role === "owner" ? "bg-purple-100 text-purple-700" :
-                      u.role === "admin" ? "bg-blue-100 text-blue-700" :
-                      "bg-slate-100 text-slate-700"
-                    }`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="p-4 text-sm">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      u.status === "active" ? "bg-green-100 text-green-700" :
-                      "bg-red-100 text-red-700"
-                    }`}>
-                      {u.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-sm">{u.totp_enabled ? "Yes" : "No"}</td>
-                  <td className="p-4 text-sm text-muted-foreground">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
     </div>
   );
 }
@@ -3479,6 +3820,7 @@ export default function MessageDetail() {
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { getPasswordErrors } from "@/lib/passwordValidation";
 import { Shield, Lock } from "lucide-react";
 
 export default function Settings() {
@@ -3524,7 +3866,7 @@ export default function Settings() {
       const res = await apiFetch(ROUTES.ADMINAPITOTPENABLE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: totpCode, secret: totpSecret }),
+        body: JSON.stringify({ code: totpCode }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: "Failed" }));
@@ -3569,6 +3911,11 @@ export default function Settings() {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match");
+      return;
+    }
+    const pwErrors = getPasswordErrors(newPassword);
+    if (pwErrors.length > 0) {
+      setError(`Password requirements not met: ${pwErrors.join(", ")}`);
       return;
     }
     setLoading(true);
@@ -3703,15 +4050,18 @@ export default function Settings() {
 
 ```tsx
 // File: src\pages\admin\Setup.tsx
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
+import { getPasswordErrors } from "@/lib/passwordValidation";
 import { Shield } from "lucide-react";
 
 export default function Setup() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
   const [form, setForm] = useState({
     username: "",
     password: "",
@@ -3720,20 +4070,30 @@ export default function Setup() {
     display_name: "",
   });
 
+  const passwordErrors = getPasswordErrors(form.password);
+
+  // Only render the setup form when the backend reports no admins exist.
+  useEffect(() => {
+    fetch(ROUTES.ADMINAPISETUPREQUIRED)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setSetupRequired(Boolean(data?.required)))
+      .catch(() => setSetupRequired(false));
+  }, []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (form.password !== form.confirmPassword) {
       setError("Passwords do not match");
       return;
     }
-    if (form.password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (passwordErrors.length > 0) {
+      setError(`Password requirements not met: ${passwordErrors.join(", ")}`);
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(ROUTES.ADMINAPISETUPCREATE, {
+      const res = await apiFetch(ROUTES.ADMINAPISETUPCREATE, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -3754,6 +4114,18 @@ export default function Setup() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (setupRequired === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">Checking setup status...</p>
+      </div>
+    );
+  }
+
+  if (!setupRequired) {
+    return <Navigate to="/vega/admin/login" replace />;
   }
 
   return (
@@ -3808,8 +4180,15 @@ export default function Setup() {
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
               required
-              minLength={6}
+              minLength={12}
             />
+            {form.password.length > 0 && passwordErrors.length > 0 && (
+              <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                {passwordErrors.map((rule) => (
+                  <li key={rule}>• {rule}</li>
+                ))}
+              </ul>
+            )}
           </div>
           <div>
             <label className="text-sm font-medium">Confirm Password *</label>
@@ -3836,6 +4215,8 @@ export default function Setup() {
 import { useState, useEffect } from "react";
 import { ROUTES } from "../../lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { getApiErrorMessage } from "@/lib/apiError";
+import { isPasswordValid } from "@/lib/passwordValidation";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   Users as UsersIcon,
@@ -3852,6 +4233,7 @@ import {
   Ban,
   CheckCircle,
   X,
+  Check,
 } from "lucide-react";
 
 interface AdminUser {
@@ -4170,7 +4552,7 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
     }
     setLoading(true);
     try {
-      const res = await apiFetch(ROUTES.ADMINAPIUSERS, {
+      const res = await apiFetch(ROUTES.ADMINAPIUSERSCREATE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -4184,7 +4566,7 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Failed to create user");
+        setError(getApiErrorMessage(data, "Failed to create user"));
         return;
       }
       onCreated();
@@ -4203,7 +4585,10 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
         <NeuInput label="Username *" value={form.username} onChange={(v) => setForm({ ...form, username: v })} />
         <NeuInput label="Display Name *" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
         <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
-        <NeuInput label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+        <div>
+          <NeuInput label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+          <PasswordRequirements password={form.password} username={form.username} />
+        </div>
         <NeuInput label="Confirm Password *" type="password" value={form.confirmPassword} onChange={(v) => setForm({ ...form, confirmPassword: v })} />
         <div>
           <label className="block text-sm font-medium mb-1">Role *</label>
@@ -4218,7 +4603,7 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
         <NeuInput label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
-          <button type="submit" disabled={loading} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+          <button type="submit" disabled={loading || !form.username || !form.display_name || !(isPasswordValid(form.password, form.username) && form.password === form.confirmPassword)} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
             {loading ? "Creating..." : "Create User"}
           </button>
         </div>
@@ -4243,7 +4628,7 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Failed to update");
+        setError(getApiErrorMessage(data, "Failed to update"));
         return;
       }
       onUpdated();
@@ -4306,11 +4691,11 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
       const res = await apiFetch(ROUTES.ADMINAPIUSERTOTPENABLE(user.id), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, secret }),
+        body: JSON.stringify({ code }),
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Invalid code");
+        setError(getApiErrorMessage(data, "Invalid code"));
         return;
       }
       setStep("done");
@@ -4385,7 +4770,7 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail || "Failed");
+        setError(getApiErrorMessage(data, "Failed"));
         return;
       }
       onDone();
@@ -4402,10 +4787,11 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
       {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
       <p className="text-sm text-muted-foreground mb-3">The user will be logged out after password reset.</p>
       <NeuInput label="New Password" type="password" value={password} onChange={setPassword} />
+      <PasswordRequirements password={password} username={user.username} />
       <NeuInput label="Confirm Password" type="password" value={confirm} onChange={setConfirm} />
       <div className="flex justify-end gap-2 pt-3">
         <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
-        <button onClick={handleSubmit} disabled={loading || password.length < 6} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+        <button onClick={handleSubmit} disabled={loading || !isPasswordValid(password, user.username) || password !== confirm} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
           {loading ? "Resetting..." : "Reset Password"}
         </button>
       </div>
@@ -4435,6 +4821,35 @@ function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfir
         </button>
       </div>
     </Dialog>
+  );
+}
+
+function PasswordRequirements({ password, username }: { password: string; username: string }) {
+  if (!password) return null;
+
+  return (
+    <div className="mt-1 space-y-1">
+      {[
+        { label: "At least 12 characters", ok: password.length >= 12 },
+        { label: "Uppercase letter", ok: /[A-Z]/.test(password) },
+        { label: "Lowercase letter", ok: /[a-z]/.test(password) },
+        { label: "Number", ok: /[0-9]/.test(password) },
+        { label: "Special character", ok: /[^A-Za-z0-9]/.test(password) },
+        { label: "No leading/trailing whitespace", ok: password === password.trim() },
+        { label: "Not the same as username", ok: !username || password.toLowerCase() !== username.toLowerCase() },
+      ].map((r) => (
+        <div key={r.label} className="flex items-center gap-1.5 text-xs">
+          {r.ok ? (
+            <Check className="w-3 h-3 text-green-500" />
+          ) : (
+            <X className="w-3 h-3 text-red-400" />
+          )}
+          <span className={r.ok ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}>
+            {r.label}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -4472,12 +4887,78 @@ function NeuInput({ label, type = "text", value, onChange, placeholder }: {
 
 ```tsx
 // File: src\pages\AdminLogin.tsx
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { ArrowRight, Loader2, Shield, MessageSquare, KeyRound } from "lucide-react";
+import { RateLimitError } from "../contexts/AuthContext";
+import OtpDigitInput from "../components/OtpDigitInput";
+import {
+  ArrowRight, Loader2, Shield, MessageSquare, KeyRound,
+  Clock, AlertTriangle, Lock,
+} from "lucide-react";
 
 type Step = "credentials" | "otp" | "totp";
+
+function CooldownTimer({
+  seconds,
+  maxSeconds,
+  variant,
+}: {
+  seconds: number;
+  maxSeconds: number;
+  variant: "warning" | "danger";
+}) {
+  const pct = maxSeconds > 0 ? (seconds / maxSeconds) * 100 : 0;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+  const colors =
+    variant === "danger"
+      ? {
+          bg: "bg-red-50 dark:bg-red-950/30",
+          border: "border-red-200 dark:border-red-800/40",
+          text: "text-red-700 dark:text-red-400",
+          bar: "bg-red-500 dark:bg-red-400",
+          icon: "text-red-500 dark:text-red-400",
+        }
+      : {
+          bg: "bg-amber-50 dark:bg-amber-950/30",
+          border: "border-amber-200 dark:border-amber-800/40",
+          text: "text-amber-700 dark:text-amber-400",
+          bar: "bg-amber-500 dark:bg-amber-400",
+          icon: "text-amber-500 dark:text-amber-400",
+        };
+
+  return (
+    <div className={`rounded-xl border p-4 ${colors.bg} ${colors.border}`}>
+      <div className="flex items-center gap-3 mb-3">
+        {variant === "danger" ? (
+          <Lock className={`w-5 h-5 ${colors.icon}`} />
+        ) : (
+          <Clock className={`w-5 h-5 ${colors.icon}`} />
+        )}
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium ${colors.text}`}>
+            {variant === "danger" ? "Account temporarily locked" : "Please wait"}
+          </p>
+          <p className={`text-xs mt-0.5 ${colors.text} opacity-80`}>
+            Too many failed attempts
+          </p>
+        </div>
+        <span className={`text-2xl font-bold tabular-nums ${colors.text}`}>
+          {timeStr}
+        </span>
+      </div>
+      <div className={`h-1.5 rounded-full overflow-hidden ${variant === "danger" ? "bg-red-100 dark:bg-red-900/40" : "bg-amber-100 dark:bg-amber-900/40"}`}>
+        <div
+          className={`h-full rounded-full transition-all duration-1000 ease-linear ${colors.bar}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function AdminLogin() {
   const { login, loginOtpSend, loginOtpVerify, loginTotp } = useAuth();
@@ -4489,15 +4970,69 @@ export default function AdminLogin() {
     "/vega/admin/dashboard";
 
   const [step, setStep] = useState<Step>("credentials");
+  const [transitioning, setTransitioning] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [challengeId, setChallengeId] = useState("");
 
   const [otpCode, setOtpCode] = useState("");
   const [totpCode, setTotpCode] = useState("");
+  const [otpError, setOtpError] = useState(false);
+  const [totpError, setTotpError] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Rate limit cooldown state
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [cooldownMax, setCooldownMax] = useState(0);
+  const [cooldownType, setCooldownType] = useState<"rate_limited" | "account_locked">("rate_limited");
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearCooldownTimer = useCallback(() => {
+    if (cooldownRef.current) {
+      clearInterval(cooldownRef.current);
+      cooldownRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => clearCooldownTimer();
+  }, [clearCooldownTimer]);
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) {
+      clearCooldownTimer();
+      return;
+    }
+    cooldownRef.current = setInterval(() => {
+      setCooldownSeconds((prev) => {
+        if (prev <= 1) {
+          clearCooldownTimer();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearCooldownTimer();
+  }, [cooldownMax, clearCooldownTimer]);
+
+  function transitionTo(nextStep: Step) {
+    setTransitioning(true);
+    setTimeout(() => {
+      setStep(nextStep);
+      setTransitioning(false);
+    }, 150);
+  }
+
+  function handleCooldownError(err: RateLimitError) {
+    setCooldownSeconds(err.retryAfter);
+    setCooldownMax(err.retryAfter);
+    setCooldownType(
+      err.limitType === "account_locked" ? "account_locked" : "rate_limited"
+    );
+    setError("");
+  }
 
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
@@ -4508,15 +5043,19 @@ export default function AdminLogin() {
       setChallengeId(result.challenge_id);
 
       if (result.methods.includes("totp") && !result.methods.includes("telegram_otp")) {
-        setStep("totp");
+        transitionTo("totp");
       } else if (result.methods.includes("telegram_otp")) {
-        setStep("otp");
+        transitionTo("otp");
         startResendCooldown();
       } else {
         setError("No second-factor method configured for this account");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Login failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -4543,7 +5082,11 @@ export default function AdminLogin() {
       setResendCooldown(result.cooldown_seconds);
       startResendCooldown();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to resend code");
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to resend code");
+      }
     }
   }
 
@@ -4551,17 +5094,23 @@ export default function AdminLogin() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setOtpError(false);
     try {
       const result = await loginOtpVerify(challengeId, otpCode);
       if (result.totpRequired && result.challenge_id) {
         setChallengeId(result.challenge_id);
         setTotpCode("");
-        setStep("totp");
+        transitionTo("totp");
       } else {
         navigate(from, { replace: true });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid code");
+      setOtpError(true);
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Invalid code");
+      }
     } finally {
       setLoading(false);
     }
@@ -4571,15 +5120,23 @@ export default function AdminLogin() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setTotpError(false);
     try {
       await loginTotp(challengeId, totpCode);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid code");
+      setTotpError(true);
+      if (err instanceof RateLimitError) {
+        handleCooldownError(err);
+      } else {
+        setError(err instanceof Error ? err.message : "Invalid code");
+      }
     } finally {
       setLoading(false);
     }
   }
+
+  const isLocked = cooldownSeconds > 0;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[var(--color-cream)] via-[var(--color-cream)] to-[var(--color-pink-muted)] p-4">
@@ -4597,127 +5154,150 @@ export default function AdminLogin() {
         </div>
 
         <div className="neu-convex p-8">
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">
-              {error}
+          {isLocked && (
+            <div className="mb-4">
+              <CooldownTimer
+                seconds={cooldownSeconds}
+                maxSeconds={cooldownMax}
+                variant={cooldownType === "account_locked" ? "danger" : "warning"}
+              />
             </div>
           )}
 
-          {step === "credentials" && (
-            <form onSubmit={handleCredentials} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Username</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  required
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                {loading ? "Signing in..." : "Sign In"}
-              </button>
-            </form>
+          {error && !isLocked && (
+            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
           )}
 
-          {step === "otp" && (
-            <form onSubmit={handleOtpVerify} className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                <MessageSquare className="w-4 h-4" />
-                <span>Code sent to your Telegram</span>
+          <div className="relative overflow-hidden">
+            {step === "credentials" && (
+              <div className={transitioning ? "login-step-exit" : "login-step-active"}>
+                <form onSubmit={handleCredentials} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Username</label>
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      required
+                      autoFocus
+                      disabled={isLocked}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Password</label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      required
+                      disabled={isLocked}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || isLocked}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    {loading ? "Signing in..." : isLocked ? `Locked — wait ${cooldownSeconds}s` : "Sign In"}
+                  </button>
+                </form>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">OTP Code</label>
-                <input
-                  type="text"
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  maxLength={6}
-                  autoFocus
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || otpCode.length !== 6}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                {loading ? "Verifying..." : "Verify Code"}
-              </button>
-              <button
-                type="button"
-                onClick={handleResendOtp}
-                disabled={resendCooldown > 0}
-                className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
-              >
-                {resendCooldown > 0
-                  ? `Resend code in ${resendCooldown}s`
-                  : "Resend code"}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setStep("credentials"); setOtpCode(""); setError(""); }}
-                className="w-full text-sm text-muted-foreground hover:text-foreground"
-              >
-                Back to login
-              </button>
-            </form>
-          )}
+            )}
 
-          {step === "totp" && (
-            <form onSubmit={handleTotpVerify} className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                <KeyRound className="w-4 h-4" />
-                <span>Enter code from your authenticator app</span>
+            {step === "otp" && (
+              <div className={transitioning ? "login-step-exit" : "login-step-active"}>
+                <form onSubmit={handleOtpVerify} className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Code sent to your Telegram</span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-center">OTP Code</label>
+                    <OtpDigitInput
+                      value={otpCode}
+                      onChange={(v) => {
+                        setOtpCode(v);
+                        setOtpError(false);
+                      }}
+                      autoFocus
+                      disabled={isLocked}
+                      error={otpError}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || otpCode.length !== 6 || isLocked}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    {loading ? "Verifying..." : "Verify Code"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResendOtp}
+                    disabled={resendCooldown > 0 || isLocked}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  >
+                    {resendCooldown > 0
+                      ? `Resend code in ${resendCooldown}s`
+                      : "Resend code"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Back to login
+                  </button>
+                </form>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">TOTP Code</label>
-                <input
-                  type="text"
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                  className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  maxLength={6}
-                  autoFocus
-                />
+            )}
+
+            {step === "totp" && (
+              <div className={transitioning ? "login-step-exit" : "login-step-active"}>
+                <form onSubmit={handleTotpVerify} className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                    <KeyRound className="w-4 h-4" />
+                    <span>Enter code from your authenticator app</span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-center">TOTP Code</label>
+                    <OtpDigitInput
+                      value={totpCode}
+                      onChange={(v) => {
+                        setTotpCode(v);
+                        setTotpError(false);
+                      }}
+                      autoFocus
+                      disabled={isLocked}
+                      error={totpError}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={loading || totpCode.length !== 6 || isLocked}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                    {loading ? "Verifying..." : "Verify & Sign In"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
+                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Back to login
+                  </button>
+                </form>
               </div>
-              <button
-                type="submit"
-                disabled={loading || totpCode.length !== 6}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                {loading ? "Verifying..." : "Verify & Sign In"}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setStep("credentials"); setTotpCode(""); setError(""); }}
-                className="w-full text-sm text-muted-foreground hover:text-foreground"
-              >
-                Back to login
-              </button>
-            </form>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

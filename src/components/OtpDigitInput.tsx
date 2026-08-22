@@ -124,7 +124,13 @@ export default function OtpDigitInput({
             style={{ caretColor: "transparent" }}
           >
             {digit && (
-              <span className={isFilled ? "text-foreground" : "text-transparent"}>
+              <span
+                className={
+                  isFilled
+                    ? "text-slate-800 dark:text-slate-100"
+                    : "text-transparent"
+                }
+              >
                 {digit}
               </span>
             )}

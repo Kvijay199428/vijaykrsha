@@ -54,13 +54,15 @@ async def create_session(
         if oldest_session:
             oldest_session.revoked_at = datetime.now(timezone.utc)
 
+    now = datetime.now(timezone.utc)
     session = AdminSession(
         admin_id=admin_id,
         device_id=device_id,
         session_hash=token_hash,
         ip_address=ip_address,
         user_agent=user_agent,
-        expires_at=datetime.now(timezone.utc) + min(idle, absolute),
+        expires_at=now + min(idle, absolute),
+        absolute_expires_at=now + absolute,
     )
     db.add(session)
     await db.commit()
@@ -84,7 +86,11 @@ async def get_session(db: AsyncSession, token: str) -> AdminSession | None:
 async def touch_session(db: AsyncSession, session: AdminSession) -> None:
     session.last_seen_at = datetime.now(timezone.utc)
     idle = timedelta(minutes=settings.SESSION_IDLE_MINUTES)
-    absolute_limit = session.created_at + timedelta(hours=settings.SESSION_ABSOLUTE_HOURS)
+    if session.absolute_expires_at is not None:
+        absolute_limit = session.absolute_expires_at
+    else:
+        # Legacy rows created before 006 migration.
+        absolute_limit = session.created_at + timedelta(hours=settings.SESSION_ABSOLUTE_HOURS)
     session.expires_at = min(
         datetime.now(timezone.utc) + idle,
         absolute_limit,
@@ -105,6 +111,18 @@ async def revoke_session(db: AsyncSession, token: str) -> None:
 async def revoke_all_sessions(db: AsyncSession, admin_id: UUID) -> None:
     stmt = update(AdminSession).where(
         AdminSession.admin_id == admin_id,
+        AdminSession.revoked_at.is_(None),
+    ).values(revoked_at=datetime.now(timezone.utc))
+    await db.execute(stmt)
+    await db.commit()
+
+
+async def revoke_other_sessions(db: AsyncSession, admin_id: str | UUID, current_token: str) -> None:
+    """Revoke every active session for the admin except the one holding current_token."""
+    current_hash = _hash_session_token(current_token)
+    stmt = update(AdminSession).where(
+        AdminSession.admin_id == admin_id,
+        AdminSession.session_hash != current_hash,
         AdminSession.revoked_at.is_(None),
     ).values(revoked_at=datetime.now(timezone.utc))
     await db.execute(stmt)
