@@ -366,6 +366,19 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const response = await fetch(proxyRequest);
   const newResponse = new Response(response.body, response);
 
+  // Deterministic Set-Cookie passthrough: the Response copy-constructor may
+  // or may not preserve multiplicity depending on runtime. Strip whatever
+  // survived the copy and re-append each upstream cookie exactly once.
+  if (typeof response.headers.getSetCookie === "function") {
+    const upstreamCookies = response.headers.getSetCookie();
+    if (upstreamCookies.length > 0) {
+      newResponse.headers.delete("set-cookie");
+      for (const cookie of upstreamCookies) {
+        newResponse.headers.append("set-cookie", cookie);
+      }
+    }
+  }
+
   for (const [key, value] of Object.entries(corsHeaders(origin))) {
     newResponse.headers.set(key, value);
   }
@@ -1040,7 +1053,13 @@ export default function OtpDigitInput({
             style={{ caretColor: "transparent" }}
           >
             {digit && (
-              <span className={isFilled ? "text-foreground" : "text-transparent"}>
+              <span
+                className={
+                  isFilled
+                    ? "text-slate-800 dark:text-slate-100"
+                    : "text-transparent"
+                }
+              >
                 {digit}
               </span>
             )}
@@ -1050,6 +1069,107 @@ export default function OtpDigitInput({
           </div>
         );
       })}
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\components\SessionExpiryWarning.tsx
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { AlertTriangle, TimerReset } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
+
+const WARN_MS = 15 * 60 * 1000;
+const CRITICAL_MS = 60 * 1000;
+const RESYNC_INTERVAL_MS = 5 * 60 * 1000;
+
+function formatRemaining(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export default function SessionExpiryWarning() {
+  const { sessionExpiresAt, refreshAuth, logout } = useAuth();
+  const navigate = useNavigate();
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  const lastResyncRef = useRef(Date.now());
+  const expiredRef = useRef(false);
+
+  useEffect(() => {
+    if (!sessionExpiresAt) {
+      setRemainingMs(null);
+      return;
+    }
+    const expiresAt = new Date(sessionExpiresAt).getTime();
+    if (Number.isNaN(expiresAt)) {
+      setRemainingMs(null);
+      return;
+    }
+
+    const tick = () => {
+      const left = expiresAt - Date.now();
+      setRemainingMs(left);
+
+      // Independent fallback: the server is the authority. If the countdown
+      // hits zero (idle window elapsed with no API traffic), re-check; a 401
+      // there means the session is truly gone.
+      if (left <= 0 && !expiredRef.current) {
+        expiredRef.current = true;
+        refreshAuth().then((ok) => {
+          expiredRef.current = false;
+          if (!ok) {
+            logout().finally(() => navigate("/vega/admin/login", { replace: true }));
+          }
+        });
+      }
+
+      // Re-sync periodically while active so server-side idle extensions
+      // (touch_session) are reflected without a full reload.
+      if (Date.now() - lastResyncRef.current >= RESYNC_INTERVAL_MS) {
+        lastResyncRef.current = Date.now();
+        refreshAuth();
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [sessionExpiresAt, refreshAuth, logout, navigate]);
+
+  if (remainingMs === null || remainingMs > WARN_MS) return null;
+
+  const critical = remainingMs <= CRITICAL_MS;
+
+  return (
+    <div
+      role="alert"
+      aria-live="polite"
+      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium ${
+        critical
+          ? "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/50"
+          : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50"
+      }`}
+    >
+      {critical ? (
+        <TimerReset className="w-4 h-4 shrink-0" />
+      ) : (
+        <AlertTriangle className="w-4 h-4 shrink-0" />
+      )}
+      <span>
+        {critical ? (
+          <>Your session is about to expire. You will be signed out in {formatRemaining(remainingMs)}.</>
+        ) : (
+          <>
+            For security you will be signed out in{" "}
+            <span className="tabular-nums font-semibold">{formatRemaining(remainingMs)}</span>.
+            Save your work and sign in again to continue.
+          </>
+        )}
+      </span>
     </div>
   );
 }
@@ -1775,6 +1895,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   admin: { id: string; username: string; display_name: string; role: string } | null;
+  sessionExpiresAt: string | null;
+  refreshAuth: () => Promise<boolean>;
   login: (
     username: string,
     password: string,
@@ -1798,23 +1920,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [admin, setAdmin] = useState<{ id: string; username: string; display_name: string; role: string } | null>(null);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
+
+  const refreshAuth = useCallback(async (): Promise<boolean> => {
+    try {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHME, {
+        credentials: "include",
+        redirectOn401: false,
+      });
+      if (!response.ok) throw new Error("not authenticated");
+      const data = await response.json();
+      setIsAuthenticated(true);
+      setAdmin(data);
+      setSessionExpiresAt(data.session?.expires_at ?? null);
+      return true;
+    } catch {
+      setIsAuthenticated(false);
+      setAdmin(null);
+      setSessionExpiresAt(null);
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
-    apiFetch(ROUTES.ADMINAPIAUTHME, { credentials: "include", redirectOn401: false })
-      .then((response) => {
-        if (response.ok) return response.json();
-        throw new Error("not authenticated");
-      })
-      .then((data) => {
-        setIsAuthenticated(true);
-        setAdmin(data);
-      })
-      .catch(() => {
-        setIsAuthenticated(false);
-        setAdmin(null);
-      })
-      .finally(() => setIsLoading(false));
-  }, []);
+    refreshAuth().finally(() => setIsLoading(false));
+  }, [refreshAuth]);
 
   const login = useCallback(
     async (
@@ -1898,11 +2028,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { totpRequired: true, challenge_id: data.challenge_id };
       }
 
-      setIsAuthenticated(true);
-      setAdmin(data.admin ?? null);
+      await refreshAuth();
       return { totpRequired: false };
     },
-    []
+    [refreshAuth]
   );
 
   const loginTotp = useCallback(
@@ -1926,11 +2055,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(msg);
       }
 
-      const data = await response.json();
-      setIsAuthenticated(true);
-      setAdmin(data.admin ?? null);
+      await refreshAuth();
     },
-    []
+    [refreshAuth]
   );
 
   const logout = useCallback(async () => {
@@ -1940,6 +2067,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setIsAuthenticated(false);
     setAdmin(null);
+    setSessionExpiresAt(null);
     window.location.assign("/vega/admin/login");
   }, []);
 
@@ -1949,6 +2077,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         isLoading,
         admin,
+        sessionExpiresAt,
+        refreshAuth,
         login,
         loginOtpSend,
         loginOtpVerify,
@@ -3113,6 +3243,7 @@ import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import AnimatedLogo from "../../components/AnimatedLogo";
+import SessionExpiryWarning from "../../components/SessionExpiryWarning";
 import {
   LayoutDashboard,
   Inbox,
@@ -3267,7 +3398,8 @@ export default function AdminLayout() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-2">
-        <div className="h-full neu-flat rounded-2xl p-6">
+        <div className="h-full neu-flat rounded-2xl p-6 flex flex-col gap-3">
+          <SessionExpiryWarning />
           <Outlet />
         </div>
       </main>
@@ -5181,7 +5313,7 @@ export default function AdminLogin() {
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-night-800 dark:text-cream-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                       required
                       autoFocus
                       disabled={isLocked}
@@ -5193,7 +5325,7 @@ export default function AdminLogin() {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-night-800 dark:text-cream-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                       required
                       disabled={isLocked}
                     />

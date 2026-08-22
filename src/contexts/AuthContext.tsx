@@ -214,7 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(false);
     setAdmin(null);
     setSessionExpiresAt(null);
-    window.location.assign("/vega/admin/login");
+    window.location.replace("/vega/admin/login");
   }, []);
 
   return (

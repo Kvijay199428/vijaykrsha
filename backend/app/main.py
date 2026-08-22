@@ -28,7 +28,16 @@ class DirectAccessGuard(BaseHTTPMiddleware):
         if path.startswith("/admin/api/") or path.startswith("/vks/"):
             if request.headers.get("X-Forwarded-By") != "pages-proxy":
                 return JSONResponse({"detail": "Not Found"}, status_code=404)
-        return await call_next(request)
+        response = await call_next(request)
+        if path.startswith("/admin/api/"):
+            # Admin API responses must never be cached by browsers or shared
+            # proxies: a cached /me or dashboard payload could otherwise be
+            # resurrected via Back/BFCache after logout.
+            response.headers["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, max-age=0"
+            )
+            response.headers["Pragma"] = "no-cache"
+        return response
 
 
 app.add_middleware(DirectAccessGuard)

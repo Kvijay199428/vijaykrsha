@@ -6,6 +6,12 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import App from "@/App";
 import "@/index.css";
 
+window.addEventListener("pageshow", (event) => {
+  if ((event as PageTransitionEvent).persisted) {
+    window.location.reload();
+  }
+});
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
