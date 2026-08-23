@@ -95,7 +95,7 @@ async def _get_admin_permission_keys(db: AsyncSession, admin: AdminUser) -> set[
         select(AdminPermission.key)
         .join(AdminRolePermission, AdminRolePermission.permission_id == AdminPermission.id)
         .join(AdminRole, AdminRole.id == AdminRolePermission.role_id)
-        .where(AdminRole.name == admin.role.value if hasattr(admin.role, 'value') else AdminRole.name == admin.role)
+        .where(AdminRole.id == admin.role_id)
     )
     result = await db.execute(stmt)
     return {row[0] for row in result.all()}
@@ -113,3 +113,31 @@ def require_permission(permission_key: str):
             raise HTTPException(status_code=403, detail=f"permission_denied:{permission_key}")
         return admin
     return _check
+
+
+async def get_admin_role_level(db: AsyncSession, admin: AdminUser) -> int:
+    from app.models_rbac import AdminRole as AdminRoleModel
+
+    if admin.role_id is not None:
+        result = await db.execute(
+            select(AdminRoleModel.level).where(AdminRoleModel.id == admin.role_id)
+        )
+        level = result.scalar_one_or_none()
+        if level is not None:
+            return level
+    return 100 if admin.role == AdminRoleEnum.owner else 0
+
+
+async def assert_can_manage(db: AsyncSession, actor: AdminUser, target: AdminUser) -> int:
+    """Hierarchy gate for acting on another user. Owner bypasses; otherwise
+    the actor's role level must be strictly above the target's."""
+    if target.id == actor.id:
+        raise HTTPException(status_code=400, detail="cannot_manage_self")
+    if actor.role == AdminRoleEnum.owner:
+        return 100
+
+    actor_level = await get_admin_role_level(db, actor)
+    target_level = await get_admin_role_level(db, target)
+    if actor_level <= target_level:
+        raise HTTPException(status_code=403, detail="insufficient_role_rank")
+    return actor_level

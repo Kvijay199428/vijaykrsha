@@ -18,6 +18,7 @@ class AdminRole(Base):
     name = Column(String(64), nullable=False, unique=True, index=True)
     description = Column(Text)
     is_system = Column(Boolean, nullable=False, default=False)
+    level = Column(Integer, nullable=False, default=40)
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -84,11 +85,14 @@ ROLE_PERMISSIONS = {
         Permission.USERS_VIEW, Permission.USERS_CREATE, Permission.USERS_UPDATE, Permission.USERS_DISABLE,
         Permission.USERS_RESET_PASSWORD,
         Permission.SETTINGS_VIEW, Permission.AUDIT_LOGS_VIEW,
+        Permission.ROLES_VIEW, Permission.ROLES_MANAGE,
     ],
     "manager": [
         Permission.DASHBOARD_VIEW,
         Permission.MESSAGES_VIEW, Permission.MESSAGES_UPDATE, Permission.MESSAGES_NOTES, Permission.MESSAGES_TAGS,
+        Permission.USERS_VIEW, Permission.USERS_DISABLE,
         Permission.SETTINGS_VIEW,
+        Permission.ROLES_VIEW, Permission.ROLES_MANAGE,
     ],
     "support": [
         Permission.DASHBOARD_VIEW,

@@ -37,10 +37,18 @@ export class OtpCooldownError extends RateLimitError {
   }
 }
 
+interface AdminIdentity {
+  id: string;
+  username: string;
+  display_name: string;
+  role: string;
+  role_level?: number | null;
+}
+
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
-  admin: { id: string; username: string; display_name: string; role: string } | null;
+  admin: AdminIdentity | null;
   sessionExpiresAt: string | null;
   refreshAuth: () => Promise<boolean>;
   login: (
@@ -65,7 +73,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [admin, setAdmin] = useState<{ id: string; username: string; display_name: string; role: string } | null>(null);
+  const [admin, setAdmin] = useState<AdminIdentity | null>(null);
   const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
 
   const refreshAuth = useCallback(async (): Promise<boolean> => {

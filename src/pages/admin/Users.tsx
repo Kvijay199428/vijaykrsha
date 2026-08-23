@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Eye,
+  EyeOff,
   UserCog,
   KeyRound,
   RefreshCw,
@@ -28,12 +29,24 @@ interface AdminUser {
   email: string | null;
   display_name: string;
   role: string;
+  role_level: number | null;
   status: string;
   telegram_chat_id: string | null;
   totp_enabled: boolean;
   last_login_at: string | null;
   created_at: string | null;
+  created_by: { id: string; username: string; display_name: string } | null;
 }
+
+interface RoleOption {
+  id: string;
+  name: string;
+  description: string | null;
+  is_system: boolean;
+  level: number;
+}
+
+type AvailabilityStatus = "idle" | "checking" | "available" | "taken";
 
 const ROLE_COLORS: Record<string, string> = {
   owner: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
@@ -50,6 +63,10 @@ const ROLE_ICONS: Record<string, typeof Shield> = {
   support: Shield,
   viewer: Eye,
 };
+
+function capitalizeRole(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 export default function UsersPage() {
   const { admin: currentAdmin } = useAuth();
@@ -93,10 +110,19 @@ export default function UsersPage() {
     return true;
   });
 
-  const canManage = currentAdmin?.role === "owner" || currentAdmin?.role === "admin";
+  const canManage = ["owner", "admin", "manager"].includes(currentAdmin?.role || "");
+
+  function canManageTarget(user: AdminUser): boolean {
+    if (!currentAdmin) return false;
+    if (currentAdmin.role === "owner") return true;
+    const mine = currentAdmin.role_level;
+    const theirs = user.role_level;
+    if (mine == null || theirs == null) return currentAdmin.role === "admin";
+    return mine > theirs;
+  }
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="w-full">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -135,11 +161,9 @@ export default function UsersPage() {
           className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
         >
           <option value="">All Roles</option>
-          <option value="owner">Owner</option>
-          <option value="admin">Admin</option>
-          <option value="manager">Manager</option>
-          <option value="support">Support</option>
-          <option value="viewer">Viewer</option>
+          {Array.from(new Set(users.map((u) => u.role))).sort().map((role) => (
+            <option key={role} value={role}>{capitalizeRole(role)}</option>
+          ))}
         </select>
         <select
           value={statusFilter}
@@ -160,6 +184,7 @@ export default function UsersPage() {
               <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Name</th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Role</th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Status</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Created By</th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">2FA</th>
               <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Last Login</th>
               {canManage && <th className="w-10"></th>}
@@ -168,15 +193,16 @@ export default function UsersPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</td>
+                <td colSpan={canManage ? 8 : 7} className="text-center py-8 text-muted-foreground">Loading...</td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-8 text-muted-foreground">No users found</td>
+                <td colSpan={canManage ? 8 : 7} className="text-center py-8 text-muted-foreground">No users found</td>
               </tr>
             ) : (
               filtered.map((user) => {
                 const RoleIcon = ROLE_ICONS[user.role] || Shield;
+                const manageAllowed = canManage && canManageTarget(user);
                 return (
                   <tr key={user.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3">
@@ -186,7 +212,7 @@ export default function UsersPage() {
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[user.role] || ""}`}>
                         <RoleIcon className="w-3 h-3" />
-                        {user.role}
+                        {capitalizeRole(user.role)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -198,6 +224,11 @@ export default function UsersPage() {
                         {user.status === "active" ? <CheckCircle className="w-3 h-3" /> : <Ban className="w-3 h-3" />}
                         {user.status}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
+                      {user.created_by
+                        ? (user.created_by.display_name || user.created_by.username)
+                        : "—"}
                     </td>
                     <td className="px-4 py-3 text-sm">
                       {user.totp_enabled ? (
@@ -213,7 +244,7 @@ export default function UsersPage() {
                         ? new Date(user.last_login_at).toLocaleDateString()
                         : "Never"}
                     </td>
-                    {canManage && (
+                    {manageAllowed && (
                       <td className="px-4 py-3 relative">
                         <button
                           onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
@@ -322,12 +353,110 @@ function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Shield;
   );
 }
 
+function useAssignableRoles(): RoleOption[] {
+  const { admin: currentAdmin } = useAuth();
+  const [roles, setRoles] = useState<RoleOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(ROUTES.ADMINAPIROLES)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.items) return;
+        const items: RoleOption[] = data.items;
+        if (currentAdmin?.role === "owner") {
+          setRoles(items);
+        } else {
+          const mine = currentAdmin?.role_level ?? null;
+          setRoles(mine == null ? items : items.filter((r) => r.level < mine));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentAdmin?.role, currentAdmin?.role_level]);
+
+  return roles;
+}
+
 function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [form, setForm] = useState({
     username: "", display_name: "", email: "", password: "", confirmPassword: "", role: "support", telegram_chat_id: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const [usernameStatus, setUsernameStatus] = useState<AvailabilityStatus>("idle");
+  const [emailStatus, setEmailStatus] = useState<AvailabilityStatus>("idle");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  const roles = useAssignableRoles();
+
+  useEffect(() => {
+    const value = form.username.trim();
+    if (value.length < 3) {
+      setUsernameStatus("idle");
+      setSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    setUsernameStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiFetch(
+          `${ROUTES.ADMINAPIUSERSAVAILABILITY}?username=${encodeURIComponent(value)}`
+        );
+        if (cancelled || !res.ok) {
+          if (!cancelled) setUsernameStatus("idle");
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        const u = data.username;
+        setUsernameStatus(u?.available ? "available" : u?.taken ? "taken" : "idle");
+        setSuggestions(u?.suggestions || []);
+      } catch {
+        if (!cancelled) setUsernameStatus("idle");
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [form.username]);
+
+  useEffect(() => {
+    const value = form.email.trim();
+    if (!value) {
+      setEmailStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setEmailStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiFetch(
+          `${ROUTES.ADMINAPIUSERSAVAILABILITY}?email=${encodeURIComponent(value)}`
+        );
+        if (cancelled || !res.ok) {
+          if (!cancelled) setEmailStatus("idle");
+          return;
+        }
+        const data = await res.json();
+        if (cancelled) return;
+        const e = data.email;
+        setEmailStatus(e?.available ? "available" : e?.taken ? "taken" : "idle");
+      } catch {
+        if (!cancelled) setEmailStatus("idle");
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [form.email]);
+
+  const passwordsMatch =
+    form.confirmPassword.length > 0 && form.password === form.confirmPassword;
+
+  const availabilityBlocked =
+    usernameStatus === "taken" || emailStatus === "taken";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -368,28 +497,93 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
       <h2 className="text-lg font-semibold mb-4">Create Admin User</h2>
       {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
-        <NeuInput label="Username *" value={form.username} onChange={(v) => setForm({ ...form, username: v })} />
-        <NeuInput label="Display Name *" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
-        <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
         <div>
-          <NeuInput label="Password *" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+          <AvailabilityInput
+            label="Username *"
+            value={form.username}
+            onChange={(v) => setForm({ ...form, username: v })}
+            placeholder="3-64 characters"
+            status={usernameStatus}
+          />
+          {usernameStatus === "available" && (
+            <p className="mt-1 text-xs text-green-600 dark:text-green-400">Username available</p>
+          )}
+          {usernameStatus === "taken" && (
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">Username already taken</p>
+          )}
+          {usernameStatus === "taken" && suggestions.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Try:</span>
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setForm({ ...form, username: s })}
+                  className="px-2 py-0.5 rounded-lg neu-concave text-xs text-foreground hover:bg-muted/40 transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <NeuInput label="Display Name *" value={form.display_name} onChange={(v) => setForm({ ...form, display_name: v })} />
+        <div>
+          <AvailabilityInput
+            label="Email"
+            type="email"
+            value={form.email}
+            onChange={(v) => setForm({ ...form, email: v })}
+            status={emailStatus}
+          />
+          {emailStatus === "available" && (
+            <p className="mt-1 text-xs text-green-600 dark:text-green-400">Email available</p>
+          )}
+          {emailStatus === "taken" && (
+            <p className="mt-1 text-xs text-red-600 dark:text-red-400">Email already registered</p>
+          )}
+        </div>
+        <div>
+          <PasswordInput
+            label="Password *"
+            value={form.password}
+            onChange={(v) => setForm({ ...form, password: v })}
+            visible={showPassword}
+            onToggle={() => setShowPassword((v) => !v)}
+          />
           <PasswordRequirements password={form.password} username={form.username} />
         </div>
-        <NeuInput label="Confirm Password *" type="password" value={form.confirmPassword} onChange={(v) => setForm({ ...form, confirmPassword: v })} />
+        <div>
+          <PasswordInput
+            label="Confirm Password *"
+            value={form.confirmPassword}
+            onChange={(v) => setForm({ ...form, confirmPassword: v })}
+            visible={showConfirmPassword}
+            onToggle={() => setShowConfirmPassword((v) => !v)}
+          />
+          <MatchIndicator match={passwordsMatch} />
+        </div>
         <div>
           <label className="block text-sm font-medium mb-1">Role *</label>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
-            <option value="owner">Owner</option>
-            <option value="admin">Admin</option>
-            <option value="manager">Manager</option>
-            <option value="support">Support</option>
-            <option value="viewer">Viewer</option>
+            {!roles.some((r) => r.name === form.role) && (
+              <option value={form.role}>{capitalizeRole(form.role)}</option>
+            )}
+            {roles.map((r) => (
+              <option key={r.id} value={r.name}>{capitalizeRole(r.name)}</option>
+            ))}
           </select>
         </div>
         <NeuInput label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
-          <button type="submit" disabled={loading || !form.username || !form.display_name || !(isPasswordValid(form.password, form.username) && form.password === form.confirmPassword)} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
+          <button type="submit" disabled={
+            loading ||
+            !form.username ||
+            !form.display_name ||
+            availabilityBlocked ||
+            !(isPasswordValid(form.password, form.username) && form.password === form.confirmPassword)
+          } className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
             {loading ? "Creating..." : "Create User"}
           </button>
         </div>
@@ -399,9 +593,12 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
 }
 
 function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose: () => void; onUpdated: () => void }) {
+  const { admin: currentAdmin } = useAuth();
   const [form, setForm] = useState({ display_name: user.display_name, email: user.email || "", role: user.role });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const roles = useAssignableRoles();
+  const isSelf = currentAdmin?.id === user.id;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -434,12 +631,19 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
         <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
         <div>
           <label className="block text-sm font-medium mb-1">Role</label>
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
-            <option value="owner">Owner</option>
-            <option value="admin">Admin</option>
-            <option value="manager">Manager</option>
-            <option value="support">Support</option>
-            <option value="viewer">Viewer</option>
+          <select
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value })}
+            disabled={isSelf}
+            title={isSelf ? "You cannot change your own role" : undefined}
+            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm disabled:opacity-50"
+          >
+            {!roles.some((r) => r.name === form.role) && (
+              <option value={form.role}>{capitalizeRole(form.role)}</option>
+            )}
+            {roles.map((r) => (
+              <option key={r.id} value={r.name}>{capitalizeRole(r.name)}</option>
+            ))}
           </select>
         </div>
         <div className="flex justify-end gap-2 pt-2">
@@ -544,6 +748,10 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const passwordsMatch = confirm.length > 0 && password === confirm;
 
   async function handleSubmit() {
     if (password !== confirm) { setError("Passwords do not match"); return; }
@@ -572,9 +780,26 @@ function ResetPasswordDialog({ user, onClose, onDone }: { user: AdminUser; onClo
       <h2 className="text-lg font-semibold mb-4">Reset Password for {user.username}</h2>
       {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
       <p className="text-sm text-muted-foreground mb-3">The user will be logged out after password reset.</p>
-      <NeuInput label="New Password" type="password" value={password} onChange={setPassword} />
-      <PasswordRequirements password={password} username={user.username} />
-      <NeuInput label="Confirm Password" type="password" value={confirm} onChange={setConfirm} />
+      <div>
+        <PasswordInput
+          label="New Password"
+          value={password}
+          onChange={setPassword}
+          visible={showPassword}
+          onToggle={() => setShowPassword((v) => !v)}
+        />
+        <PasswordRequirements password={password} username={user.username} />
+      </div>
+      <div>
+        <PasswordInput
+          label="Confirm Password"
+          value={confirm}
+          onChange={setConfirm}
+          visible={showConfirm}
+          onToggle={() => setShowConfirm((v) => !v)}
+        />
+        <MatchIndicator match={passwordsMatch} />
+      </div>
       <div className="flex justify-end gap-2 pt-3">
         <button onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
         <button onClick={handleSubmit} disabled={loading || !isPasswordValid(password, user.username) || password !== confirm} className="px-4 py-2 text-sm neu-btn text-primary-foreground font-semibold disabled:opacity-50">
@@ -607,6 +832,93 @@ function ConfirmDialog({ title, message, confirmLabel, danger, onClose, onConfir
         </button>
       </div>
     </Dialog>
+  );
+}
+
+function PasswordInput({ label, value, onChange, visible, onToggle }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <div className="relative">
+        <input
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete="new-password"
+          className="w-full px-3 py-2 pr-11 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-label={visible ? "Hide password" : "Show password"}
+          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AvailabilityInput({ label, type = "text", value, onChange, placeholder, status }: {
+  label: string;
+  type?: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  status: AvailabilityStatus;
+}) {
+  const ring =
+    status === "available"
+      ? "ring-1 ring-green-500/50 focus:ring-green-500/60"
+      : status === "taken"
+        ? "ring-1 ring-red-500/50 focus:ring-red-500/60"
+        : "focus:ring-primary/50";
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <div className="relative">
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className={`w-full px-3 py-2 pr-10 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 ${ring}`}
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+          {status === "checking" && <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin" />}
+          {status === "available" && <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />}
+          {status === "taken" && <X className="w-4 h-4 text-red-600 dark:text-red-400" />}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MatchIndicator({ match }: { match: boolean | null }) {
+  if (match === null) return null;
+  return (
+    <div className={`mt-1 flex items-center gap-1 text-xs ${
+      match ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+    }`}>
+      {match ? (
+        <>
+          <CheckCircle className="w-3.5 h-3.5" />
+          Passwords match
+        </>
+      ) : (
+        <>
+          <X className="w-3.5 h-3.5" />
+          Passwords do not match
+        </>
+      )}
+    </div>
   );
 }
 

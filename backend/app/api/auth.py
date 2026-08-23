@@ -13,6 +13,7 @@ from app.models import (
     AuditEvent, AuditLog, Device,
 )
 from app.config import get_settings
+from app.models_rbac import AdminRole as AdminRoleModel
 from app.security.passwords import hash_password, verify_password
 from app.security.password_policy import (
     PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, validate_password_strength,
@@ -36,7 +37,11 @@ from app.services.otp_service import (
 )
 from app.services.totp_service import verify_totp, generate_secret, encrypt_secret
 from app.services.telegram_service import send_otp
-from app.api.deps import get_current_admin, get_current_admin_with_session
+from app.api.deps import (
+    get_current_admin,
+    get_current_admin_with_session,
+    get_admin_role_level,
+)
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -156,12 +161,29 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
     if count > 0:
         raise HTTPException(400, "admins_exist")
 
+    # admin_users.role_id is NOT NULL (002_rbac): resolve or bootstrap the
+    # owner role so first-run setup works on a freshly migrated database.
+    role_result = await db.execute(
+        select(AdminRoleModel).where(AdminRoleModel.name == "owner")
+    )
+    owner_role = role_result.scalar_one_or_none()
+    if not owner_role:
+        owner_role = AdminRoleModel(
+            name="owner",
+            description="Full system access",
+            is_system=True,
+            level=100,
+        )
+        db.add(owner_role)
+        await db.flush()
+
     admin = AdminUser(
         username=body.username,
         email=body.email,
         display_name=body.display_name,
         password_hash=hash_password(body.password),
         role="owner",
+        role_id=owner_role.id,
         status=AdminStatus.active,
     )
     db.add(admin)
@@ -558,6 +580,7 @@ async def trust_device_endpoint(
 @router.get("/me")
 async def get_me(
     deps: tuple = Depends(get_current_admin_with_session),
+    db: AsyncSession = Depends(get_db),
 ):
     admin, session = deps
     now = datetime.now(timezone.utc)
@@ -573,6 +596,7 @@ async def get_me(
         "email": admin.email,
         "display_name": admin.display_name,
         "role": admin.role,
+        "role_level": await get_admin_role_level(db, admin),
         "totp_enabled": admin.totp_enabled,
         "telegram_chat_id": admin.telegram_chat_id,
         "session": {

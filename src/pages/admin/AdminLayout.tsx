@@ -8,6 +8,7 @@ import {
   Inbox,
   Settings,
   Users,
+  ShieldCheck,
   ScrollText,
   LogOut,
   PanelLeftClose,
@@ -15,11 +16,12 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { to: "/vega/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/vega/admin/inbox", label: "Inbox", icon: Inbox },
-  { to: "/vega/admin/settings", label: "Settings", icon: Settings },
-  { to: "/vega/admin/users", label: "Users", icon: Users },
-  { to: "/vega/admin/audit-logs", label: "Audit Logs", icon: ScrollText },
+  { to: "/vega/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: null },
+  { to: "/vega/admin/inbox", label: "Inbox", icon: Inbox, roles: null },
+  { to: "/vega/admin/settings", label: "Settings", icon: Settings, roles: null },
+  { to: "/vega/admin/users", label: "Users", icon: Users, roles: ["owner", "admin", "manager"] },
+  { to: "/vega/admin/roles", label: "Roles", icon: ShieldCheck, roles: ["owner", "admin", "manager"] },
+  { to: "/vega/admin/audit-logs", label: "Audit Logs", icon: ScrollText, roles: null },
 ];
 
 const MOBILE_BREAKPOINT = 768;
@@ -97,23 +99,25 @@ export default function AdminLayout() {
 
         {/* Navigation */}
         <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
-                  isActive
-                    ? "neu-pressed text-primary font-semibold"
-                    : "text-foreground/75 hover:text-foreground hover:bg-muted/40"
-                } ${collapsed ? "justify-center" : ""}`
-              }
-              title={collapsed ? item.label : undefined}
-            >
-              <item.icon className="w-5 h-5 shrink-0" />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </NavLink>
-          ))}
+          {navItems
+            .filter((item) => !item.roles || (admin?.role && item.roles.includes(admin.role)))
+            .map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
+                    isActive
+                      ? "neu-pressed text-primary font-semibold"
+                      : "text-foreground/75 hover:text-foreground hover:bg-muted/40"
+                  } ${collapsed ? "justify-center" : ""}`
+                }
+                title={collapsed ? item.label : undefined}
+              >
+                <item.icon className="w-5 h-5 shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </NavLink>
+            ))}
         </nav>
 
         {/* Footer */}

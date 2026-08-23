@@ -1,13 +1,14 @@
 import structlog
+from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
-from app.models import AdminUser, AuditEvent, AuditLog
+from app.models import AdminUser, AdminSession, AuditEvent, AuditLog
 from app.models_rbac import Permission
-from app.api.deps import require_permission
+from app.api.deps import require_permission, assert_can_manage
 from app.services.totp_service import (
     generate_secret, encrypt_secret, verify_totp,
     get_provisioning_uri, store_pending_secret, get_pending_secret,
@@ -42,6 +43,9 @@ async def totp_setup(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(404, "user_not_found")
+
+    if user.id != admin.id:
+        await assert_can_manage(db, admin, user)
 
     secret = generate_secret()
     await store_pending_secret(str(user.id), secret)
@@ -78,9 +82,11 @@ async def totp_enable(
     if not verify_totp(pending, body.code):
         raise HTTPException(401, "invalid_totp_code")
 
+    if user.id != admin.id:
+        await assert_can_manage(db, admin, user)
+
     user.totp_secret_ciphertext = encrypt_secret(pending)
     user.totp_enabled = True
-    from datetime import datetime, timezone
     user.totp_enabled_at = datetime.now(timezone.utc)
 
     _audit(db, AuditEvent.totp_enabled, actor_id=admin.id, target_id=user.id,
@@ -107,13 +113,14 @@ async def totp_disable(
     if not user.totp_enabled:
         raise HTTPException(400, "totp_not_enabled")
 
+    if user.id != admin.id:
+        await assert_can_manage(db, admin, user)
+
     user.totp_secret_ciphertext = None
     user.totp_enabled = False
     user.totp_enabled_at = None
 
     # Revoke sessions
-    from app.models import AdminSession
-    from sqlalchemy import update
     await db.execute(
         update(AdminSession)
         .where(AdminSession.admin_id == user.id, AdminSession.revoked_at.is_(None))
@@ -143,13 +150,14 @@ async def totp_reset(
     if not user.totp_enabled:
         raise HTTPException(400, "totp_not_enabled")
 
+    if user.id != admin.id:
+        await assert_can_manage(db, admin, user)
+
     user.totp_secret_ciphertext = None
     user.totp_enabled = False
     user.totp_enabled_at = None
 
     # Revoke sessions
-    from app.models import AdminSession
-    from sqlalchemy import update
     await db.execute(
         update(AdminSession)
         .where(AdminSession.admin_id == user.id, AdminSession.revoked_at.is_(None))

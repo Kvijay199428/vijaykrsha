@@ -16,6 +16,7 @@ import Inbox from "@/pages/admin/Inbox";
 import MessageDetail from "@/pages/admin/MessageDetail";
 import Settings from "@/pages/admin/Settings";
 import UsersPage from "@/pages/admin/Users";
+import RolesPage from "@/pages/admin/Roles";
 import AuditLogs from "@/pages/admin/AuditLogs";
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="messages/:id" element={<MessageDetail />} />
           <Route path="settings" element={<Settings />} />
           <Route path="users" element={<UsersPage />} />
+          <Route path="roles" element={<RolesPage />} />
           <Route
             path="admin-users"
             element={<Navigate to="/vega/admin/users" replace />}

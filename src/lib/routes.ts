@@ -23,6 +23,7 @@ export const ROUTES = {
   // User management
   ADMINAPIUSERS: `${API}/admin/api/users`,
   ADMINAPIUSERSCREATE: `${API}/admin/api/users/create`,
+  ADMINAPIUSERSAVAILABILITY: `${API}/admin/api/users/check-availability`,
   ADMINAPIUSERSBYID: (id: string) => `${API}/admin/api/users/${id}`,
   ADMINAPIUSERDISABLE: (id: string) => `${API}/admin/api/users/${id}/disable`,
   ADMINAPIUSERENABLE: (id: string) => `${API}/admin/api/users/${id}/enable`,
@@ -42,5 +43,7 @@ export const ROUTES = {
 
   // Roles & permissions
   ADMINAPIROLES: `${API}/admin/api/roles`,
+  ADMINAPIROLESCREATE: `${API}/admin/api/roles`,
+  ADMINAPIROLESBYID: (id: string) => `${API}/admin/api/roles/${id}`,
   ADMINAPIPERMISSIONS: `${API}/admin/api/permissions`,
 } as const;

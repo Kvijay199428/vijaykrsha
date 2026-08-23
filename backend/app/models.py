@@ -85,6 +85,8 @@ class AuditEvent(str, enum.Enum):
     password_changed = "password_changed"
     totp_enabled = "totp_enabled"
     totp_disabled = "totp_disabled"
+    role_created = "role_created"
+    role_deleted = "role_deleted"
 
 
 class DeviceState(str, enum.Enum):
@@ -130,8 +132,9 @@ class AdminUser(Base):
     email = Column(CITEXT, unique=True)
     display_name = Column(String(160), nullable=False)
     password_hash = Column(Text, nullable=False)
-    role = Column(Enum(AdminRole), nullable=False, default=AdminRole.admin)
+    role = Column(String(64), nullable=False, default="admin")
     role_id = Column(UUID(as_uuid=True), ForeignKey("admin_roles.id"), nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("admin_users.id"), nullable=True)
     status = Column(Enum(AdminStatus), nullable=False, default=AdminStatus.active)
     telegram_chat_id = Column(Text)
     telegram_username = Column(String(64))
