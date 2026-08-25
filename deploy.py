@@ -328,7 +328,9 @@ Examples:
 
     host = LOCAL_HOST if args.local else TAILSCALE_HOST
     network_name = "local" if args.local else "tailscale"
-    branch = "main" if args.dev else "prod"
+    # Cloudflare Pages production_branch is `main`: pushing any other branch
+    # only creates a *.pages.dev preview. Prod frontend must go to main.
+    branch = "main"
     env_name = "dev" if args.dev else "prod"
 
     print("\n" + "=" * 45)
