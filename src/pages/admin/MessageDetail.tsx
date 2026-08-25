@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { ArrowLeft, Send, Tag, MessageSquare, Paperclip } from "lucide-react";
+import { ArrowLeft, Plus, Tag, MessageSquare, Paperclip } from "lucide-react";
 
 interface Note {
   id: string;
@@ -145,9 +145,9 @@ export default function MessageDetail() {
 
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border/50">
-            <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm">
+            <h2 className="font-semibold mb-2 flex items-center gap-2 text-sm">
               <Paperclip className="h-4 w-4" /> Attachments
-            </h3>
+            </h2>
             <div className="flex flex-wrap gap-2">
               {message.attachments.map((att) => (
                 <a
@@ -158,7 +158,7 @@ export default function MessageDetail() {
                   className="inline-flex items-center gap-2 px-3 py-1.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors"
                   title={att.content_type ?? "Download"}
                 >
-                  <span className="truncate max-w-[200px]">{att.filename}</span>
+                  <span className="truncate max-w-[280px]">{att.filename}</span>
                   {typeof att.size === "number" && (
                     <span className="text-xs text-muted-foreground">
                       {(att.size / 1024).toFixed(1)} KB
@@ -180,8 +180,10 @@ export default function MessageDetail() {
           ))}
         </div>
         <form onSubmit={addTag} className="flex gap-2">
-          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
-          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm">Add</button>
+          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-2.5 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
+          <button type="submit" className="px-3 py-2.5 neu-btn text-primary-foreground text-sm flex items-center gap-1 shrink-0">
+            <Plus className="h-3 w-3" /> Add
+          </button>
         </form>
       </div>
 
@@ -197,9 +199,9 @@ export default function MessageDetail() {
           ))}
         </div>
         <form onSubmit={addNote} className="flex gap-2">
-          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
-          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm flex items-center gap-1">
-            <Send className="h-3 w-3" /> Add
+          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-2.5 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
+          <button type="submit" className="px-3 py-2.5 neu-btn text-primary-foreground text-sm flex items-center gap-1 shrink-0">
+            <Plus className="h-3 w-3" /> Add
           </button>
         </form>
       </div>

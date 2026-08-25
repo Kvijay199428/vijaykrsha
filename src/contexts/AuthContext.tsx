@@ -201,7 +201,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { totpRequired: true, challenge_id: data.challenge_id };
       }
 
-      await refreshAuth();
+      const authOk = await refreshAuth();
+      if (!authOk) throw new Error("Session could not be established. Please try again.");
       return { totpRequired: false };
     },
     [refreshAuth]
@@ -231,7 +232,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(msg);
       }
 
-      await refreshAuth();
+      const authOk = await refreshAuth();
+      if (!authOk) throw new Error("Session could not be established. Please try again.");
     },
     [refreshAuth]
   );

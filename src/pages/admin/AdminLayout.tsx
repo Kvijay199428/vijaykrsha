@@ -70,17 +70,17 @@ export default function AdminLayout() {
           className={`flex items-center border-b border-border/50 min-h-[57px] ${
             collapsed
               ? "flex-col py-3 px-2 gap-2"
-              : "flex-row gap-2 px-3 py-4"
+              : "flex-row gap-2 px-3 py-5"
           }`}
         >
           <AnimatedLogo size={collapsed ? 32 : 28} />
           {!collapsed && (
-            <span className="font-semibold text-sm truncate typing-text text-primary">VIJAYKRSHA.ONLINE</span>
+            <span className="font-semibold text-sm truncate typing-text text-primary">VijayKrsha.Online</span>
           )}
           {!collapsed && (
             <button
               onClick={toggleSidebar}
-              className="ml-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+              className="ml-auto p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
               title="Collapse sidebar"
             >
               <PanelLeftClose className="w-4 h-4" />
@@ -90,7 +90,7 @@ export default function AdminLayout() {
         {collapsed && (
           <button
             onClick={toggleSidebar}
-            className="mx-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+            className="mx-auto p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
             title="Expand sidebar"
           >
             <PanelLeftOpen className="w-4 h-4" />
@@ -108,7 +108,7 @@ export default function AdminLayout() {
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                     isActive
-                      ? "neu-pressed text-primary font-semibold"
+                      ? "nav-active"
                       : "text-foreground/75 hover:text-foreground hover:bg-muted/40"
                   } ${collapsed ? "justify-center" : ""}`
                 }
@@ -130,10 +130,12 @@ export default function AdminLayout() {
                 </span>
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{admin.display_name || admin.username}</p>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary">
-                  {admin.role}
-                </span>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground truncate">{admin.display_name || admin.username}</p>
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary shrink-0">
+                    {admin.role}
+                  </span>
+                </div>
               </div>
             </div>
           )}

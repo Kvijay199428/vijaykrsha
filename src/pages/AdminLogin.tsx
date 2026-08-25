@@ -95,6 +95,14 @@ export default function AdminLogin() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearResendTimer = useCallback(() => {
+    if (resendIntervalRef.current) {
+      clearInterval(resendIntervalRef.current);
+      resendIntervalRef.current = null;
+    }
+  }, []);
 
   // Rate limit cooldown state
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -110,8 +118,8 @@ export default function AdminLogin() {
   }, []);
 
   useEffect(() => {
-    return () => clearCooldownTimer();
-  }, [clearCooldownTimer]);
+    return () => { clearCooldownTimer(); clearResendTimer(); };
+  }, [clearCooldownTimer, clearResendTimer]);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) {
@@ -174,12 +182,13 @@ export default function AdminLogin() {
     }
   }
 
-  function startResendCooldown() {
-    setResendCooldown(60);
-    const interval = setInterval(() => {
+  function startResendCooldown(seconds: number = 60) {
+    clearResendTimer();
+    setResendCooldown(seconds);
+    resendIntervalRef.current = setInterval(() => {
       setResendCooldown((prev) => {
         if (prev <= 1) {
-          clearInterval(interval);
+          clearResendTimer();
           return 0;
         }
         return prev - 1;
@@ -192,11 +201,11 @@ export default function AdminLogin() {
     setError("");
     try {
       const result = await loginOtpSend(challengeId);
-      setResendCooldown(result.cooldown_seconds);
-      startResendCooldown();
+      startResendCooldown(result.cooldown_seconds);
     } catch (err) {
       if (err instanceof RateLimitError) {
         handleCooldownError(err);
+        startResendCooldown(err.retryAfter);
       } else {
         setError(err instanceof Error ? err.message : "Failed to resend code");
       }

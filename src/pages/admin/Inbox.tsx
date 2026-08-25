@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { Search, Paperclip } from "lucide-react";
+import { Search, Paperclip, ChevronRight } from "lucide-react";
 
 interface Message {
   id: string;
@@ -117,6 +117,7 @@ export default function Inbox() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(msg.created_at).toLocaleDateString()}
                   </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
               </Link>
             ))}

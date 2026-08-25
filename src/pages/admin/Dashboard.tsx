@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight } from "lucide-react";
+import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight, ChevronRight } from "lucide-react";
 
 interface Stats {
   total_messages: number;
@@ -95,6 +95,7 @@ export default function Dashboard() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(msg.created_at).toLocaleDateString()}
                   </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
               </Link>
             ))
