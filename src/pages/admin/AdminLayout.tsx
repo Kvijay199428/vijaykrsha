@@ -75,12 +75,12 @@ export default function AdminLayout() {
         >
           <AnimatedLogo size={collapsed ? 32 : 28} />
           {!collapsed && (
-            <span className="font-semibold text-sm truncate typing-text text-primary">VijayKrsha.Online</span>
+            <span className="font-semibold text-sm truncate typing-text text-primary uppercase">VIJAYKRSHA.ONLINE</span>
           )}
           {!collapsed && (
             <button
               onClick={toggleSidebar}
-              className="ml-auto p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+              className="ml-auto p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
               title="Collapse sidebar"
             >
               <PanelLeftClose className="w-4 h-4" />
@@ -90,7 +90,7 @@ export default function AdminLayout() {
         {collapsed && (
           <button
             onClick={toggleSidebar}
-            className="mx-auto p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+            className="mx-auto p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
             title="Expand sidebar"
           >
             <PanelLeftOpen className="w-4 h-4" />
@@ -130,7 +130,7 @@ export default function AdminLayout() {
                 </span>
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <p className="text-sm font-semibold text-foreground truncate">{admin.display_name || admin.username}</p>
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary shrink-0">
                     {admin.role}
