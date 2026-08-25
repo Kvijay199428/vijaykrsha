@@ -47,4 +47,8 @@ export const ROUTES = {
   ADMINAPIROLESCREATE: `${API}/admin/api/roles`,
   ADMINAPIROLESBYID: (id: string) => `${API}/admin/api/roles/${id}`,
   ADMINAPIPERMISSIONS: `${API}/admin/api/permissions`,
+
+  // Message tag removal
+  ADMINAPIMESSAGETAGDELETE: (messageId: string, tagId: string) =>
+    `${API}/admin/api/messages/${messageId}/tags/${tagId}`,
 } as const;

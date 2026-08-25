@@ -32,7 +32,7 @@ CORS_ORIGINS=https://vijaykrsha.online,https://vijaykrsha-website.pages.dev
 services:
   database-dev:
     image: postgres:16-alpine
-    container_name: database-dev
+    container_name: vijaykrsha-online-database-dev
     restart: unless-stopped
     environment:
       POSTGRES_DB: vijaykrsha_dev
@@ -52,7 +52,7 @@ services:
 
   storage-dev:
     image: minio/minio:latest
-    container_name: storage-dev
+    container_name: vijaykrsha-online-storage-dev
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -67,7 +67,7 @@ services:
 
   redis-dev:
     image: redis:7-alpine
-    container_name: redis-dev
+    container_name: vijaykrsha-online-redis-dev
     restart: unless-stopped
     command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     ports:
@@ -84,7 +84,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: backend-dev
+    container_name: vijaykrsha-online-backend-dev
     restart: unless-stopped
     depends_on:
       database-dev:
@@ -104,7 +104,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: frontend-dev
+    container_name: vijaykrsha-online-frontend-dev
     restart: unless-stopped
     ports:
       - "26002:80"
@@ -127,7 +127,7 @@ networks:
 services:
   database-prod:
     image: postgres:16-alpine
-    container_name: database-prod
+    container_name: vijaykrsha-online-database-prod
     restart: unless-stopped
     environment:
       POSTGRES_DB: vijaykrsha
@@ -145,7 +145,7 @@ services:
 
   storage-prod:
     image: minio/minio:latest
-    container_name: storage-prod
+    container_name: vijaykrsha-online-storage-prod
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -158,7 +158,7 @@ services:
 
   redis-prod:
     image: redis:7-alpine
-    container_name: redis-prod
+    container_name: vijaykrsha-online-redis-prod
     restart: unless-stopped
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     networks:
@@ -173,7 +173,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: backend-prod
+    container_name: vijaykrsha-online-backend-prod
     restart: unless-stopped
     depends_on:
       database-prod:
@@ -405,6 +405,19 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.vijaykrsha.online; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'" always;
+
+    # Dev-container parity with the Cloudflare Pages function: /api/* is
+    # proxied to the backend with the /api prefix stripped, and the
+    # X-Forwarded-By header satisfies DirectAccessGuard.
+    location /api/ {
+        proxy_pass http://backend-dev:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Forwarded-By pages-proxy;
+        client_max_body_size 160m;
+    }
 
     location / {
         # HTML documents and SPA fallback must never be cached: prevents the
@@ -764,7 +777,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-50 bg-cream-50/80 dark:bg-night-900/80 backdrop-blur-md border-b border-cream-200 dark:border-night-700">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="font-bold text-lg text-glow-600 dark:text-glow-400">
-            <span className="typing-text">VIJAYKRSHA.ONLINE</span>
+            <span className="typing-text">vijaykrsha.online</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
@@ -838,7 +851,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Centered Tagline + WhatsApp */}
           <div className="flex flex-col items-center mb-10">
             <p className="font-bold text-lg text-glow-600 dark:text-glow-400 mb-1">
-              VIJAYKRSHA.ONLINE
+              vijaykrsha.online
             </p>
             <p className="text-sm text-night-800/50 dark:text-cream-100/50 mb-3">
               Legal Research &bull; Contract Drafting &bull; Legal Technology
@@ -897,27 +910,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <p className="footer-heading">Contact</p>
               <ul className="space-y-2 text-sm text-night-800/60 dark:text-cream-100/60">
                 <li>{site.contact.phone}</li>
-                <li>{site.contact.email}</li>
+                <li className="[overflow-wrap:anywhere]">{site.contact.email}</li>
                 <li>{site.contact.location}</li>
               </ul>
             </div>
 
-            {/* Col 4: Trust */}
+            {/* Col 4: Trust — plain text like the other columns */}
             <div>
               <p className="footer-heading">Trust</p>
               <ul className="space-y-2 text-sm text-night-800/60 dark:text-cream-100/60">
-                <li className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
-                  NDA by Default
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
-                  3+ Years Experience
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
-                  Remote Collaboration
-                </li>
+                <li>NDA by Default</li>
+                <li>3+ Years Experience</li>
+                <li>Remote Collaboration</li>
               </ul>
             </div>
           </div>
@@ -964,6 +968,7 @@ export default function OtpDigitInput({
   error = false,
 }: OtpDigitInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const ignoreNextChange = useRef(false);
   const [digits, setDigits] = useState<string[]>(() =>
     Array.from({ length }, (_, i) => value[i] || "")
   );
@@ -995,6 +1000,10 @@ export default function OtpDigitInput({
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (ignoreNextChange.current) {
+        ignoreNextChange.current = false;
+        return;
+      }
       const raw = e.target.value.replace(/\D/g, "").slice(0, length);
       if (raw.length > value.length) {
         triggerPop(raw.length - 1);
@@ -1011,6 +1020,7 @@ export default function OtpDigitInput({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Backspace" && value.length > 0) {
+        ignoreNextChange.current = true;
         onChange(value.slice(0, -1));
       }
     },
@@ -1422,6 +1432,202 @@ export { Label };
 ```
 
 ```tsx
+// File: src\components\ui\select.tsx
+import { useState, useRef, useEffect, useCallback } from "react";
+import { ChevronDown } from "lucide-react";
+
+export interface NeuSelectOption {
+  value: string;
+  label: string;
+}
+
+interface NeuSelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: NeuSelectOption[];
+  placeholder?: string;
+  className?: string;
+  disabled?: boolean;
+}
+
+export function NeuSelect({
+  value,
+  onChange,
+  options,
+  placeholder = "Select...",
+  className = "",
+  disabled = false,
+}: NeuSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const selected = options.find((o) => o.value === value);
+  const displayText = selected ? selected.label : placeholder;
+  const isPlaceholder = !selected;
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setHighlightIdx(-1);
+    triggerRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        listRef.current && !listRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) {
+        close();
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open, close]);
+
+  useEffect(() => {
+    if (open && highlightIdx >= 0 && listRef.current) {
+      const item = listRef.current.children[highlightIdx] as HTMLElement | undefined;
+      item?.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, highlightIdx]);
+
+  const toggle = () => {
+    if (disabled) return;
+    setOpen((prev) => !prev);
+  };
+
+  const selectOption = (val: string) => {
+    onChange(val);
+    close();
+  };
+
+  const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+
+    switch (e.key) {
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (!open) {
+          setOpen(true);
+          const idx = options.findIndex((o) => o.value === value);
+          setHighlightIdx(idx >= 0 ? idx : 0);
+        }
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        if (!open) {
+          setOpen(true);
+          const idx = options.findIndex((o) => o.value === value);
+          setHighlightIdx(idx >= 0 ? idx : 0);
+        }
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        if (!open) {
+          setOpen(true);
+          const idx = options.findIndex((o) => o.value === value);
+          setHighlightIdx(idx >= 0 ? idx : options.length - 1);
+        }
+        break;
+    }
+  };
+
+  const handleListKeyDown = (e: React.KeyboardEvent) => {
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightIdx((prev) => (prev < options.length - 1 ? prev + 1 : prev));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightIdx((prev) => (prev > 0 ? prev - 1 : prev));
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (highlightIdx >= 0 && highlightIdx < options.length) selectOption(options[highlightIdx]!.value);
+        break;
+      case "Home":
+        e.preventDefault();
+        setHighlightIdx(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setHighlightIdx(options.length - 1);
+        break;
+    }
+  };
+
+  return (
+    <div className={`relative inline-block ${className}`}>
+      <button
+        ref={triggerRef}
+        type="button"
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        disabled={disabled}
+        onClick={toggle}
+        onKeyDown={handleTriggerKeyDown}
+        className={`flex items-center justify-between gap-2 px-3 py-2 neu-concave rounded-xl bg-transparent text-sm text-foreground text-left min-w-[120px] focus:outline-none focus:ring-2 focus:ring-primary/50 ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+      >
+        <span className={`truncate ${isPlaceholder ? "text-muted-foreground" : ""}`}>
+          {displayText}
+        </span>
+        <ChevronDown
+          size={14}
+          className={`shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          ref={listRef}
+          role="listbox"
+          tabIndex={-1}
+          onKeyDown={handleListKeyDown}
+          className="absolute top-full left-0 mt-1 w-full min-w-[120px] max-h-60 overflow-auto z-50 neu-flat rounded-xl p-1 focus:outline-none"
+        >
+          {options.map((opt, idx) => (
+            <div
+              key={opt.value}
+              role="option"
+              aria-selected={opt.value === value}
+              onClick={() => selectOption(opt.value)}
+              onMouseEnter={() => setHighlightIdx(idx)}
+              className={`px-3 py-2 rounded-lg text-sm cursor-pointer transition-all select-none ${
+                opt.value === value
+                  ? "neu-pressed text-primary font-medium"
+                  : idx === highlightIdx
+                    ? "neu-btn"
+                    : "text-foreground hover:bg-muted/30"
+              }`}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+```tsx
 // File: src\components\ui\tabs.tsx
 import { createContext, useContext, useState, type ReactNode } from "react";
 
@@ -1540,10 +1746,24 @@ export const site = {
     { label: "Contact", path: "/contact" },
   ],
 
-  trustBadges: [
-    { label: "Professional Legal Practice", icon: "calendar" },
-    { label: "NDA by Default", icon: "shield" },
-    { label: "Interdisciplinary Approach", icon: "diamond" },
+  // Hero proof cards — deliberately distinct from whyHireMe so the hero
+  // does not repeat the same value propositions.
+  heroProof: [
+    {
+      label: "LL.B.-Qualified Research",
+      detail: "Case law, statutes & compliance work",
+      icon: "scale",
+    },
+    {
+      label: "Data-Driven Deliverables",
+      detail: "Excel · Python · interactive dashboards",
+      icon: "chart",
+    },
+    {
+      label: "24-Hour Response",
+      detail: "Monday–Saturday, IST business hours",
+      icon: "clock",
+    },
   ],
 
   whyHireMe: [
@@ -1941,6 +2161,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function friendlyAuthError(msg: string): string {
+  if (msg === "invalid_credentials") {
+    return "Incorrect username or password. Please enter the correct username and password.";
+  }
+  if (msg === "account_disabled") {
+    return "This account has been disabled. Please contact an administrator.";
+  }
+  return msg;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -1982,11 +2212,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, remember_me: rememberMe }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Login failed" }));
-        const msg = typeof err.detail === "string" ? err.detail : "Login failed";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "Login failed"
+        );
         if (response.status === 429 || response.status === 423) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {
@@ -2008,11 +2241,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_id: challengeId }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Failed to send code" }));
-        const msg = typeof err.detail === "string" ? err.detail : "Failed to send code";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "Failed to send code"
+        );
         if (response.status === 429) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {
@@ -2034,11 +2270,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_id: challengeId, code }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "OTP verification failed" }));
-        const msg = typeof err.detail === "string" ? err.detail : "OTP verification failed";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "OTP verification failed"
+        );
         if (response.status === 429) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {
@@ -2053,7 +2292,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { totpRequired: true, challenge_id: data.challenge_id };
       }
 
-      await refreshAuth();
+      const authOk = await refreshAuth();
+      if (!authOk) throw new Error("Session could not be established. Please try again.");
       return { totpRequired: false };
     },
     [refreshAuth]
@@ -2066,11 +2306,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_id: challengeId, code }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "TOTP verification failed" }));
-        const msg = typeof err.detail === "string" ? err.detail : "TOTP verification failed";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "TOTP verification failed"
+        );
         if (response.status === 429) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {
@@ -2080,7 +2323,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(msg);
       }
 
-      await refreshAuth();
+      const authOk = await refreshAuth();
+      if (!authOk) throw new Error("Session could not be established. Please try again.");
     },
     [refreshAuth]
   );
@@ -2561,6 +2805,17 @@ body {
     inset 3px 3px 7px var(--color-dark-neu-dark);
 }
 
+/* ── Active Nav Indicator ──────────────────────────── */
+
+.nav-active {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(124, 58, 237, 0.06));
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.dark .nav-active {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(124, 58, 237, 0.08));
+}
+
 /* ── Typing Animation ─────────────────────────────── */
 
 @keyframes typing-loop {
@@ -2686,7 +2941,7 @@ body {
 /* ── Footer ───────────────────────────────────────── */
 
 .footer-heading {
-  @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-3;
+  @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-4;
 }
 
 /* ── Admin Scrollbar (Neumorphism) ──────────────── */
@@ -2983,6 +3238,7 @@ export const ROUTES = {
   ADMINAPIUSERDISABLE: (id: string) => `${API}/admin/api/users/${id}/disable`,
   ADMINAPIUSERENABLE: (id: string) => `${API}/admin/api/users/${id}/enable`,
   ADMINAPIUSERREVOKE: (id: string) => `${API}/admin/api/users/${id}/revoke-sessions`,
+  ADMINAPIUSERUNLOCK: (id: string) => `${API}/admin/api/users/${id}/unlock`,
   ADMINAPIUSERRESETPW: (id: string) => `${API}/admin/api/users/${id}/reset-password`,
 
   // Per-user TOTP
@@ -3001,6 +3257,10 @@ export const ROUTES = {
   ADMINAPIROLESCREATE: `${API}/admin/api/roles`,
   ADMINAPIROLESBYID: (id: string) => `${API}/admin/api/roles/${id}`,
   ADMINAPIPERMISSIONS: `${API}/admin/api/permissions`,
+
+  // Message tag removal
+  ADMINAPIMESSAGETAGDELETE: (messageId: string, tagId: string) =>
+    `${API}/admin/api/messages/${messageId}/tags/${tagId}`,
 } as const;
 ```
 
@@ -3345,17 +3605,17 @@ export default function AdminLayout() {
           className={`flex items-center border-b border-border/50 min-h-[57px] ${
             collapsed
               ? "flex-col py-3 px-2 gap-2"
-              : "flex-row gap-2 px-3 py-4"
+              : "flex-row gap-2 px-3 py-5"
           }`}
         >
           <AnimatedLogo size={collapsed ? 32 : 28} />
           {!collapsed && (
-            <span className="font-semibold text-sm truncate typing-text text-primary">VIJAYKRSHA.ONLINE</span>
+            <span className="font-semibold text-sm truncate typing-text text-primary uppercase">VIJAYKRSHA.ONLINE</span>
           )}
           {!collapsed && (
             <button
               onClick={toggleSidebar}
-              className="ml-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+              className="ml-auto p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
               title="Collapse sidebar"
             >
               <PanelLeftClose className="w-4 h-4" />
@@ -3365,7 +3625,7 @@ export default function AdminLayout() {
         {collapsed && (
           <button
             onClick={toggleSidebar}
-            className="mx-auto p-1.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors"
+            className="mx-auto p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
             title="Expand sidebar"
           >
             <PanelLeftOpen className="w-4 h-4" />
@@ -3383,7 +3643,7 @@ export default function AdminLayout() {
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                     isActive
-                      ? "neu-pressed text-primary font-semibold"
+                      ? "nav-active"
                       : "text-foreground/75 hover:text-foreground hover:bg-muted/40"
                   } ${collapsed ? "justify-center" : ""}`
                 }
@@ -3405,10 +3665,12 @@ export default function AdminLayout() {
                 </span>
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">{admin.display_name || admin.username}</p>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary">
-                  {admin.role}
-                </span>
+                <div className="flex items-center gap-3">
+                  <p className="text-sm font-semibold text-foreground truncate">{admin.display_name || admin.username}</p>
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 text-primary shrink-0">
+                    {admin.role}
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -3466,6 +3728,7 @@ export default function AuditLogs() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [jumpValue, setJumpValue] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -3481,31 +3744,39 @@ export default function AuditLogs() {
 
   const totalPages = Math.ceil(total / 50);
 
+  function handleJump() {
+    const n = parseInt(jumpValue, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= totalPages) {
+      setPage(n);
+    }
+    setJumpValue("");
+  }
+
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex flex-col gap-3 h-full min-h-0">
+      <div className="space-y-1">
         <h1 className="text-2xl font-bold">Audit Logs</h1>
         <p className="text-muted-foreground text-sm">{total} total entries</p>
       </div>
 
-      <div className="neu-flat overflow-hidden text-foreground">
+      <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : (
           <table className="w-full">
-            <thead className="border-b border-border/50 bg-muted/30">
+            <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
               <tr>
-                <th className="text-left p-4 text-sm font-semibold text-foreground">Event</th>
-                <th className="text-left p-4 text-sm font-semibold text-foreground">Actor</th>
-                <th className="text-left p-4 text-sm font-semibold text-foreground">IP</th>
-                <th className="text-left p-4 text-sm font-semibold text-foreground">Time</th>
+                <th className="text-left p-3 text-sm font-bold text-foreground">Event</th>
+                <th className="text-left p-3 text-sm font-bold text-foreground">Actor</th>
+                <th className="text-left p-3 text-sm font-bold text-foreground">IP</th>
+                <th className="text-left p-3 text-sm font-bold text-foreground">Time</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {logs.map((log) => (
                 <tr key={log.id} className="hover:bg-muted/20 transition-colors">
-                  <td className="p-4 text-sm">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  <td className="p-3 text-sm">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium leading-none inline-flex items-center ${
                       log.event.includes("success") || log.event.includes("verified") ? "bg-green-100 text-green-700" :
                       log.event.includes("failure") || log.event.includes("disabled") ? "bg-red-100 text-red-700" :
                       "bg-slate-100 text-slate-700"
@@ -3513,11 +3784,11 @@ export default function AuditLogs() {
                       {log.event}
                     </span>
                   </td>
-                  <td className="p-4 text-sm text-muted-foreground font-mono text-xs">
+                  <td className="p-3 text-sm text-muted-foreground font-mono text-xs">
                     {log.actor_admin_id?.slice(0, 8) ?? "—"}
                   </td>
-                  <td className="p-4 text-sm text-muted-foreground">{log.ip_address ?? "—"}</td>
-                  <td className="p-4 text-sm text-muted-foreground">
+                  <td className="p-3 text-sm text-muted-foreground">{log.ip_address ?? "—"}</td>
+                  <td className="p-3 text-sm text-muted-foreground">
                     {new Date(log.created_at).toLocaleString()}
                   </td>
                 </tr>
@@ -3528,7 +3799,7 @@ export default function AuditLogs() {
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-2 shrink-0">
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
@@ -3536,7 +3807,19 @@ export default function AuditLogs() {
           >
             Previous
           </button>
-          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+          <span className="text-sm text-muted-foreground">Page</span>
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={jumpValue}
+            onChange={(e) => setJumpValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleJump(); }}
+            onBlur={handleJump}
+            placeholder={String(page)}
+            className="w-14 px-2 py-1 neu-concave rounded-lg bg-transparent text-foreground text-sm text-center"
+          />
+          <span className="text-sm text-muted-foreground">of {totalPages}</span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
@@ -3557,7 +3840,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight } from "lucide-react";
+import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight, ChevronRight } from "lucide-react";
 
 interface Stats {
   total_messages: number;
@@ -3600,13 +3883,13 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-8">
-      <div>
+    <div className="flex flex-col gap-6 h-full min-h-0">
+      <div className="shrink-0">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="text-muted-foreground text-sm">Overview of your admin console</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         {cards.map((card) => (
           <div key={card.label} className="neu-convex p-6">
             <div className="flex items-center justify-between mb-4">
@@ -3618,14 +3901,14 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="neu-flat">
-        <div className="flex items-center justify-between p-6 border-b border-border/50">
+      <div className="neu-flat flex flex-col gap-3 flex-1 min-h-0">
+        <div className="flex items-center justify-between p-6 border-b border-border/50 shrink-0">
           <h2 className="font-semibold">Recent Messages</h2>
           <Link to="/vega/admin/inbox" className="text-sm text-primary hover:underline flex items-center gap-1">
             View all <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
-        <div className="divide-y divide-border/50">
+        <div className="divide-y divide-border/50 overflow-auto flex-1 min-h-0">
           {recent.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">No messages yet.</p>
           ) : (
@@ -3650,6 +3933,7 @@ export default function Dashboard() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(msg.created_at).toLocaleDateString()}
                   </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
               </Link>
             ))
@@ -3667,7 +3951,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { Search } from "lucide-react";
+import { Search, Paperclip, ChevronRight } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
 
 interface Message {
   id: string;
@@ -3679,6 +3964,7 @@ interface Message {
   priority: string;
   channel: string;
   created_at: string;
+  attachment_count?: number;
 }
 
 export default function Inbox() {
@@ -3707,13 +3993,13 @@ export default function Inbox() {
   const totalPages = Math.ceil(total / 20);
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex flex-col gap-3 h-full min-h-0">
+      <div className="shrink-0">
         <h1 className="text-2xl font-bold">Inbox</h1>
         <p className="text-muted-foreground text-sm">{total} total messages</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col sm:flex-row gap-3 shrink-0">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <input
@@ -3723,21 +4009,22 @@ export default function Inbox() {
             className="w-full pl-10 pr-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
           />
         </div>
-        <select
+        <NeuSelect
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-        >
-          <option value="">All Statuses</option>
-          <option value="new">New</option>
-          <option value="in_progress">In Progress</option>
-          <option value="waiting">Waiting</option>
-          <option value="resolved">Resolved</option>
-          <option value="spam">Spam</option>
-        </select>
+          onChange={(v) => { setStatusFilter(v); setPage(1); }}
+          options={[
+            { value: "", label: "All Statuses" },
+            { value: "new", label: "New" },
+            { value: "in_progress", label: "In Progress" },
+            { value: "waiting", label: "Waiting" },
+            { value: "resolved", label: "Resolved" },
+            { value: "spam", label: "Spam" },
+          ]}
+          className="w-full sm:w-auto"
+        />
       </div>
 
-      <div className="neu-flat overflow-hidden">
+      <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : messages.length === 0 ? (
@@ -3758,6 +4045,11 @@ export default function Inbox() {
                   <p className="text-sm text-muted-foreground truncate">{msg.subject}</p>
                 </div>
                 <div className="flex items-center gap-3 ml-4">
+                  {msg.attachment_count ? (
+                    <span className="text-muted-foreground" title="Has attachments">
+                      <Paperclip className="w-3.5 h-3.5" />
+                    </span>
+                  ) : null}
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                     msg.status === "new" ? "bg-orange-100 text-orange-700" :
                     msg.status === "in_progress" ? "bg-yellow-100 text-yellow-700" :
@@ -3776,6 +4068,7 @@ export default function Inbox() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(msg.created_at).toLocaleDateString()}
                   </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
               </Link>
             ))}
@@ -3784,7 +4077,7 @@ export default function Inbox() {
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-2 shrink-0">
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
@@ -3815,7 +4108,23 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { ArrowLeft, Send, Tag, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  X,
+  Tag,
+  MessageSquare,
+  Paperclip,
+  FileText,
+} from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 interface Note {
   id: string;
@@ -3828,6 +4137,14 @@ interface Tag_ {
   id: string;
   name: string;
   color: string;
+}
+
+interface Attachment {
+  id: string;
+  filename: string;
+  url: string;
+  size?: number;
+  content_type?: string;
 }
 
 interface Message {
@@ -3845,6 +4162,7 @@ interface Message {
   created_at: string;
   notes: Note[];
   tags: Tag_[];
+  attachments?: Attachment[];
 }
 
 export default function MessageDetail() {
@@ -3852,10 +4170,16 @@ export default function MessageDetail() {
   const navigate = useNavigate();
   const [message, setMessage] = useState<Message | null>(null);
   const [loading, setLoading] = useState(true);
-  const [noteBody, setNoteBody] = useState("");
-  const [newTag, setNewTag] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
+
+  // Modal states
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+
+  // Form inputs (used inside modals)
+  const [tagInput, setTagInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -3877,109 +4201,381 @@ export default function MessageDetail() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [field]: value }),
     });
-    setMessage((prev) => prev ? { ...prev, [field]: value } : prev);
+    setMessage((prev) => (prev ? { ...prev, [field]: value } : prev));
   }
 
   async function addNote(e: React.FormEvent) {
     e.preventDefault();
-    if (!id || !noteBody.trim()) return;
+    if (!id || !noteInput.trim()) return;
     const res = await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/notes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: noteBody }),
+      body: JSON.stringify({ body: noteInput }),
     });
     const note = await res.json();
-    setMessage((prev) => prev ? { ...prev, notes: [...prev.notes, note] } : prev);
-    setNoteBody("");
+    setMessage((prev) =>
+      prev ? { ...prev, notes: [...prev.notes, note] } : prev
+    );
+    setNoteInput("");
   }
 
   async function addTag(e: React.FormEvent) {
     e.preventDefault();
-    if (!id || !newTag.trim()) return;
+    if (!id || !tagInput.trim()) return;
     await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}/tags`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tag_name: newTag }),
+      body: JSON.stringify({ tag_name: tagInput }),
     });
-    setNewTag("");
-    const refreshed = await apiFetch(`${ROUTES.ADMINAPIMESSAGES}/${id}`).then((r) => r.json());
+    setTagInput("");
+    const refreshed = await apiFetch(
+      `${ROUTES.ADMINAPIMESSAGES}/${id}`
+    ).then((r) => r.json());
     setMessage(refreshed);
   }
 
-  if (loading) return <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>;
+  async function removeTag(tagId: string) {
+    if (!id) return;
+    await apiFetch(ROUTES.ADMINAPIMESSAGETAGDELETE(id, tagId), {
+      method: "DELETE",
+    });
+    const refreshed = await apiFetch(
+      `${ROUTES.ADMINAPIMESSAGES}/${id}`
+    ).then((r) => r.json());
+    setMessage(refreshed);
+  }
+
+  if (loading)
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        Loading...
+      </div>
+    );
   if (!message) return null;
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <button onClick={() => navigate("/vega/admin/inbox")} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Back to inbox
-      </button>
+    <div className="flex flex-col gap-3 h-full min-h-0">
+      {/* ── Header ─────────────────────────────────── */}
+      <div className="shrink-0">
+        <button
+          onClick={() => navigate("/vega/admin/inbox")}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-3"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to inbox
+        </button>
 
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{message.subject}</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {message.sender_name} ({message.sender_email}) — {message.reference}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <select value={status} onChange={(e) => { setStatus(e.target.value); updateField("status", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm">
-            <option value="new">New</option>
-            <option value="in_progress">In Progress</option>
-            <option value="waiting">Waiting</option>
-            <option value="resolved">Resolved</option>
-            <option value="spam">Spam</option>
-          </select>
-          <select value={priority} onChange={(e) => { setPriority(e.target.value); updateField("priority", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm">
-            <option value="low">Low</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
-          </select>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold leading-tight">
+              {message.subject}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {message.sender_name} &middot; {message.sender_email}
+            </p>
+            <span className="inline-block mt-1.5 font-mono text-xs neu-concave px-2 py-0.5 rounded-lg text-muted-foreground">
+              {message.reference}
+            </span>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <NeuSelect
+              value={status}
+              onChange={(v) => {
+                setStatus(v);
+                updateField("status", v);
+              }}
+              options={[
+                { value: "new", label: "New" },
+                { value: "in_progress", label: "In Progress" },
+                { value: "waiting", label: "Waiting" },
+                { value: "resolved", label: "Resolved" },
+                { value: "spam", label: "Spam" },
+              ]}
+            />
+            <NeuSelect
+              value={priority}
+              onChange={(v) => {
+                setPriority(v);
+                updateField("priority", v);
+              }}
+              options={[
+                { value: "low", label: "Low" },
+                { value: "normal", label: "Normal" },
+                { value: "high", label: "High" },
+                { value: "urgent", label: "Urgent" },
+              ]}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="neu-flat rounded-xl p-6">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{message.body}</p>
-        <div className="mt-4 pt-4 border-t border-border/50 flex gap-4 text-xs text-muted-foreground">
-          <span>Channel: {message.channel}</span>
-          <span>Received: {new Date(message.created_at).toLocaleString()}</span>
-          {message.sender_phone && <span>Phone: {message.sender_phone}</span>}
-        </div>
-      </div>
+      {/* ── Two-column content ─────────────────────── */}
+      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(300px,0.9fr)] gap-4">
+        {/* ── Left: Message ────────────────────────── */}
+        <div className="min-h-0 overflow-y-auto">
+          <div className="neu-flat rounded-xl p-6 space-y-5">
+            {/* Body */}
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+              {message.body}
+            </p>
 
-      <div className="neu-flat rounded-xl p-6">
-        <h2 className="font-semibold mb-4 flex items-center gap-2"><Tag className="h-4 w-4" /> Tags</h2>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {message.tags.length === 0 && <span className="text-xs text-muted-foreground">No tags</span>}
-          {message.tags.map((t) => (
-            <span key={t.id} className="px-2 py-1 bg-primary/10 text-primary text-xs rounded-full">{t.name}</span>
-          ))}
-        </div>
-        <form onSubmit={addTag} className="flex gap-2">
-          <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Add tag..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
-          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm">Add</button>
-        </form>
-      </div>
-
-      <div className="neu-flat rounded-xl p-6">
-        <h2 className="font-semibold mb-4 flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Notes</h2>
-        <div className="space-y-3 mb-4">
-          {message.notes.length === 0 && <p className="text-xs text-muted-foreground">No notes yet</p>}
-          {message.notes.map((n) => (
-            <div key={n.id} className="p-3 neu-concave rounded-xl">
-              <p className="text-sm">{n.body}</p>
-              <p className="text-xs text-muted-foreground mt-1">{new Date(n.created_at).toLocaleString()}</p>
+            {/* Metadata grid */}
+            <div className="grid grid-cols-3 gap-4 text-xs">
+              <div>
+                <span className="text-muted-foreground">Channel</span>
+                <p className="font-medium mt-0.5">{message.channel}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Received</span>
+                <p className="font-medium mt-0.5">
+                  {new Date(message.created_at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                  ,{" "}
+                  {new Date(message.created_at).toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+              {message.sender_phone && (
+                <div>
+                  <span className="text-muted-foreground">Phone</span>
+                  <p className="font-medium mt-0.5">{message.sender_phone}</p>
+                </div>
+              )}
             </div>
-          ))}
+
+            {/* Attachments */}
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="border-t border-border/50 pt-4">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Paperclip className="h-3.5 w-3.5" /> Attachments &middot;{" "}
+                  {message.attachments.length}
+                </h3>
+                <div className="space-y-2">
+                  {message.attachments.map((att) => (
+                    <a
+                      key={att.id}
+                      href={`/api${att.url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors group"
+                      title={att.content_type ?? "Download"}
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="truncate flex-1 min-w-0">
+                        {att.filename}
+                      </span>
+                      {typeof att.size === "number" && (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {att.size >= 1048576
+                            ? `${(att.size / 1048576).toFixed(1)} MB`
+                            : `${(att.size / 1024).toFixed(1)} KB`}
+                        </span>
+                      )}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-        <form onSubmit={addNote} className="flex gap-2">
-          <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Add a note..." className="flex-1 px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm" />
-          <button type="submit" className="px-3 py-1 neu-btn text-primary-foreground text-sm flex items-center gap-1">
-            <Send className="h-3 w-3" /> Add
-          </button>
-        </form>
+
+        {/* ── Right: Sidebar ───────────────────────── */}
+        <div className="space-y-4 lg:sticky lg:top-0 lg:h-full lg:overflow-y-auto min-h-0">
+          {/* Tags card */}
+          <div className="neu-flat rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Tag className="h-4 w-4" /> Tags
+              </h3>
+              <button
+                onClick={() => setShowTagModal(true)}
+                className="p-1.5 neu-btn rounded-lg"
+                title="Manage tags"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {message.tags.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No tags yet</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {message.tags.map((t) => (
+                  <span
+                    key={t.id}
+                    className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
+                  >
+                    {t.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Notes card */}
+          <div className="neu-flat rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" /> Internal Notes
+              </h3>
+              <button
+                onClick={() => setShowNoteModal(true)}
+                className="p-1.5 neu-btn rounded-lg"
+                title="Add note"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {message.notes.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No notes yet</p>
+            ) : (
+              <div className="space-y-2">
+                {message.notes
+                  .slice()
+                  .reverse()
+                  .slice(0, 3)
+                  .map((n) => (
+                    <div key={n.id} className="p-2.5 neu-concave rounded-lg">
+                      <p className="text-xs leading-relaxed">{n.body}</p>
+                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                        {new Date(n.created_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })}{" "}
+                        &middot;{" "}
+                        {new Date(n.created_at).toLocaleTimeString("en-US", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* ── Tags Modal ─────────────────────────────── */}
+      <Dialog open={showTagModal} onOpenChange={setShowTagModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Manage Tags</DialogTitle>
+            <DialogDescription>
+              Organize this message for easier filtering
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Current tags */}
+          {message.tags.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                Current tags
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {message.tags.map((t) => (
+                  <span
+                    key={t.id}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full"
+                  >
+                    {t.name}
+                    <button
+                      onClick={() => removeTag(t.id)}
+                      className="hover:text-destructive transition-colors"
+                      title={`Remove "${t.name}"`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Add tag form */}
+          <form onSubmit={addTag} className="flex gap-2">
+            <input
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              placeholder="Add a tag..."
+              className="flex-1 px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <button
+              type="submit"
+              disabled={!tagInput.trim()}
+              className="px-4 py-2 neu-btn text-sm font-medium disabled:opacity-50"
+            >
+              Add
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Notes Modal ────────────────────────────── */}
+      <Dialog open={showNoteModal} onOpenChange={setShowNoteModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Internal Notes</DialogTitle>
+            <DialogDescription>
+              Never visible to the client
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Add note form */}
+          <form onSubmit={addNote} className="space-y-3">
+            <textarea
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              rows={4}
+              placeholder="Add an internal note..."
+              className="w-full px-3 py-2.5 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+            />
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={!noteInput.trim()}
+                className="px-4 py-2 neu-btn text-sm font-medium disabled:opacity-50"
+              >
+                Add Note
+              </button>
+            </div>
+          </form>
+
+          {/* Previous notes */}
+          {message.notes.length > 0 && (
+            <div className="border-t border-border/50 pt-4 mt-2">
+              <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                Previous notes
+              </p>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {message.notes
+                  .slice()
+                  .reverse()
+                  .map((n) => (
+                    <div key={n.id} className="p-3 neu-concave rounded-xl">
+                      <p className="text-sm">{n.body}</p>
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        {new Date(n.created_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}{" "}
+                        &middot;{" "}
+                        {new Date(n.created_at).toLocaleTimeString("en-US", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -3999,6 +4595,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
 
 interface RoleItem {
   id: string;
@@ -4085,8 +4682,8 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col gap-4 h-full min-h-0">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ShieldCheck className="w-6 h-6" />
@@ -4110,7 +4707,7 @@ export default function RolesPage() {
       {deleteError && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 mb-4 px-4 py-3 rounded-xl text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/50"
+          className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/50 shrink-0"
         >
           <span>{deleteError}</span>
           <button onClick={() => setDeleteError("")} aria-label="Dismiss" className="shrink-0 hover:opacity-70 transition-opacity">
@@ -4119,15 +4716,15 @@ export default function RolesPage() {
         </div>
       )}
 
-      <div className="neu-flat overflow-hidden text-foreground">
+      <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         <table className="w-full">
-          <thead>
-            <tr className="bg-muted/30 border-b border-border/50">
-              <th className="text-left px-4 py-3 text-sm font-semibold">Role</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Type</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Rank</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Users</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Permissions</th>
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
+            <tr>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Role</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Type</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Rank</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Users</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Permissions</th>
               {canManageRoles && <th className="w-10"></th>}
             </tr>
           </thead>
@@ -4292,19 +4889,18 @@ function CreateRoleDialog({ myLevel, permissions, onClose, onCreated }: {
           <label className="block text-sm font-medium mb-1">Rank *</label>
           <div className="flex gap-2">
             {availablePresets.length > 0 && (
-              <select
+              <NeuSelect
                 value={rankMode === "preset" ? String(presetLevel) : "custom"}
-                onChange={(e) => {
-                  if (e.target.value === "custom") setRankMode("custom");
-                  else { setRankMode("preset"); setPresetLevel(parseInt(e.target.value, 10)); }
+                onChange={(v) => {
+                  if (v === "custom") setRankMode("custom");
+                  else { setRankMode("preset"); setPresetLevel(parseInt(v, 10)); }
                 }}
-                className="flex-1 px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
-              >
-                {availablePresets.map((p) => (
-                  <option key={p.level} value={p.level}>{p.label}</option>
-                ))}
-                <option value="custom">Custom…</option>
-              </select>
+                options={[
+                  ...availablePresets.map((p) => ({ value: String(p.level), label: p.label })),
+                  { value: "custom", label: "Custom\u2026" },
+                ]}
+                className="flex-1"
+              />
             )}
             {(rankMode === "custom" || availablePresets.length === 0) && (
               <input
@@ -4385,16 +4981,19 @@ import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { getPasswordErrors } from "@/lib/passwordValidation";
-import { Shield, Lock } from "lucide-react";
+import { Shield, Lock, Copy, Check, User } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 export default function Settings() {
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [totpSecret, setTotpSecret] = useState("");
+  const [provisioningUri, setProvisioningUri] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -4414,6 +5013,7 @@ export default function Settings() {
       const res = await apiFetch(ROUTES.ADMINAPITOTPSETUP);
       const data = await res.json();
       setTotpSecret(data.secret);
+      setProvisioningUri(data.provisioning_uri || "");
       setShowSetup(true);
     } catch {
       setError("Failed to load TOTP setup");
@@ -4438,11 +5038,29 @@ export default function Settings() {
       }
       setTotpEnabled(true);
       setShowSetup(false);
+      setProvisioningUri("");
       setMsg("TOTP enabled successfully");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function copySecret() {
+    try {
+      await navigator.clipboard.writeText(totpSecret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = totpSecret;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   }
 
@@ -4506,7 +5124,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="flex flex-col gap-4 h-full min-h-0 max-w-2xl overflow-auto">
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted-foreground text-sm">Manage your security settings</p>
@@ -4515,98 +5133,148 @@ export default function Settings() {
       {msg && <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl text-sm">{msg}</div>}
       {error && <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm">{error}</div>}
 
-      <div className="neu-flat p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 neu-btn rounded-xl">
-            <Shield className="h-5 w-5 text-primary" />
-          </div>
-          <h2 className="font-semibold">Two-Factor Authentication</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          {totpEnabled ? "TOTP is currently enabled" : "TOTP is currently disabled"}
-        </p>
-        {!showSetup ? (
-          totpEnabled ? (
-            <div className="space-y-3">
-              <p className="text-sm">Enter your TOTP code to disable:</p>
-              <form onSubmit={disableTotp} className="flex gap-2">
-                <input
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                  className="px-3 py-1 neu-concave rounded-xl text-foreground text-sm font-mono w-32 bg-transparent"
-                  maxLength={6}
-                />
-                <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
-                  Disable
+      <Tabs defaultValue="totp" className="flex flex-col min-h-0">
+        <TabsList className="self-start">
+          <TabsTrigger value="totp" className="flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            TOTP
+          </TabsTrigger>
+          <TabsTrigger value="profile" className="flex items-center gap-2">
+            <User className="w-4 h-4" />
+            Profile
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="totp">
+          <div className="neu-flat p-6">
+            <p className="text-sm text-muted-foreground mb-4">
+              {totpEnabled ? "TOTP is currently enabled" : "TOTP is currently disabled"}
+            </p>
+            {!showSetup ? (
+              totpEnabled ? (
+                <div className="space-y-3">
+                  <p className="text-sm">Enter your TOTP code to disable:</p>
+                  <form onSubmit={disableTotp} className="flex gap-2">
+                    <input
+                      value={totpCode}
+                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000"
+                      className="px-3 py-1 neu-concave rounded-xl text-foreground text-sm font-mono w-32 bg-transparent"
+                      maxLength={6}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                    <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
+                      Disable
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
+                  Enable TOTP
                 </button>
-              </form>
+              )
+            ) : (
+              <div className="space-y-4">
+                {provisioningUri && (
+                  <div className="flex justify-center">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(provisioningUri)}&size=200x200&margin=10`}
+                      alt="TOTP QR Code"
+                      className="rounded-xl"
+                      width={200}
+                      height={200}
+                    />
+                  </div>
+                )}
+                <div className="neu-concave p-4 rounded-xl">
+                  <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm font-mono break-all flex-1">{totpSecret}</code>
+                    <button
+                      onClick={copySecret}
+                      className="p-1.5 rounded-lg hover:bg-muted/40 transition-colors shrink-0"
+                      title="Copy secret"
+                    >
+                      {copied ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <form onSubmit={enableTotp} className="flex gap-2">
+                  <input
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                    className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
+                    maxLength={6}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                  <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-primary-foreground text-sm font-semibold">
+                    Verify & Enable
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="profile">
+          <div className="neu-flat p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 neu-btn rounded-xl">
+                <Lock className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="font-semibold">Change Password</h2>
             </div>
-          ) : (
-            <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
-              Enable TOTP
-            </button>
-          )
-        ) : (
-          <div className="space-y-4">
-            <div className="neu-concave p-4 rounded-xl">
-              <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
-              <code className="text-sm font-mono break-all">{totpSecret}</code>
-            </div>
-            <form onSubmit={enableTotp} className="flex gap-2">
+            <form onSubmit={changePassword} className="space-y-3">
               <input
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="000000"
-                className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
-                maxLength={6}
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Current password"
+                className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+                required
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
               />
-              <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-primary-foreground text-sm font-semibold">
-                Verify & Enable
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password"
+                className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+                required
+                minLength={6}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+                required
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
+                Change Password
               </button>
             </form>
           </div>
-        )}
-      </div>
-
-      <div className="neu-flat p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 neu-btn rounded-xl">
-            <Lock className="h-5 w-5 text-primary" />
-          </div>
-          <h2 className="font-semibold">Change Password</h2>
-        </div>
-        <form onSubmit={changePassword} className="space-y-3">
-          <input
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            placeholder="Current password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-            required
-          />
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="New password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-            required
-            minLength={6}
-          />
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Confirm new password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-            required
-          />
-          <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
-            Change Password
-          </button>
-        </form>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -4716,6 +5384,9 @@ export default function Setup() {
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
               required
               autoFocus
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <div>
@@ -4745,6 +5416,9 @@ export default function Setup() {
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
               required
               minLength={12}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
             {form.password.length > 0 && passwordErrors.length > 0 && (
               <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
@@ -4762,6 +5436,9 @@ export default function Setup() {
               onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
               required
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <button type="submit" disabled={loading} className="w-full py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium">
@@ -4797,9 +5474,13 @@ import {
   RefreshCw,
   Ban,
   CheckCircle,
+  Lock,
+  Unlock,
   X,
   Check,
+  Copy,
 } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
 
 interface AdminUser {
   id: string;
@@ -4812,6 +5493,8 @@ interface AdminUser {
   telegram_chat_id: string | null;
   totp_enabled: boolean;
   last_login_at: string | null;
+  locked_until: string | null;
+  failed_login_count: number;
   created_at: string | null;
   created_by: { id: string; username: string; display_name: string } | null;
 }
@@ -4846,6 +5529,12 @@ function capitalizeRole(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+function isSuspended(user: AdminUser): boolean {
+  return !!user.locked_until && new Date(user.locked_until).getTime() > Date.now();
+}
+
+const TOP_THREE_ROLES = ["owner", "admin", "manager"];
+
 export default function UsersPage() {
   const { admin: currentAdmin } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -4862,6 +5551,7 @@ export default function UsersPage() {
   const [showTotpReset, setShowTotpReset] = useState<AdminUser | null>(null);
   const [showDisable, setShowDisable] = useState<AdminUser | null>(null);
   const [showRevoke, setShowRevoke] = useState<AdminUser | null>(null);
+  const [showUnlock, setShowUnlock] = useState<AdminUser | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -4889,6 +5579,9 @@ export default function UsersPage() {
   });
 
   const canManage = ["owner", "admin", "manager"].includes(currentAdmin?.role || "");
+  const canUnlock =
+    TOP_THREE_ROLES.includes(currentAdmin?.role || "") &&
+    (currentAdmin?.role_level == null || currentAdmin.role_level >= 60);
 
   function canManageTarget(user: AdminUser): boolean {
     if (!currentAdmin) return false;
@@ -4900,8 +5593,8 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col gap-4 h-full min-h-0">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <UsersIcon className="w-6 h-6" />
@@ -4922,7 +5615,7 @@ export default function UsersPage() {
         )}
       </div>
 
-      <div className="flex gap-3 mb-4">
+      <div className="flex gap-3 shrink-0">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -4933,38 +5626,41 @@ export default function UsersPage() {
             className="w-full pl-9 pr-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
-        <select
+        <NeuSelect
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-        >
-          <option value="">All Roles</option>
-          {Array.from(new Set(users.map((u) => u.role))).sort().map((role) => (
-            <option key={role} value={role}>{capitalizeRole(role)}</option>
-          ))}
-        </select>
-        <select
+          onChange={setRoleFilter}
+          options={[
+            { value: "", label: "All Roles" },
+            ...Array.from(new Set(users.map((u) => u.role))).sort().map((role) => ({
+              value: role,
+              label: capitalizeRole(role),
+            })),
+          ]}
+          className="w-full sm:w-auto"
+        />
+        <NeuSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-        >
-          <option value="">All Status</option>
-          <option value="active">Active</option>
-          <option value="disabled">Disabled</option>
-        </select>
+          onChange={setStatusFilter}
+          options={[
+            { value: "", label: "All Status" },
+            { value: "active", label: "Active" },
+            { value: "disabled", label: "Disabled" },
+          ]}
+          className="w-full sm:w-auto"
+        />
       </div>
 
-      <div className="neu-flat overflow-hidden text-foreground">
+      <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         <table className="w-full">
-          <thead>
-            <tr className="bg-muted/30 border-b border-border/50">
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">User</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Name</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Role</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Status</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Created By</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">2FA</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Last Login</th>
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
+            <tr>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">User</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Name</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Role</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Status</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Created By</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">2FA</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Last Login</th>
               {canManage && <th className="w-10"></th>}
             </tr>
           </thead>
@@ -4980,7 +5676,9 @@ export default function UsersPage() {
             ) : (
               filtered.map((user) => {
                 const RoleIcon = ROLE_ICONS[user.role] || Shield;
-                const manageAllowed = canManage && canManageTarget(user);
+                const manageTarget = canManage && canManageTarget(user);
+                const unlockable = canUnlock && isSuspended(user);
+                const hasActions = manageTarget || unlockable;
                 return (
                   <tr key={user.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3">
@@ -5002,6 +5700,15 @@ export default function UsersPage() {
                         {user.status === "active" ? <CheckCircle className="w-3 h-3" /> : <Ban className="w-3 h-3" />}
                         {user.status}
                       </span>
+                      {isSuspended(user) && (
+                        <span
+                          className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                          title={`Locked until ${new Date(user.locked_until!).toLocaleString()}`}
+                        >
+                          <Lock className="w-3 h-3" />
+                          Suspended
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">
                       {user.created_by
@@ -5022,7 +5729,7 @@ export default function UsersPage() {
                         ? new Date(user.last_login_at).toLocaleDateString()
                         : "Never"}
                     </td>
-                    {manageAllowed && (
+                    {hasActions && (
                       <td className="px-4 py-3 relative">
                         <button
                           onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
@@ -5034,6 +5741,8 @@ export default function UsersPage() {
                           <>
                             <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
                             <div className="absolute right-0 top-full mt-1 z-50 w-52 neu-convex py-1">
+                              {manageTarget && (
+                                <>
                               <MenuItem icon={UserCog} label="Edit" onClick={() => { setShowEdit(user); setOpenMenuId(null); }} />
                               <MenuItem icon={KeyRound} label="Configure TOTP" onClick={() => { setShowTotpSetup(user); setOpenMenuId(null); }} />
                               <MenuItem icon={RefreshCw} label="Reset Password" onClick={() => { setShowResetPassword(user); setOpenMenuId(null); }} />
@@ -5047,6 +5756,15 @@ export default function UsersPage() {
                                   loadUsers();
                                   setOpenMenuId(null);
                                 }} />
+                              )}
+                                </>
+                              )}
+                              {unlockable && (
+                                <MenuItem
+                                  icon={Unlock}
+                                  label="Unlock Suspension"
+                                  onClick={() => { setShowUnlock(user); setOpenMenuId(null); }}
+                                />
                               )}
                             </div>
                           </>
@@ -5110,6 +5828,19 @@ export default function UsersPage() {
           onConfirm={async () => {
             await apiFetch(ROUTES.ADMINAPIUSERREVOKE(showRevoke.id), { method: "POST" });
             setShowRevoke(null);
+          }}
+        />
+      )}
+      {showUnlock && (
+        <ConfirmDialog
+          title={`Unlock ${showUnlock.username}?`}
+          message="This clears the failed-login suspension immediately and resets the failed attempt counter, so the user can sign in again right away."
+          confirmLabel="Unlock"
+          onClose={() => setShowUnlock(null)}
+          onConfirm={async () => {
+            await apiFetch(ROUTES.ADMINAPIUSERUNLOCK(showUnlock.id), { method: "POST" });
+            setShowUnlock(null);
+            loadUsers();
           }}
         />
       )}
@@ -5343,14 +6074,16 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Role *</label>
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
-            {!roles.some((r) => r.name === form.role) && (
-              <option value={form.role}>{capitalizeRole(form.role)}</option>
-            )}
-            {roles.map((r) => (
-              <option key={r.id} value={r.name}>{capitalizeRole(r.name)}</option>
-            ))}
-          </select>
+          <NeuSelect
+            value={form.role}
+            onChange={(v) => setForm({ ...form, role: v })}
+            options={
+              !roles.some((r) => r.name === form.role)
+                ? [{ value: form.role, label: capitalizeRole(form.role) }, ...roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))]
+                : roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))
+            }
+            className="w-full"
+          />
         </div>
         <NeuInput label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
         <div className="flex justify-end gap-2 pt-2">
@@ -5409,20 +6142,20 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
         <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
         <div>
           <label className="block text-sm font-medium mb-1">Role</label>
-          <select
+          <NeuSelect
             value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
+            onChange={(v) => setForm({ ...form, role: v })}
+            options={
+              !roles.some((r) => r.name === form.role)
+                ? [{ value: form.role, label: capitalizeRole(form.role) }, ...roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))]
+                : roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))
+            }
             disabled={isSelf}
-            title={isSelf ? "You cannot change your own role" : undefined}
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm disabled:opacity-50"
-          >
-            {!roles.some((r) => r.name === form.role) && (
-              <option value={form.role}>{capitalizeRole(form.role)}</option>
-            )}
-            {roles.map((r) => (
-              <option key={r.id} value={r.name}>{capitalizeRole(r.name)}</option>
-            ))}
-          </select>
+            className="w-full"
+          />
+          {isSelf && (
+            <p className="mt-1 text-xs text-muted-foreground">You cannot change your own role</p>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
@@ -5437,16 +6170,19 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
 
 function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
   const [secret, setSecret] = useState("");
+  const [otpauthUri, setOtpauthUri] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"loading" | "scan" | "done">("loading");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     apiFetch(ROUTES.ADMINAPIUSERTOTPSETUP(user.id))
       .then((r) => r.json())
       .then((data) => {
         setSecret(data.secret);
+        setOtpauthUri(data.otpauth_uri || "");
         setStep("scan");
       })
       .catch(() => setError("Failed to load TOTP setup"));
@@ -5475,6 +6211,23 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
     }
   }
 
+  async function copySecret() {
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = secret;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
   return (
     <Dialog onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Configure TOTP for {user.username}</h2>
@@ -5487,19 +6240,46 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
           <p className="text-sm text-muted-foreground mb-3">
             Add this account to your authenticator app (Google Authenticator, Authy, etc.):
           </p>
+          {otpauthUri && (
+            <div className="flex justify-center mb-3">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(otpauthUri)}&size=200x200&margin=10`}
+                alt="TOTP QR Code"
+                className="rounded-xl"
+                width={200}
+                height={200}
+              />
+            </div>
+          )}
           <div className="neu-concave p-3 rounded-xl mb-3">
             <p className="text-xs text-muted-foreground mb-1">Secret (manual entry):</p>
-            <code className="text-sm font-mono break-all">{secret}</code>
+            <div className="flex items-center gap-2">
+              <code className="text-sm font-mono break-all flex-1">{secret}</code>
+              <button
+                onClick={copySecret}
+                className="p-1.5 rounded-lg hover:bg-muted/40 transition-colors shrink-0"
+                title="Copy secret"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="mb-3">
             <label className="block text-sm font-medium mb-1">Enter 6-digit code from authenticator</label>
             <input
               type="text"
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="000000"
               maxLength={6}
               className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm font-mono"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <div className="flex justify-end gap-2">
@@ -5630,6 +6410,9 @@ function PasswordInput({ label, value, onChange, visible, onToggle }: {
           onChange={(e) => onChange(e.target.value)}
           autoComplete="new-password"
           className="w-full px-3 py-2 pr-11 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
         <button
           type="button"
@@ -5668,6 +6451,9 @@ function AvailabilityInput({ label, type = "text", value, onChange, placeholder,
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className={`w-full px-3 py-2 pr-10 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 ${ring}`}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
         <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
           {status === "checking" && <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin" />}
@@ -5816,10 +6602,12 @@ function CooldownTimer({
         )}
         <div className="flex-1 min-w-0">
           <p className={`text-sm font-medium ${colors.text}`}>
-            {variant === "danger" ? "Account temporarily locked" : "Please wait"}
+            {variant === "danger" ? "Account temporarily suspended" : "Please wait"}
           </p>
           <p className={`text-xs mt-0.5 ${colors.text} opacity-80`}>
-            Too many failed attempts
+            {variant === "danger"
+              ? "Too many failed password attempts — contact an administrator for earlier access"
+              : "Too many failed attempts"}
           </p>
         </div>
         <span className={`text-2xl font-bold tabular-nums ${colors.text}`}>
@@ -5858,6 +6646,14 @@ export default function AdminLogin() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearResendTimer = useCallback(() => {
+    if (resendIntervalRef.current) {
+      clearInterval(resendIntervalRef.current);
+      resendIntervalRef.current = null;
+    }
+  }, []);
 
   // Rate limit cooldown state
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -5873,8 +6669,8 @@ export default function AdminLogin() {
   }, []);
 
   useEffect(() => {
-    return () => clearCooldownTimer();
-  }, [clearCooldownTimer]);
+    return () => { clearCooldownTimer(); clearResendTimer(); };
+  }, [clearCooldownTimer, clearResendTimer]);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) {
@@ -5937,12 +6733,13 @@ export default function AdminLogin() {
     }
   }
 
-  function startResendCooldown() {
-    setResendCooldown(60);
-    const interval = setInterval(() => {
+  function startResendCooldown(seconds: number = 60) {
+    clearResendTimer();
+    setResendCooldown(seconds);
+    resendIntervalRef.current = setInterval(() => {
       setResendCooldown((prev) => {
         if (prev <= 1) {
-          clearInterval(interval);
+          clearResendTimer();
           return 0;
         }
         return prev - 1;
@@ -5955,11 +6752,11 @@ export default function AdminLogin() {
     setError("");
     try {
       const result = await loginOtpSend(challengeId);
-      setResendCooldown(result.cooldown_seconds);
-      startResendCooldown();
+      startResendCooldown(result.cooldown_seconds);
     } catch (err) {
       if (err instanceof RateLimitError) {
         handleCooldownError(err);
+        startResendCooldown(err.retryAfter);
       } else {
         setError(err instanceof Error ? err.message : "Failed to resend code");
       }
@@ -6024,12 +6821,11 @@ export default function AdminLogin() {
           <h1 className="text-2xl font-bold">Admin Panel</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {step === "credentials" && "Sign in to your account"}
-            {step === "otp" && "Enter the code sent to Telegram"}
-            {step === "totp" && "Enter your authenticator code"}
+            {step !== "credentials" && "Two-step verification"}
           </p>
         </div>
 
-        <div className="neu-convex p-8">
+        <div className="neu-convex px-8 py-10">
           {isLocked && (
             <div className="mb-4">
               <CooldownTimer
@@ -6061,6 +6857,9 @@ export default function AdminLogin() {
                       required
                       autoFocus
                       disabled={isLocked}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
                     />
                   </div>
                   <div>
@@ -6072,12 +6871,15 @@ export default function AdminLogin() {
                       className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-night-800 dark:text-cream-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                       required
                       disabled={isLocked}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={loading || isLocked}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     {loading ? "Signing in..." : isLocked ? `Locked — wait ${cooldownSeconds}s` : "Sign In"}
@@ -6089,9 +6891,9 @@ export default function AdminLogin() {
             {step === "otp" && (
               <div className={transitioning ? "login-step-exit" : "login-step-active"}>
                 <form onSubmit={handleOtpVerify} className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>Code sent to your Telegram</span>
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
+                    <MessageSquare className="w-4 h-4 shrink-0" />
+                    <span>Enter the 6-digit code sent to your Telegram</span>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-center">OTP Code</label>
@@ -6109,7 +6911,7 @@ export default function AdminLogin() {
                   <button
                     type="submit"
                     disabled={loading || otpCode.length !== 6 || isLocked}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     {loading ? "Verifying..." : "Verify Code"}
@@ -6118,7 +6920,7 @@ export default function AdminLogin() {
                     type="button"
                     onClick={handleResendOtp}
                     disabled={resendCooldown > 0 || isLocked}
-                    className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors disabled:opacity-50"
                   >
                     {resendCooldown > 0
                       ? `Resend code in ${resendCooldown}s`
@@ -6127,7 +6929,7 @@ export default function AdminLogin() {
                   <button
                     type="button"
                     onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
-                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login
                   </button>
@@ -6138,9 +6940,9 @@ export default function AdminLogin() {
             {step === "totp" && (
               <div className={transitioning ? "login-step-exit" : "login-step-active"}>
                 <form onSubmit={handleTotpVerify} className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                    <KeyRound className="w-4 h-4" />
-                    <span>Enter code from your authenticator app</span>
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
+                    <KeyRound className="w-4 h-4 shrink-0" />
+                    <span>Enter the 6-digit code from your authenticator app</span>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-center">TOTP Code</label>
@@ -6158,7 +6960,7 @@ export default function AdminLogin() {
                   <button
                     type="submit"
                     disabled={loading || totpCode.length !== 6 || isLocked}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     {loading ? "Verifying..." : "Verify & Sign In"}
@@ -6166,7 +6968,7 @@ export default function AdminLogin() {
                   <button
                     type="button"
                     onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
-                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login
                   </button>
@@ -6369,6 +7171,18 @@ export default function Apps() {
 // File: src\pages\Contact.tsx
 import { useRef, useState } from "react";
 import { site } from "@/config/site";
+import { ROUTES } from "@/lib/routes";
+
+/** FastAPI errors: {"detail": "msg"} or {"detail": [{msg}, ...]} on 422. */
+function apiErrorMessage(data: unknown): string {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: string } | undefined;
+    return first?.msg ?? "Invalid submission.";
+  }
+  return "";
+}
 
 function PhoneIcon() {
   return (
@@ -6438,11 +7252,11 @@ export default function Contact() {
   const [form, setForm] = useState({
     name: "",
     email: "",
-    mobile: "",
+    phone: "",
     projectType: "Legal Research",
     priority: "standard",
     message: "",
-    website: "", // honeypot
+    honeypot: "", // bots fill this; humans never see it
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -6497,36 +7311,48 @@ export default function Contact() {
       const body = new FormData();
       body.append("name", form.name);
       body.append("email", form.email);
-      body.append("mobile", form.mobile);
+      body.append("phone", form.phone);
       body.append("project_type", form.projectType);
       body.append("priority", form.priority);
       body.append("message", form.message);
-      body.append("website", form.website); // honeypot
+      body.append("honeypot", form.honeypot);
       for (const file of files) {
         body.append("documents", file, file.name);
       }
-      const res = await fetch("/api/vks/api/contact", {
+      const res = await fetch(ROUTES.CONTACT, {
         method: "POST",
         body,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || "Could not send your message. Please try again.");
+      // A successful FastAPI response is the created record itself — only
+      // treat it as a failure when the HTTP status or the body says so.
+      if (!res.ok || data?.ok === false) {
+        throw new Error(
+          apiErrorMessage(data) ||
+          "Could not send your message. Please try again."
+        );
       }
       const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
       setSent(true);
       setForm({
         name: "",
         email: "",
-        mobile: "",
+        phone: "",
         projectType: "Legal Research",
         priority: "standard",
         message: "",
-        website: "",
+        honeypot: "",
       });
       setFiles([]);
       setFileWarnings(skipped.length > 0 ? skipped.map((s: { filename?: string; reason?: string }) => {
-        const reason = s.reason === "too_large" ? "exceeds the 25MB limit" : "unsupported file type";
+        const reasons: Record<string, string> = {
+          too_large: "exceeds the 25MB limit",
+          unsupported_type: "unsupported file type",
+          too_many_files: `more than ${MAX_FILES} files`,
+          empty_file: "empty file",
+          upload_failed: "could not be stored",
+        };
+        const reason = reasons[s.reason ?? ""] ?? "was rejected";
         return `${s.filename ?? "A file"} was not delivered (${reason}).`;
       }) : []);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -6658,8 +7484,8 @@ export default function Contact() {
                   </label>
                   <input
                     type="tel"
-                    value={form.mobile}
-                    onChange={(e) => setField("mobile", e.target.value)}
+                    value={form.phone}
+                    onChange={(e) => setField("phone", e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
                     placeholder="Your mobile number"
                   />
@@ -6778,8 +7604,8 @@ export default function Contact() {
               {/* Honeypot — hidden from humans, bots fill it. */}
               <input
                 type="text"
-                value={form.website}
-                onChange={(e) => setField("website", e.target.value)}
+                value={form.honeypot}
+                onChange={(e) => setField("honeypot", e.target.value)}
                 className="hidden"
                 tabIndex={-1}
                 autoComplete="off"
@@ -7049,7 +7875,8 @@ function CalendarIcon({ className = "h-5 w-5" }: { className?: string }) {
 function DiamondIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+      {/* Real diamond outline — previously a copy of the bolt path. */}
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75l8.25 8.25L12 20.25 3.75 12 12 3.75z" />
     </svg>
   );
 }
@@ -7070,16 +7897,24 @@ function BoltIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function ClockIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
 const highlightIconMap: Record<string, React.FC<{ className?: string }>> = {
   scale: ScaleIcon,
   chart: ChartIcon,
   shield: ShieldIcon,
 };
 
-const trustBadgeIconMap: Record<string, React.FC<{ className?: string }>> = {
-  calendar: CalendarIcon,
-  shield: ShieldIcon,
-  diamond: DiamondIcon,
+const heroProofIconMap: Record<string, React.FC<{ className?: string }>> = {
+  scale: ScaleIcon,
+  chart: ChartIcon,
+  clock: ClockIcon,
 };
 
 const whyHireIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -7095,9 +7930,9 @@ export default function Home() {
     <div>
       {/* ── Hero ──────────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-4 py-20 md:py-28">
-        <div className="grid md:grid-cols-5 gap-12 items-center">
+        <div className="grid md:grid-cols-5 gap-12 items-start">
           <div className="md:col-span-3">
-            <p className="text-sm font-medium text-glow-500 mb-4 tracking-wide uppercase">
+            <p className="text-sm font-medium text-glow-500 mb-4 tracking-wide">
               {site.tagline}
             </p>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-night-800 dark:text-cream-50 mb-6 leading-tight">
@@ -7115,7 +7950,7 @@ export default function Home() {
               </Link>
               <Link
                 to="/contact"
-                className="btn-outline inline-block px-6 py-3 rounded-xl border border-cream-300 dark:border-night-600 font-medium hover:bg-cream-200 dark:hover:bg-night-700 text-center"
+                className="btn-outline inline-block px-6 py-3 rounded-xl border border-night-300 dark:border-night-500 bg-white/70 dark:bg-night-800 font-medium text-center hover:border-glow-500 hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
               >
                 Get in Touch
               </Link>
@@ -7123,17 +7958,22 @@ export default function Home() {
           </div>
 
           <div className="md:col-span-2 flex flex-col gap-4">
-            {site.trustBadges.map((badge) => {
-              const Icon = trustBadgeIconMap[badge.icon] ?? ShieldIcon;
+            {site.heroProof.map((badge) => {
+              const Icon = heroProofIconMap[badge.icon] ?? ShieldIcon;
               return (
                 <div
                   key={badge.label}
                   className="card-hover flex items-center gap-4 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
                 >
-                  <Icon className="h-6 w-6" />
-                  <span className="text-sm font-medium text-night-800 dark:text-cream-100">
-                    {badge.label}
-                  </span>
+                  <Icon className="h-6 w-6 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-night-800 dark:text-cream-100">
+                      {badge.label}
+                    </p>
+                    <p className="text-xs text-night-800/60 dark:text-cream-100/60 mt-0.5">
+                      {badge.detail}
+                    </p>
+                  </div>
                 </div>
               );
             })}
@@ -7144,8 +7984,8 @@ export default function Home() {
       {/* ── Trust Badges Row (mobile) ─────────────── */}
       <section className="md:hidden max-w-6xl mx-auto px-4 pb-12">
         <div className="flex gap-3 overflow-x-auto">
-          {site.trustBadges.map((badge) => {
-            const Icon = trustBadgeIconMap[badge.icon] ?? ShieldIcon;
+          {site.heroProof.map((badge) => {
+            const Icon = heroProofIconMap[badge.icon] ?? ShieldIcon;
             return (
               <div
                 key={badge.label}
@@ -7163,6 +8003,7 @@ export default function Home() {
 
       {/* ── Highlights ────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-4 pb-20">
+        <h2 className="sr-only">What I Do</h2>
         <div className="grid md:grid-cols-3 gap-6">
           {site.highlights.map((h, i) => {
             const Icon = highlightIconMap[h.icon] ?? ScaleIcon;
@@ -7193,13 +8034,15 @@ export default function Home() {
           </h2>
           <div className="mt-3 h-1 w-12 mx-auto rounded-full bg-glow-500" />
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Flex-wrap (not grid) so the 2-card bottom row centers
+            instead of leaving a hole at the end of a 3-column track. */}
+        <div className="flex flex-wrap justify-center gap-6">
           {site.whyHireMe.map((item, i) => {
             const Icon = whyHireIconMap[item.icon] ?? ShieldIcon;
             return (
               <div
                 key={item.title}
-                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                className="reveal card-hover w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
                 style={{ transitionDelay: `${i * 80}ms` }}
               >
                 <Icon className="h-6 w-6" />

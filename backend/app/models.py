@@ -78,6 +78,7 @@ class AuditEvent(str, enum.Enum):
     message_viewed = "message_viewed"
     message_updated = "message_updated"
     message_deleted = "message_deleted"
+    message_tag_removed = "message_tag_removed"
     settings_updated = "settings_updated"
     admin_created = "admin_created"
     admin_updated = "admin_updated"

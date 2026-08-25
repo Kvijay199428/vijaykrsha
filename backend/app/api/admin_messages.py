@@ -340,6 +340,46 @@ async def add_tag(
     return {"id": str(tag.id), "name": tag.name}
 
 
+@router.delete("/{message_id}/tags/{tag_id}")
+async def remove_tag(
+    message_id: UUID,
+    tag_id: UUID,
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_TAGS)),
+    db: AsyncSession = Depends(get_db),
+):
+    msg = (await db.execute(
+        select(ContactMessage).where(ContactMessage.id == message_id)
+    )).scalar_one_or_none()
+    if not msg:
+        raise HTTPException(404, "not_found")
+
+    link = (await db.execute(
+        select(ContactMessageTag).where(
+            ContactMessageTag.message_id == message_id,
+            ContactMessageTag.tag_id == tag_id,
+        )
+    )).scalar_one_or_none()
+    if not link:
+        raise HTTPException(404, "tag_not_found")
+
+    await db.delete(link)
+
+    tag = (await db.execute(
+        select(MessageTag).where(MessageTag.id == tag_id)
+    )).scalar_one_or_none()
+    if tag:
+        usage = (await db.execute(
+            select(func.count(ContactMessageTag.message_id))
+            .where(ContactMessageTag.tag_id == tag_id)
+        )).scalar()
+        if usage == 0:
+            await db.delete(tag)
+
+    _audit(db, AuditEvent.message_tag_removed, admin.id, message_id, admin.id)
+    await db.commit()
+    return {"status": "ok"}
+
+
 def _audit(db: AsyncSession, event: AuditEvent, admin_id=None, message_id=None, target_admin_id=None):
     db.add(AuditLog(
         event=event,
