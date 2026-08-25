@@ -6,7 +6,7 @@ Usage:
   python deploy.py --dev --local              # Dev: upload + rebuild dev containers
   python deploy.py --dev --local --clean      # Dev clean redeploy (volumes kept)
   python deploy.py --dev --tailscale          # Dev via Tailscale
-  python deploy.py --prod --local             # Prod: rebuild backend + push to GitHub (prod branch)
+  python deploy.py --prod --local             # Prod: rebuild backend + push frontend to GitHub (main)
   python deploy.py --prod --tailscale         # Prod via Tailscale + push to GitHub
   python deploy.py --prod --cloudflare        # Prod: rebuild + direct Cloudflare Pages deploy
   python deploy.py --prod --local --clean     # Full clean redeploy (external volumes kept)
@@ -158,6 +158,9 @@ def deploy_docker(host, env, clean=False):
     env_file = "env/.env.dev" if env == "dev" else "env/.env.prod"
     service = "backend-dev frontend-dev" if env == "dev" else "backend-prod"
     backend_service = "backend-dev" if env == "dev" else "backend-prod"
+    # Dev serves the built SPA from nginx, so its image must be rebuilt when
+    # frontend sources change. Prod frontend ships via Cloudflare Pages.
+    build_services = "backend-dev frontend-dev" if env == "dev" else backend_service
 
     if clean:
         # IMPORTANT: scope removal to THIS compose file's services. Dev and
@@ -183,7 +186,7 @@ def deploy_docker(host, env, clean=False):
         # Build BEFORE migrating: compose run uses the existing image, so a
         # stale image would skip new migrations. Use `python -m alembic` so
         # /app is importable (the console script lacks CWD on sys.path).
-        (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} build {backend_service}", f"Building {env} backend image"),
+        (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} build {build_services}", f"Building {env} images"),
         (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} run --rm {backend_service} python -m alembic upgrade head", "Applying database migrations"),
         (f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} up -d {service}", f"Starting {env} containers"),
     ]
@@ -195,9 +198,9 @@ def deploy_docker(host, env, clean=False):
             sys.exit(1)
 
     if env == "dev":
-        ssh_run(ssh, "curl -s http://localhost:26001/admin/api/health", "Verifying backend-dev health")
+        ssh_run(ssh, "for i in $(seq 1 10); do curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26001/admin/api/health && break; sleep 3; done", "Verifying backend-dev health")
     else:
-        ssh_run(ssh, "curl -s http://localhost:26011/admin/api/health", "Verifying backend-prod health")
+        ssh_run(ssh, "for i in $(seq 1 10); do curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26011/admin/api/health && break; sleep 3; done", "Verifying backend-prod health")
 
     ssh.close()
     cleanup_zip()
@@ -297,7 +300,7 @@ Examples:
   python deploy.py --dev --local           Dev deployment via local network
   python deploy.py --dev --local --clean   Dev clean redeploy (containers only, volumes kept)
   python deploy.py --dev --tailscale       Dev deployment via Tailscale
-  python deploy.py --prod --local          Prod: rebuild backend + push to GitHub (prod branch)
+  python deploy.py --prod --local          Prod: rebuild backend + push frontend to GitHub (main)
   python deploy.py --prod --tailscale      Prod via Tailscale + push to GitHub
   python deploy.py --prod --cloudflare     Prod: rebuild + direct Cloudflare Pages deploy
   python deploy.py --prod --local --clean  Full clean redeploy (images removed; external volumes kept)
@@ -309,8 +312,8 @@ Examples:
     network.add_argument("--tailscale", action="store_true", help=f"Use Tailscale ({TAILSCALE_HOST})")
 
     env = parser.add_mutually_exclusive_group()
-    env.add_argument("--dev", action="store_true", help="Deploy dev environment (branch: main)")
-    env.add_argument("--prod", action="store_true", help="Deploy production environment (branch: prod)")
+    env.add_argument("--dev", action="store_true", help="Deploy dev environment")
+    env.add_argument("--prod", action="store_true", help="Deploy production environment (frontend pushed to main)")
 
     parser.add_argument("--clean", action="store_true", help="Clean deploy: remove old containers first (dev keeps volumes; prod also removes images)")
     parser.add_argument("--cloudflare", action="store_true", help="Also deploy frontend directly to Cloudflare Pages (prod only)")

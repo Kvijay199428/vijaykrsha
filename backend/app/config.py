@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # Lockout
     MAX_LOGIN_ATTEMPTS: int = 5
-    LOCKOUT_MINUTES: int = 15
+    LOCKOUT_MINUTES: int = 30
     LOCKOUT_SHORT_SECONDS: int = 30
     LOCKOUT_SHORT_THRESHOLD: int = 3
 

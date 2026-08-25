@@ -28,6 +28,7 @@ export const ROUTES = {
   ADMINAPIUSERDISABLE: (id: string) => `${API}/admin/api/users/${id}/disable`,
   ADMINAPIUSERENABLE: (id: string) => `${API}/admin/api/users/${id}/enable`,
   ADMINAPIUSERREVOKE: (id: string) => `${API}/admin/api/users/${id}/revoke-sessions`,
+  ADMINAPIUSERUNLOCK: (id: string) => `${API}/admin/api/users/${id}/unlock`,
   ADMINAPIUSERRESETPW: (id: string) => `${API}/admin/api/users/${id}/reset-password`,
 
   // Per-user TOTP

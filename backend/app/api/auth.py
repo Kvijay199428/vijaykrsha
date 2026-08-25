@@ -47,6 +47,8 @@ settings = get_settings()
 logger = structlog.get_logger()
 router = APIRouter(prefix="/admin/api/auth", tags=["auth"])
 
+_DUMMY_PASSWORD_HASH = hash_password("::timing-equalizer::")
+
 
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=100)
@@ -260,6 +262,8 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     admin = result.scalar_one_or_none()
 
     if not admin or not verify_password(body.password, admin.password_hash):
+        if not admin:
+            verify_password(body.password, _DUMMY_PASSWORD_HASH)
         if admin:
             admin.failed_login_count += 1
             lockout_dur = _get_lockout_duration(admin.failed_login_count)
@@ -296,7 +300,11 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             metadata={"remaining_seconds": remaining},
         )
         raise HTTPException(423, detail={
-            "detail": "Account is temporarily locked due to too many failed attempts.",
+            "detail": (
+                f"Account temporarily suspended due to repeated failed password attempts. "
+                f"Try again in {max(remaining // 60, 1)} minute(s), or contact an administrator "
+                f"to restore access sooner."
+            ),
             "type": "account_locked",
             "retry_after": remaining,
         })

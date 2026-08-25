@@ -115,6 +115,7 @@ class SecurityEventType(str, enum.Enum):
     bot_suspected = "bot_suspected"
     suspicious_request = "suspicious_request"
     account_locked = "account_locked"
+    account_unlocked = "account_unlocked"
 
 
 class SecuritySeverity(str, enum.Enum):

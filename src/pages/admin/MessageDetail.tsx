@@ -152,7 +152,7 @@ export default function MessageDetail() {
               {message.attachments.map((att) => (
                 <a
                   key={att.id}
-                  href={att.url}
+                  href={`/api${att.url}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-3 py-1.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors"

@@ -19,6 +19,8 @@ import {
   RefreshCw,
   Ban,
   CheckCircle,
+  Lock,
+  Unlock,
   X,
   Check,
 } from "lucide-react";
@@ -34,6 +36,8 @@ interface AdminUser {
   telegram_chat_id: string | null;
   totp_enabled: boolean;
   last_login_at: string | null;
+  locked_until: string | null;
+  failed_login_count: number;
   created_at: string | null;
   created_by: { id: string; username: string; display_name: string } | null;
 }
@@ -68,6 +72,12 @@ function capitalizeRole(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+function isSuspended(user: AdminUser): boolean {
+  return !!user.locked_until && new Date(user.locked_until).getTime() > Date.now();
+}
+
+const TOP_THREE_ROLES = ["owner", "admin", "manager"];
+
 export default function UsersPage() {
   const { admin: currentAdmin } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -84,6 +94,7 @@ export default function UsersPage() {
   const [showTotpReset, setShowTotpReset] = useState<AdminUser | null>(null);
   const [showDisable, setShowDisable] = useState<AdminUser | null>(null);
   const [showRevoke, setShowRevoke] = useState<AdminUser | null>(null);
+  const [showUnlock, setShowUnlock] = useState<AdminUser | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -111,6 +122,9 @@ export default function UsersPage() {
   });
 
   const canManage = ["owner", "admin", "manager"].includes(currentAdmin?.role || "");
+  const canUnlock =
+    TOP_THREE_ROLES.includes(currentAdmin?.role || "") &&
+    (currentAdmin?.role_level == null || currentAdmin.role_level >= 60);
 
   function canManageTarget(user: AdminUser): boolean {
     if (!currentAdmin) return false;
@@ -202,7 +216,9 @@ export default function UsersPage() {
             ) : (
               filtered.map((user) => {
                 const RoleIcon = ROLE_ICONS[user.role] || Shield;
-                const manageAllowed = canManage && canManageTarget(user);
+                const manageTarget = canManage && canManageTarget(user);
+                const unlockable = canUnlock && isSuspended(user);
+                const hasActions = manageTarget || unlockable;
                 return (
                   <tr key={user.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
                     <td className="px-4 py-3">
@@ -224,6 +240,15 @@ export default function UsersPage() {
                         {user.status === "active" ? <CheckCircle className="w-3 h-3" /> : <Ban className="w-3 h-3" />}
                         {user.status}
                       </span>
+                      {isSuspended(user) && (
+                        <span
+                          className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                          title={`Locked until ${new Date(user.locked_until!).toLocaleString()}`}
+                        >
+                          <Lock className="w-3 h-3" />
+                          Suspended
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-muted-foreground">
                       {user.created_by
@@ -244,7 +269,7 @@ export default function UsersPage() {
                         ? new Date(user.last_login_at).toLocaleDateString()
                         : "Never"}
                     </td>
-                    {manageAllowed && (
+                    {hasActions && (
                       <td className="px-4 py-3 relative">
                         <button
                           onClick={() => setOpenMenuId(openMenuId === user.id ? null : user.id)}
@@ -256,6 +281,8 @@ export default function UsersPage() {
                           <>
                             <div className="fixed inset-0 z-40" onClick={() => setOpenMenuId(null)} />
                             <div className="absolute right-0 top-full mt-1 z-50 w-52 neu-convex py-1">
+                              {manageTarget && (
+                                <>
                               <MenuItem icon={UserCog} label="Edit" onClick={() => { setShowEdit(user); setOpenMenuId(null); }} />
                               <MenuItem icon={KeyRound} label="Configure TOTP" onClick={() => { setShowTotpSetup(user); setOpenMenuId(null); }} />
                               <MenuItem icon={RefreshCw} label="Reset Password" onClick={() => { setShowResetPassword(user); setOpenMenuId(null); }} />
@@ -269,6 +296,15 @@ export default function UsersPage() {
                                   loadUsers();
                                   setOpenMenuId(null);
                                 }} />
+                              )}
+                                </>
+                              )}
+                              {unlockable && (
+                                <MenuItem
+                                  icon={Unlock}
+                                  label="Unlock Suspension"
+                                  onClick={() => { setShowUnlock(user); setOpenMenuId(null); }}
+                                />
                               )}
                             </div>
                           </>
@@ -332,6 +368,19 @@ export default function UsersPage() {
           onConfirm={async () => {
             await apiFetch(ROUTES.ADMINAPIUSERREVOKE(showRevoke.id), { method: "POST" });
             setShowRevoke(null);
+          }}
+        />
+      )}
+      {showUnlock && (
+        <ConfirmDialog
+          title={`Unlock ${showUnlock.username}?`}
+          message="This clears the failed-login suspension immediately and resets the failed attempt counter, so the user can sign in again right away."
+          confirmLabel="Unlock"
+          onClose={() => setShowUnlock(null)}
+          onConfirm={async () => {
+            await apiFetch(ROUTES.ADMINAPIUSERUNLOCK(showUnlock.id), { method: "POST" });
+            setShowUnlock(null);
+            loadUsers();
           }}
         />
       )}

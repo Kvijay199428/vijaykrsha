@@ -70,6 +70,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function friendlyAuthError(msg: string): string {
+  if (msg === "invalid_credentials") {
+    return "Incorrect username or password. Please enter the correct username and password.";
+  }
+  if (msg === "account_disabled") {
+    return "This account has been disabled. Please contact an administrator.";
+  }
+  return msg;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -111,11 +121,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, remember_me: rememberMe }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Login failed" }));
-        const msg = typeof err.detail === "string" ? err.detail : "Login failed";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "Login failed"
+        );
         if (response.status === 429 || response.status === 423) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {
@@ -137,11 +150,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_id: challengeId }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "Failed to send code" }));
-        const msg = typeof err.detail === "string" ? err.detail : "Failed to send code";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "Failed to send code"
+        );
         if (response.status === 429) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {
@@ -163,11 +179,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_id: challengeId, code }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "OTP verification failed" }));
-        const msg = typeof err.detail === "string" ? err.detail : "OTP verification failed";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "OTP verification failed"
+        );
         if (response.status === 429) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {
@@ -195,11 +214,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ challenge_id: challengeId, code }),
+        redirectOn401: false,
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ detail: "TOTP verification failed" }));
-        const msg = typeof err.detail === "string" ? err.detail : "TOTP verification failed";
+        const msg = friendlyAuthError(
+          typeof err.detail === "string" ? err.detail : "TOTP verification failed"
+        );
         if (response.status === 429) {
           const data = err as RateLimitDetail;
           if (data.retry_after) {

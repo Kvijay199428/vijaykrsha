@@ -51,10 +51,12 @@ function CooldownTimer({
         )}
         <div className="flex-1 min-w-0">
           <p className={`text-sm font-medium ${colors.text}`}>
-            {variant === "danger" ? "Account temporarily locked" : "Please wait"}
+            {variant === "danger" ? "Account temporarily suspended" : "Please wait"}
           </p>
           <p className={`text-xs mt-0.5 ${colors.text} opacity-80`}>
-            Too many failed attempts
+            {variant === "danger"
+              ? "Too many failed password attempts — contact an administrator for earlier access"
+              : "Too many failed attempts"}
           </p>
         </div>
         <span className={`text-2xl font-bold tabular-nums ${colors.text}`}>

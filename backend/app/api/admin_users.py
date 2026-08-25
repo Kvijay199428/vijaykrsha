@@ -113,6 +113,8 @@ def _user_to_dict(
         "telegram_username": user.telegram_username,
         "totp_enabled": user.totp_enabled,
         "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+        "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+        "failed_login_count": user.failed_login_count or 0,
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "created_by": (
             {
@@ -420,6 +422,51 @@ async def enable_user(
 
     await db.commit()
     return {"status": "enabled"}
+
+
+@router.post("/users/{user_id}/unlock")
+async def unlock_user(
+    user_id: str,
+    request: Request,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    actor_level = await get_admin_role_level(db, admin)
+    if actor_level is None or actor_level < 60:
+        raise HTTPException(403, "unlock_requires_top_three_ranks")
+
+    result = await db.execute(select(AdminUser).where(AdminUser.id == UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "user_not_found")
+
+    was_locked = bool(user.locked_until) or (user.failed_login_count or 0) > 0
+    user.locked_until = None
+    user.failed_login_count = 0
+
+    from app.security.devices import log_security_event
+    from app.models import SecurityEventType
+    await log_security_event(
+        db, SecurityEventType.account_unlocked, severity="medium",
+        admin_id=user.id,
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent", ""),
+        path=request.url.path, method="POST",
+        reason=f"Suspension revoked by {admin.username}",
+        metadata={
+            "actor_admin_id": str(admin.id),
+            "actor_username": admin.username,
+            "target_username": user.username,
+            "was_locked": was_locked,
+        },
+    )
+
+    _audit(db, AuditEvent.admin_updated, actor_id=admin.id, target_id=user.id,
+           ip=_client_ip(request),
+           meta={"target_username": user.username, "action": "unlocked"})
+
+    await db.commit()
+    return {"status": "unlocked", "was_locked": was_locked}
 
 
 @router.post("/users/{user_id}/revoke-sessions")
