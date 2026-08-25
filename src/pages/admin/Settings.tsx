@@ -145,7 +145,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="flex flex-col gap-4 h-full min-h-0 max-w-2xl overflow-auto">
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
         <p className="text-muted-foreground text-sm">Manage your security settings</p>
