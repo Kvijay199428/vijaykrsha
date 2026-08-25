@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { Search, Paperclip, ChevronRight } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
 
 interface Message {
   id: string;
@@ -59,18 +60,19 @@ export default function Inbox() {
             className="w-full pl-10 pr-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
           />
         </div>
-        <select
+        <NeuSelect
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-        >
-          <option value="">All Statuses</option>
-          <option value="new">New</option>
-          <option value="in_progress">In Progress</option>
-          <option value="waiting">Waiting</option>
-          <option value="resolved">Resolved</option>
-          <option value="spam">Spam</option>
-        </select>
+          onChange={(v) => { setStatusFilter(v); setPage(1); }}
+          options={[
+            { value: "", label: "All Statuses" },
+            { value: "new", label: "New" },
+            { value: "in_progress", label: "In Progress" },
+            { value: "waiting", label: "Waiting" },
+            { value: "resolved", label: "Resolved" },
+            { value: "spam", label: "Spam" },
+          ]}
+          className="w-full sm:w-auto"
+        />
       </div>
 
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">

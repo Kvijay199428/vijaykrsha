@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { ArrowLeft, Plus, Tag, MessageSquare, Paperclip } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
 
 interface Note {
   id: string;
@@ -119,19 +120,27 @@ export default function MessageDetail() {
           </p>
         </div>
         <div className="flex gap-2">
-          <select value={status} onChange={(e) => { setStatus(e.target.value); updateField("status", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm">
-            <option value="new">New</option>
-            <option value="in_progress">In Progress</option>
-            <option value="waiting">Waiting</option>
-            <option value="resolved">Resolved</option>
-            <option value="spam">Spam</option>
-          </select>
-          <select value={priority} onChange={(e) => { setPriority(e.target.value); updateField("priority", e.target.value); }} className="px-3 py-1 neu-concave rounded-xl bg-transparent text-foreground text-sm">
-            <option value="low">Low</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
-          </select>
+          <NeuSelect
+            value={status}
+            onChange={(v) => { setStatus(v); updateField("status", v); }}
+            options={[
+              { value: "new", label: "New" },
+              { value: "in_progress", label: "In Progress" },
+              { value: "waiting", label: "Waiting" },
+              { value: "resolved", label: "Resolved" },
+              { value: "spam", label: "Spam" },
+            ]}
+          />
+          <NeuSelect
+            value={priority}
+            onChange={(v) => { setPriority(v); updateField("priority", v); }}
+            options={[
+              { value: "low", label: "Low" },
+              { value: "normal", label: "Normal" },
+              { value: "high", label: "High" },
+              { value: "urgent", label: "Urgent" },
+            ]}
+          />
         </div>
       </div>
 

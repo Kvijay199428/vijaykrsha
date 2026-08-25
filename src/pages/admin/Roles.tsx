@@ -10,6 +10,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
 
 interface RoleItem {
   id: string;
@@ -303,19 +304,18 @@ function CreateRoleDialog({ myLevel, permissions, onClose, onCreated }: {
           <label className="block text-sm font-medium mb-1">Rank *</label>
           <div className="flex gap-2">
             {availablePresets.length > 0 && (
-              <select
+              <NeuSelect
                 value={rankMode === "preset" ? String(presetLevel) : "custom"}
-                onChange={(e) => {
-                  if (e.target.value === "custom") setRankMode("custom");
-                  else { setRankMode("preset"); setPresetLevel(parseInt(e.target.value, 10)); }
+                onChange={(v) => {
+                  if (v === "custom") setRankMode("custom");
+                  else { setRankMode("preset"); setPresetLevel(parseInt(v, 10)); }
                 }}
-                className="flex-1 px-3 py-2 neu-concave rounded-xl bg-transparent text-sm"
-              >
-                {availablePresets.map((p) => (
-                  <option key={p.level} value={p.level}>{p.label}</option>
-                ))}
-                <option value="custom">Custom…</option>
-              </select>
+                options={[
+                  ...availablePresets.map((p) => ({ value: String(p.level), label: p.label })),
+                  { value: "custom", label: "Custom\u2026" },
+                ]}
+                className="flex-1"
+              />
             )}
             {(rankMode === "custom" || availablePresets.length === 0) && (
               <input

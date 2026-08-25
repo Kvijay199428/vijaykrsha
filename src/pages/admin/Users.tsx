@@ -25,6 +25,7 @@ import {
   Check,
   Copy,
 } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
 
 interface AdminUser {
   id: string;
@@ -170,25 +171,28 @@ export default function UsersPage() {
             className="w-full pl-9 pr-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
-        <select
+        <NeuSelect
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-        >
-          <option value="">All Roles</option>
-          {Array.from(new Set(users.map((u) => u.role))).sort().map((role) => (
-            <option key={role} value={role}>{capitalizeRole(role)}</option>
-          ))}
-        </select>
-        <select
+          onChange={setRoleFilter}
+          options={[
+            { value: "", label: "All Roles" },
+            ...Array.from(new Set(users.map((u) => u.role))).sort().map((role) => ({
+              value: role,
+              label: capitalizeRole(role),
+            })),
+          ]}
+          className="w-full sm:w-auto"
+        />
+        <NeuSelect
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-        >
-          <option value="">All Status</option>
-          <option value="active">Active</option>
-          <option value="disabled">Disabled</option>
-        </select>
+          onChange={setStatusFilter}
+          options={[
+            { value: "", label: "All Status" },
+            { value: "active", label: "Active" },
+            { value: "disabled", label: "Disabled" },
+          ]}
+          className="w-full sm:w-auto"
+        />
       </div>
 
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
@@ -615,14 +619,16 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Role *</label>
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm">
-            {!roles.some((r) => r.name === form.role) && (
-              <option value={form.role}>{capitalizeRole(form.role)}</option>
-            )}
-            {roles.map((r) => (
-              <option key={r.id} value={r.name}>{capitalizeRole(r.name)}</option>
-            ))}
-          </select>
+          <NeuSelect
+            value={form.role}
+            onChange={(v) => setForm({ ...form, role: v })}
+            options={
+              !roles.some((r) => r.name === form.role)
+                ? [{ value: form.role, label: capitalizeRole(form.role) }, ...roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))]
+                : roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))
+            }
+            className="w-full"
+          />
         </div>
         <NeuInput label="Telegram Chat ID" value={form.telegram_chat_id} onChange={(v) => setForm({ ...form, telegram_chat_id: v })} placeholder="e.g. 123456789" />
         <div className="flex justify-end gap-2 pt-2">
@@ -681,20 +687,20 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
         <NeuInput label="Email" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
         <div>
           <label className="block text-sm font-medium mb-1">Role</label>
-          <select
+          <NeuSelect
             value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
+            onChange={(v) => setForm({ ...form, role: v })}
+            options={
+              !roles.some((r) => r.name === form.role)
+                ? [{ value: form.role, label: capitalizeRole(form.role) }, ...roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))]
+                : roles.map((r) => ({ value: r.name, label: capitalizeRole(r.name) }))
+            }
             disabled={isSelf}
-            title={isSelf ? "You cannot change your own role" : undefined}
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-sm disabled:opacity-50"
-          >
-            {!roles.some((r) => r.name === form.role) && (
-              <option value={form.role}>{capitalizeRole(form.role)}</option>
-            )}
-            {roles.map((r) => (
-              <option key={r.id} value={r.name}>{capitalizeRole(r.name)}</option>
-            ))}
-          </select>
+            className="w-full"
+          />
+          {isSelf && (
+            <p className="mt-1 text-xs text-muted-foreground">You cannot change your own role</p>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm neu-btn text-foreground">Cancel</button>
