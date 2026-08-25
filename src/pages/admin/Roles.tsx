@@ -132,7 +132,7 @@ export default function RolesPage() {
 
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         <table className="w-full">
-          <thead className="sticky top-0 z-10 border-b border-border/50 bg-muted/30">
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
             <tr>
               <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Role</th>
               <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Type</th>

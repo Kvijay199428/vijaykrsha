@@ -23,6 +23,7 @@ import {
   Unlock,
   X,
   Check,
+  Copy,
 } from "lucide-react";
 
 interface AdminUser {
@@ -192,7 +193,7 @@ export default function UsersPage() {
 
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         <table className="w-full">
-          <thead className="sticky top-0 z-10 border-b border-border/50 bg-muted/30">
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
             <tr>
               <th className="text-left px-4 py-3 text-sm font-bold text-foreground">User</th>
               <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Name</th>
@@ -708,16 +709,19 @@ function EditUserDialog({ user, onClose, onUpdated }: { user: AdminUser; onClose
 
 function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
   const [secret, setSecret] = useState("");
+  const [otpauthUri, setOtpauthUri] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"loading" | "scan" | "done">("loading");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     apiFetch(ROUTES.ADMINAPIUSERTOTPSETUP(user.id))
       .then((r) => r.json())
       .then((data) => {
         setSecret(data.secret);
+        setOtpauthUri(data.otpauth_uri || "");
         setStep("scan");
       })
       .catch(() => setError("Failed to load TOTP setup"));
@@ -746,6 +750,23 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
     }
   }
 
+  async function copySecret() {
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = secret;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
   return (
     <Dialog onClose={onClose}>
       <h2 className="text-lg font-semibold mb-4">Configure TOTP for {user.username}</h2>
@@ -758,16 +779,40 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
           <p className="text-sm text-muted-foreground mb-3">
             Add this account to your authenticator app (Google Authenticator, Authy, etc.):
           </p>
+          {otpauthUri && (
+            <div className="flex justify-center mb-3">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(otpauthUri)}&size=200x200&margin=10`}
+                alt="TOTP QR Code"
+                className="rounded-xl"
+                width={200}
+                height={200}
+              />
+            </div>
+          )}
           <div className="neu-concave p-3 rounded-xl mb-3">
             <p className="text-xs text-muted-foreground mb-1">Secret (manual entry):</p>
-            <code className="text-sm font-mono break-all">{secret}</code>
+            <div className="flex items-center gap-2">
+              <code className="text-sm font-mono break-all flex-1">{secret}</code>
+              <button
+                onClick={copySecret}
+                className="p-1.5 rounded-lg hover:bg-muted/40 transition-colors shrink-0"
+                title="Copy secret"
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4 text-muted-foreground" />
+                )}
+              </button>
+            </div>
           </div>
           <div className="mb-3">
             <label className="block text-sm font-medium mb-1">Enter 6-digit code from authenticator</label>
             <input
               type="text"
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="000000"
               maxLength={6}
               className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm font-mono"

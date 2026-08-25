@@ -52,7 +52,7 @@ export default function AuditLogs() {
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
         ) : (
           <table className="w-full">
-            <thead className="sticky top-0 z-10 border-b border-border/50 bg-muted/30">
+            <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
               <tr>
                 <th className="text-left p-3 text-sm font-bold text-foreground">Event</th>
                 <th className="text-left p-3 text-sm font-bold text-foreground">Actor</th>

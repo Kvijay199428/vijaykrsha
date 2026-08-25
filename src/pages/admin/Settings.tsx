@@ -2,16 +2,18 @@ import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { getPasswordErrors } from "@/lib/passwordValidation";
-import { Shield, Lock } from "lucide-react";
+import { Shield, Lock, Copy, Check } from "lucide-react";
 
 export default function Settings() {
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [totpSecret, setTotpSecret] = useState("");
+  const [provisioningUri, setProvisioningUri] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -31,6 +33,7 @@ export default function Settings() {
       const res = await apiFetch(ROUTES.ADMINAPITOTPSETUP);
       const data = await res.json();
       setTotpSecret(data.secret);
+      setProvisioningUri(data.provisioning_uri || "");
       setShowSetup(true);
     } catch {
       setError("Failed to load TOTP setup");
@@ -55,11 +58,30 @@ export default function Settings() {
       }
       setTotpEnabled(true);
       setShowSetup(false);
+      setProvisioningUri("");
       setMsg("TOTP enabled successfully");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function copySecret() {
+    try {
+      await navigator.clipboard.writeText(totpSecret);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+      const el = document.createElement("textarea");
+      el.value = totpSecret;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   }
 
@@ -169,9 +191,33 @@ export default function Settings() {
           )
         ) : (
           <div className="space-y-4">
+            {provisioningUri && (
+              <div className="flex justify-center">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(provisioningUri)}&size=200x200&margin=10`}
+                  alt="TOTP QR Code"
+                  className="rounded-xl"
+                  width={200}
+                  height={200}
+                />
+              </div>
+            )}
             <div className="neu-concave p-4 rounded-xl">
               <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
-              <code className="text-sm font-mono break-all">{totpSecret}</code>
+              <div className="flex items-center gap-2">
+                <code className="text-sm font-mono break-all flex-1">{totpSecret}</code>
+                <button
+                  onClick={copySecret}
+                  className="p-1.5 rounded-lg hover:bg-muted/40 transition-colors shrink-0"
+                  title="Copy secret"
+                >
+                  {copied ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+              </div>
             </div>
             <form onSubmit={enableTotp} className="flex gap-2">
               <input

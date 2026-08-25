@@ -18,6 +18,7 @@ export default function OtpDigitInput({
   error = false,
 }: OtpDigitInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const ignoreNextChange = useRef(false);
   const [digits, setDigits] = useState<string[]>(() =>
     Array.from({ length }, (_, i) => value[i] || "")
   );
@@ -49,6 +50,10 @@ export default function OtpDigitInput({
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (ignoreNextChange.current) {
+        ignoreNextChange.current = false;
+        return;
+      }
       const raw = e.target.value.replace(/\D/g, "").slice(0, length);
       if (raw.length > value.length) {
         triggerPop(raw.length - 1);
@@ -65,6 +70,7 @@ export default function OtpDigitInput({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Backspace" && value.length > 0) {
+        ignoreNextChange.current = true;
         onChange(value.slice(0, -1));
       }
     },
