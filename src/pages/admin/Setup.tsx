@@ -100,6 +100,9 @@ export default function Setup() {
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
               required
               autoFocus
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <div>
@@ -129,6 +132,9 @@ export default function Setup() {
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
               required
               minLength={12}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
             {form.password.length > 0 && passwordErrors.length > 0 && (
               <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
@@ -146,6 +152,9 @@ export default function Setup() {
               onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
               className="w-full mt-1 px-3 py-2 border rounded-lg text-sm"
               required
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <button type="submit" disabled={loading} className="w-full py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium">

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { ArrowLeft, Send, Tag, MessageSquare } from "lucide-react";
+import { ArrowLeft, Send, Tag, MessageSquare, Paperclip } from "lucide-react";
 
 interface Note {
   id: string;
@@ -15,6 +15,14 @@ interface Tag_ {
   id: string;
   name: string;
   color: string;
+}
+
+interface Attachment {
+  id: string;
+  filename: string;
+  url: string;
+  size?: number;
+  content_type?: string;
 }
 
 interface Message {
@@ -32,6 +40,7 @@ interface Message {
   created_at: string;
   notes: Note[];
   tags: Tag_[];
+  attachments?: Attachment[];
 }
 
 export default function MessageDetail() {
@@ -133,6 +142,33 @@ export default function MessageDetail() {
           <span>Received: {new Date(message.created_at).toLocaleString()}</span>
           {message.sender_phone && <span>Phone: {message.sender_phone}</span>}
         </div>
+
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-border/50">
+            <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm">
+              <Paperclip className="h-4 w-4" /> Attachments
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {message.attachments.map((att) => (
+                <a
+                  key={att.id}
+                  href={att.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors"
+                  title={att.content_type ?? "Download"}
+                >
+                  <span className="truncate max-w-[200px]">{att.filename}</span>
+                  {typeof att.size === "number" && (
+                    <span className="text-xs text-muted-foreground">
+                      {(att.size / 1024).toFixed(1)} KB
+                    </span>
+                  )}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="neu-flat rounded-xl p-6">

@@ -722,6 +722,9 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
               placeholder="000000"
               maxLength={6}
               className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm font-mono"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </div>
           <div className="flex justify-end gap-2">
@@ -852,6 +855,9 @@ function PasswordInput({ label, value, onChange, visible, onToggle }: {
           onChange={(e) => onChange(e.target.value)}
           autoComplete="new-password"
           className="w-full px-3 py-2 pr-11 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
         <button
           type="button"
@@ -890,6 +896,9 @@ function AvailabilityInput({ label, type = "text", value, onChange, placeholder,
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className={`w-full px-3 py-2 pr-10 neu-concave rounded-xl bg-transparent text-foreground text-sm focus:outline-none focus:ring-2 ${ring}`}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
         <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
           {status === "checking" && <RefreshCw className="w-4 h-4 text-muted-foreground animate-spin" />}

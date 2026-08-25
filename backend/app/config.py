@@ -34,7 +34,11 @@ class Settings(BaseSettings):
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadmin"
     S3_USE_SSL: bool = False
-    MAX_ATTACHMENT_BYTES: int = 10_485_760
+    MAX_ATTACHMENT_BYTES: int = 26_214_400  # 25 MiB per file
+    MAX_CONTACT_BODY_BYTES: int = 146_800_640  # 5 x 25 MiB + form overhead
+    ALLOWED_ATTACHMENT_EXTENSIONS: str = (
+        "pdf,doc,docx,xls,xlsx,csv,txt,png,jpg,jpeg,gif,webp"
+    )
 
     SESSION_IDLE_MINUTES: int = 30
     SESSION_ABSOLUTE_HOURS: int = 12
@@ -112,6 +116,12 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def allowed_attachment_extensions(self) -> frozenset[str]:
+        return frozenset(
+            e.strip().lower() for e in self.ALLOWED_ATTACHMENT_EXTENSIONS.split(",") if e.strip()
+        )
 
 
 @lru_cache

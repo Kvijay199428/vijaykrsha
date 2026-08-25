@@ -84,7 +84,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-50 bg-cream-50/80 dark:bg-night-900/80 backdrop-blur-md border-b border-cream-200 dark:border-night-700">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link to="/" className="font-bold text-lg text-glow-600 dark:text-glow-400">
-            <span className="typing-text">VIJAYKRSHA.ONLINE</span>
+            <span className="typing-text">vijaykrsha.online</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
@@ -158,7 +158,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Centered Tagline + WhatsApp */}
           <div className="flex flex-col items-center mb-10">
             <p className="font-bold text-lg text-glow-600 dark:text-glow-400 mb-1">
-              VIJAYKRSHA.ONLINE
+              vijaykrsha.online
             </p>
             <p className="text-sm text-night-800/50 dark:text-cream-100/50 mb-3">
               Legal Research &bull; Contract Drafting &bull; Legal Technology
@@ -217,27 +217,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <p className="footer-heading">Contact</p>
               <ul className="space-y-2 text-sm text-night-800/60 dark:text-cream-100/60">
                 <li>{site.contact.phone}</li>
-                <li>{site.contact.email}</li>
+                <li className="[overflow-wrap:anywhere]">{site.contact.email}</li>
                 <li>{site.contact.location}</li>
               </ul>
             </div>
 
-            {/* Col 4: Trust */}
+            {/* Col 4: Trust — plain text like the other columns */}
             <div>
               <p className="footer-heading">Trust</p>
               <ul className="space-y-2 text-sm text-night-800/60 dark:text-cream-100/60">
-                <li className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
-                  NDA by Default
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
-                  3+ Years Experience
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-glow-500 shrink-0" />
-                  Remote Collaboration
-                </li>
+                <li>NDA by Default</li>
+                <li>3+ Years Experience</li>
+                <li>Remote Collaboration</li>
               </ul>
             </div>
           </div>

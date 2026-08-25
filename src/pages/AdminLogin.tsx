@@ -259,12 +259,11 @@ export default function AdminLogin() {
           <h1 className="text-2xl font-bold">Admin Panel</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {step === "credentials" && "Sign in to your account"}
-            {step === "otp" && "Enter the code sent to Telegram"}
-            {step === "totp" && "Enter your authenticator code"}
+            {step !== "credentials" && "Two-step verification"}
           </p>
         </div>
 
-        <div className="neu-convex p-8">
+        <div className="neu-convex px-8 py-10">
           {isLocked && (
             <div className="mb-4">
               <CooldownTimer
@@ -296,6 +295,9 @@ export default function AdminLogin() {
                       required
                       autoFocus
                       disabled={isLocked}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
                     />
                   </div>
                   <div>
@@ -307,12 +309,15 @@ export default function AdminLogin() {
                       className="w-full px-4 py-2.5 neu-concave rounded-xl bg-transparent text-night-800 dark:text-cream-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                       required
                       disabled={isLocked}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
                     />
                   </div>
                   <button
                     type="submit"
                     disabled={loading || isLocked}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     {loading ? "Signing in..." : isLocked ? `Locked — wait ${cooldownSeconds}s` : "Sign In"}
@@ -324,9 +329,9 @@ export default function AdminLogin() {
             {step === "otp" && (
               <div className={transitioning ? "login-step-exit" : "login-step-active"}>
                 <form onSubmit={handleOtpVerify} className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>Code sent to your Telegram</span>
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
+                    <MessageSquare className="w-4 h-4 shrink-0" />
+                    <span>Enter the 6-digit code sent to your Telegram</span>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-center">OTP Code</label>
@@ -344,7 +349,7 @@ export default function AdminLogin() {
                   <button
                     type="submit"
                     disabled={loading || otpCode.length !== 6 || isLocked}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     {loading ? "Verifying..." : "Verify Code"}
@@ -353,7 +358,7 @@ export default function AdminLogin() {
                     type="button"
                     onClick={handleResendOtp}
                     disabled={resendCooldown > 0 || isLocked}
-                    className="w-full text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors disabled:opacity-50"
                   >
                     {resendCooldown > 0
                       ? `Resend code in ${resendCooldown}s`
@@ -362,7 +367,7 @@ export default function AdminLogin() {
                   <button
                     type="button"
                     onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
-                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login
                   </button>
@@ -373,9 +378,9 @@ export default function AdminLogin() {
             {step === "totp" && (
               <div className={transitioning ? "login-step-exit" : "login-step-active"}>
                 <form onSubmit={handleTotpVerify} className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                    <KeyRound className="w-4 h-4" />
-                    <span>Enter code from your authenticator app</span>
+                  <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
+                    <KeyRound className="w-4 h-4 shrink-0" />
+                    <span>Enter the 6-digit code from your authenticator app</span>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-center">TOTP Code</label>
@@ -393,7 +398,7 @@ export default function AdminLogin() {
                   <button
                     type="submit"
                     disabled={loading || totpCode.length !== 6 || isLocked}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 neu-btn text-primary-foreground font-semibold text-sm disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     {loading ? "Verifying..." : "Verify & Sign In"}
@@ -401,7 +406,7 @@ export default function AdminLogin() {
                   <button
                     type="button"
                     onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
-                    className="w-full text-sm text-muted-foreground hover:text-foreground"
+                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login
                   </button>

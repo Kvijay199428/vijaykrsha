@@ -1,5 +1,17 @@
 import { useRef, useState } from "react";
 import { site } from "@/config/site";
+import { ROUTES } from "@/lib/routes";
+
+/** FastAPI errors: {"detail": "msg"} or {"detail": [{msg}, ...]} on 422. */
+function apiErrorMessage(data: unknown): string {
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as { msg?: string } | undefined;
+    return first?.msg ?? "Invalid submission.";
+  }
+  return "";
+}
 
 function PhoneIcon() {
   return (
@@ -69,11 +81,11 @@ export default function Contact() {
   const [form, setForm] = useState({
     name: "",
     email: "",
-    mobile: "",
+    phone: "",
     projectType: "Legal Research",
     priority: "standard",
     message: "",
-    website: "", // honeypot
+    honeypot: "", // bots fill this; humans never see it
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -128,36 +140,48 @@ export default function Contact() {
       const body = new FormData();
       body.append("name", form.name);
       body.append("email", form.email);
-      body.append("mobile", form.mobile);
+      body.append("phone", form.phone);
       body.append("project_type", form.projectType);
       body.append("priority", form.priority);
       body.append("message", form.message);
-      body.append("website", form.website); // honeypot
+      body.append("honeypot", form.honeypot);
       for (const file of files) {
         body.append("documents", file, file.name);
       }
-      const res = await fetch("/api/vks/api/contact", {
+      const res = await fetch(ROUTES.CONTACT, {
         method: "POST",
         body,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || "Could not send your message. Please try again.");
+      // A successful FastAPI response is the created record itself — only
+      // treat it as a failure when the HTTP status or the body says so.
+      if (!res.ok || data?.ok === false) {
+        throw new Error(
+          apiErrorMessage(data) ||
+          "Could not send your message. Please try again."
+        );
       }
       const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
       setSent(true);
       setForm({
         name: "",
         email: "",
-        mobile: "",
+        phone: "",
         projectType: "Legal Research",
         priority: "standard",
         message: "",
-        website: "",
+        honeypot: "",
       });
       setFiles([]);
       setFileWarnings(skipped.length > 0 ? skipped.map((s: { filename?: string; reason?: string }) => {
-        const reason = s.reason === "too_large" ? "exceeds the 25MB limit" : "unsupported file type";
+        const reasons: Record<string, string> = {
+          too_large: "exceeds the 25MB limit",
+          unsupported_type: "unsupported file type",
+          too_many_files: `more than ${MAX_FILES} files`,
+          empty_file: "empty file",
+          upload_failed: "could not be stored",
+        };
+        const reason = reasons[s.reason ?? ""] ?? "was rejected";
         return `${s.filename ?? "A file"} was not delivered (${reason}).`;
       }) : []);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -289,8 +313,8 @@ export default function Contact() {
                   </label>
                   <input
                     type="tel"
-                    value={form.mobile}
-                    onChange={(e) => setField("mobile", e.target.value)}
+                    value={form.phone}
+                    onChange={(e) => setField("phone", e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
                     placeholder="Your mobile number"
                   />
@@ -409,8 +433,8 @@ export default function Contact() {
               {/* Honeypot — hidden from humans, bots fill it. */}
               <input
                 type="text"
-                value={form.website}
-                onChange={(e) => setField("website", e.target.value)}
+                value={form.honeypot}
+                onChange={(e) => setField("honeypot", e.target.value)}
                 className="hidden"
                 tabIndex={-1}
                 autoComplete="off"

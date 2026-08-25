@@ -394,7 +394,7 @@ body {
 /* ── Footer ───────────────────────────────────────── */
 
 .footer-heading {
-  @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-3;
+  @apply text-xs font-semibold uppercase tracking-wider text-night-800/50 dark:text-cream-100/50 mb-4;
 }
 
 /* ── Admin Scrollbar (Neumorphism) ──────────────── */

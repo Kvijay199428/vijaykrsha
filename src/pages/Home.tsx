@@ -36,7 +36,8 @@ function CalendarIcon({ className = "h-5 w-5" }: { className?: string }) {
 function DiamondIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+      {/* Real diamond outline — previously a copy of the bolt path. */}
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3.75l8.25 8.25L12 20.25 3.75 12 12 3.75z" />
     </svg>
   );
 }
@@ -57,16 +58,24 @@ function BoltIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function ClockIcon({ className = "h-5 w-5" }: { className?: string }) {
+  return (
+    <svg className={`${className} text-glow-500`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
 const highlightIconMap: Record<string, React.FC<{ className?: string }>> = {
   scale: ScaleIcon,
   chart: ChartIcon,
   shield: ShieldIcon,
 };
 
-const trustBadgeIconMap: Record<string, React.FC<{ className?: string }>> = {
-  calendar: CalendarIcon,
-  shield: ShieldIcon,
-  diamond: DiamondIcon,
+const heroProofIconMap: Record<string, React.FC<{ className?: string }>> = {
+  scale: ScaleIcon,
+  chart: ChartIcon,
+  clock: ClockIcon,
 };
 
 const whyHireIconMap: Record<string, React.FC<{ className?: string }>> = {
@@ -82,9 +91,9 @@ export default function Home() {
     <div>
       {/* ── Hero ──────────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-4 py-20 md:py-28">
-        <div className="grid md:grid-cols-5 gap-12 items-center">
+        <div className="grid md:grid-cols-5 gap-12 items-start">
           <div className="md:col-span-3">
-            <p className="text-sm font-medium text-glow-500 mb-4 tracking-wide uppercase">
+            <p className="text-sm font-medium text-glow-500 mb-4 tracking-wide">
               {site.tagline}
             </p>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-night-800 dark:text-cream-50 mb-6 leading-tight">
@@ -102,7 +111,7 @@ export default function Home() {
               </Link>
               <Link
                 to="/contact"
-                className="btn-outline inline-block px-6 py-3 rounded-xl border border-cream-300 dark:border-night-600 font-medium hover:bg-cream-200 dark:hover:bg-night-700 text-center"
+                className="btn-outline inline-block px-6 py-3 rounded-xl border border-night-300 dark:border-night-500 bg-white/70 dark:bg-night-800 font-medium text-center hover:border-glow-500 hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
               >
                 Get in Touch
               </Link>
@@ -110,17 +119,22 @@ export default function Home() {
           </div>
 
           <div className="md:col-span-2 flex flex-col gap-4">
-            {site.trustBadges.map((badge) => {
-              const Icon = trustBadgeIconMap[badge.icon] ?? ShieldIcon;
+            {site.heroProof.map((badge) => {
+              const Icon = heroProofIconMap[badge.icon] ?? ShieldIcon;
               return (
                 <div
                   key={badge.label}
                   className="card-hover flex items-center gap-4 p-5 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
                 >
-                  <Icon className="h-6 w-6" />
-                  <span className="text-sm font-medium text-night-800 dark:text-cream-100">
-                    {badge.label}
-                  </span>
+                  <Icon className="h-6 w-6 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-night-800 dark:text-cream-100">
+                      {badge.label}
+                    </p>
+                    <p className="text-xs text-night-800/60 dark:text-cream-100/60 mt-0.5">
+                      {badge.detail}
+                    </p>
+                  </div>
                 </div>
               );
             })}
@@ -131,8 +145,8 @@ export default function Home() {
       {/* ── Trust Badges Row (mobile) ─────────────── */}
       <section className="md:hidden max-w-6xl mx-auto px-4 pb-12">
         <div className="flex gap-3 overflow-x-auto">
-          {site.trustBadges.map((badge) => {
-            const Icon = trustBadgeIconMap[badge.icon] ?? ShieldIcon;
+          {site.heroProof.map((badge) => {
+            const Icon = heroProofIconMap[badge.icon] ?? ShieldIcon;
             return (
               <div
                 key={badge.label}
@@ -150,6 +164,7 @@ export default function Home() {
 
       {/* ── Highlights ────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-4 pb-20">
+        <h2 className="sr-only">What I Do</h2>
         <div className="grid md:grid-cols-3 gap-6">
           {site.highlights.map((h, i) => {
             const Icon = highlightIconMap[h.icon] ?? ScaleIcon;
@@ -180,13 +195,15 @@ export default function Home() {
           </h2>
           <div className="mt-3 h-1 w-12 mx-auto rounded-full bg-glow-500" />
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Flex-wrap (not grid) so the 2-card bottom row centers
+            instead of leaving a hole at the end of a 3-column track. */}
+        <div className="flex flex-wrap justify-center gap-6">
           {site.whyHireMe.map((item, i) => {
             const Icon = whyHireIconMap[item.icon] ?? ShieldIcon;
             return (
               <div
                 key={item.title}
-                className="reveal card-hover p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
+                className="reveal card-hover w-full sm:w-[calc(50%-12px)] lg:w-[calc(33.333%-16px)] p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700"
                 style={{ transitionDelay: `${i * 80}ms` }}
               >
                 <Icon className="h-6 w-6" />

@@ -128,7 +128,8 @@ class AdminUser(Base):
     __tablename__ = "admin_users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    username = Column(CITEXT, nullable=False, unique=True, index=True)
+    # VARCHAR (not CITEXT): logins must match the exact stored case.
+    username = Column(String(64), nullable=False, unique=True, index=True)
     email = Column(CITEXT, unique=True)
     display_name = Column(String(160), nullable=False)
     password_hash = Column(Text, nullable=False)

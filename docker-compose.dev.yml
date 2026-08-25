@@ -1,7 +1,7 @@
 services:
   database-dev:
     image: postgres:16-alpine
-    container_name: database-dev
+    container_name: vijaykrsha-online-database-dev
     restart: unless-stopped
     environment:
       POSTGRES_DB: vijaykrsha_dev
@@ -21,7 +21,7 @@ services:
 
   storage-dev:
     image: minio/minio:latest
-    container_name: storage-dev
+    container_name: vijaykrsha-online-storage-dev
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -36,7 +36,7 @@ services:
 
   redis-dev:
     image: redis:7-alpine
-    container_name: redis-dev
+    container_name: vijaykrsha-online-redis-dev
     restart: unless-stopped
     command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
     ports:
@@ -53,7 +53,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: backend-dev
+    container_name: vijaykrsha-online-backend-dev
     restart: unless-stopped
     depends_on:
       database-dev:
@@ -73,7 +73,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: frontend-dev
+    container_name: vijaykrsha-online-frontend-dev
     restart: unless-stopped
     ports:
       - "26002:80"

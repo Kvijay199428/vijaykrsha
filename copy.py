@@ -63,7 +63,7 @@ SOURCE_DIR = [BASE_DIR / p for p in SOURCE_PATHS] + [BASE_DIR / p for p in SOURC
 EXCLUDE_DIRS = {(BASE_DIR / p).resolve() for p in EXCLUDE_DIR_PATHS}
 EXCLUDE_FILES = {(BASE_DIR / p).resolve() for p in EXCLUDE_FILE_PATHS}
 
-OUTPUT_FILE = BASE_DIR / "vijaykrsha.md"
+OUTPUT_FILE = BASE_DIR / "vijaykrsha.online.md"
 
 # Map file extensions -> markdown code-fence language tags
 EXTENSION_LANG = {

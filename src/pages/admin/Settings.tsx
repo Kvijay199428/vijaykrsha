@@ -153,6 +153,9 @@ export default function Settings() {
                   placeholder="000000"
                   className="px-3 py-1 neu-concave rounded-xl text-foreground text-sm font-mono w-32 bg-transparent"
                   maxLength={6}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                 />
                 <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
                   Disable
@@ -177,6 +180,9 @@ export default function Settings() {
                 placeholder="000000"
                 className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
                 maxLength={6}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
               />
               <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-primary-foreground text-sm font-semibold">
                 Verify & Enable
@@ -201,6 +207,9 @@ export default function Settings() {
             placeholder="Current password"
             className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <input
             type="password"
@@ -210,6 +219,9 @@ export default function Settings() {
             className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
             minLength={6}
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <input
             type="password"
@@ -218,6 +230,9 @@ export default function Settings() {
             placeholder="Confirm new password"
             className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
             required
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
           />
           <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
             Change Password

@@ -1,18 +1,31 @@
 from uuid import UUID
 from datetime import datetime, timezone
+from urllib.parse import quote
+
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select, func, update, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db import get_db
 from app.models import (
     ContactMessage, MessageStatus, MessagePriority, MessageNote,
     AuditEvent, AuditLog, MessageTag, ContactMessageTag, AdminUser,
+    MessageAttachment,
 )
 from app.api.deps import require_permission
 from app.models_rbac import Permission
+from app.services.storage_service import get_storage
 
+logger = structlog.get_logger()
 router = APIRouter(prefix="/admin/api/messages", tags=["messages"])
+
+# Content types that must never render inline in the admin browser context.
+_HOSTILE_TYPES = ("text/html", "application/xhtml", "image/svg")
+# Content types safe enough to preview inline.
+_INLINE_TYPES = ("image/", "text/plain", "application/pdf")
 
 
 class MessageUpdate(BaseModel):
@@ -66,6 +79,16 @@ async def list_messages(
     result = await db.execute(stmt)
     messages = result.scalars().all()
 
+    attachment_counts: dict = {}
+    message_ids = [m.id for m in messages]
+    if message_ids:
+        rows = await db.execute(
+            select(MessageAttachment.message_id, func.count(MessageAttachment.id))
+            .where(MessageAttachment.message_id.in_(message_ids))
+            .group_by(MessageAttachment.message_id)
+        )
+        attachment_counts = {mid: count for mid, count in rows.all()}
+
     return {
         "items": [
             {
@@ -78,6 +101,7 @@ async def list_messages(
                 "priority": m.priority,
                 "channel": m.channel,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
+                "attachment_count": attachment_counts.get(m.id, 0),
             }
             for m in messages
         ],
@@ -111,6 +135,12 @@ async def get_message(
         select(MessageTag).join(ContactMessageTag).where(ContactMessageTag.message_id == msg.id)
     )).scalars().all()
 
+    attachments = (await db.execute(
+        select(MessageAttachment)
+        .where(MessageAttachment.message_id == msg.id)
+        .order_by(MessageAttachment.created_at)
+    )).scalars().all()
+
     return {
         "id": str(msg.id),
         "reference": msg.public_reference,
@@ -134,7 +164,67 @@ async def get_message(
             for n in notes
         ],
         "tags": [{"id": str(t.id), "name": t.name, "color": t.color} for t in tags],
+        "attachments": [
+            {
+                "id": str(a.id),
+                "filename": a.original_filename,
+                "url": f"/admin/api/messages/{msg.id}/attachments/{a.id}",
+                "size": a.size_bytes,
+                "content_type": a.content_type,
+            }
+            for a in attachments
+        ],
     }
+
+
+@router.get("/{message_id}/attachments/{attachment_id}")
+async def download_attachment(
+    message_id: UUID,
+    attachment_id: UUID,
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_VIEW)),
+    db: AsyncSession = Depends(get_db),
+):
+    att = (await db.execute(
+        select(MessageAttachment).where(
+            MessageAttachment.id == attachment_id,
+            MessageAttachment.message_id == message_id,
+        )
+    )).scalar_one_or_none()
+    if not att:
+        raise HTTPException(404, "not_found")
+
+    content_type = (att.content_type or "application/octet-stream").lower()
+    if content_type.startswith(_HOSTILE_TYPES):
+        # Never let stored content execute in the admin browser context.
+        content_type = "application/octet-stream"
+        disposition = "attachment"
+    elif content_type.startswith(_INLINE_TYPES):
+        disposition = "inline"
+    else:
+        disposition = "attachment"
+
+    ascii_name = att.original_filename.encode("ascii", "ignore").decode() or "download"
+    quoted_name = quote(att.original_filename)
+
+    storage = get_storage()
+    try:
+        chunk_iter = await storage.open_attachment(att.object_key)
+    except Exception:
+        logger.error("attachment_download_failed",
+                     attachment_id=str(att.id), object_key=att.object_key)
+        raise HTTPException(502, "storage_unavailable")
+
+    return StreamingResponse(
+        chunk_iter,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": (
+                f'{disposition}; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{quoted_name}"
+            ),
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.patch("/{message_id}")

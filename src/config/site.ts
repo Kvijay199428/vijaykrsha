@@ -28,10 +28,24 @@ export const site = {
     { label: "Contact", path: "/contact" },
   ],
 
-  trustBadges: [
-    { label: "Professional Legal Practice", icon: "calendar" },
-    { label: "NDA by Default", icon: "shield" },
-    { label: "Interdisciplinary Approach", icon: "diamond" },
+  // Hero proof cards — deliberately distinct from whyHireMe so the hero
+  // does not repeat the same value propositions.
+  heroProof: [
+    {
+      label: "LL.B.-Qualified Research",
+      detail: "Case law, statutes & compliance work",
+      icon: "scale",
+    },
+    {
+      label: "Data-Driven Deliverables",
+      detail: "Excel · Python · interactive dashboards",
+      icon: "chart",
+    },
+    {
+      label: "24-Hour Response",
+      detail: "Monday–Saturday, IST business hours",
+      icon: "clock",
+    },
   ],
 
   whyHireMe: [

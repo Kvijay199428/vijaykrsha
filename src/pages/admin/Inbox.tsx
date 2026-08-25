@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { Search } from "lucide-react";
+import { Search, Paperclip } from "lucide-react";
 
 interface Message {
   id: string;
@@ -14,6 +14,7 @@ interface Message {
   priority: string;
   channel: string;
   created_at: string;
+  attachment_count?: number;
 }
 
 export default function Inbox() {
@@ -93,6 +94,11 @@ export default function Inbox() {
                   <p className="text-sm text-muted-foreground truncate">{msg.subject}</p>
                 </div>
                 <div className="flex items-center gap-3 ml-4">
+                  {msg.attachment_count ? (
+                    <span className="text-muted-foreground" title="Has attachments">
+                      <Paperclip className="w-3.5 h-3.5" />
+                    </span>
+                  ) : null}
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                     msg.status === "new" ? "bg-orange-100 text-orange-700" :
                     msg.status === "in_progress" ? "bg-yellow-100 text-yellow-700" :

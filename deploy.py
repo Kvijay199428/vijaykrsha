@@ -4,11 +4,12 @@ vijaykrsha.online deployment script
 
 Usage:
   python deploy.py --dev --local              # Dev: upload + rebuild dev containers
+  python deploy.py --dev --local --clean      # Dev clean redeploy (volumes kept)
   python deploy.py --dev --tailscale          # Dev via Tailscale
   python deploy.py --prod --local             # Prod: rebuild backend + push to GitHub (prod branch)
   python deploy.py --prod --tailscale         # Prod via Tailscale + push to GitHub
   python deploy.py --prod --cloudflare        # Prod: rebuild + direct Cloudflare Pages deploy
-  python deploy.py --prod --local --clean     # Full clean redeploy
+  python deploy.py --prod --local --clean     # Full clean redeploy (external volumes kept)
 """
 
 import os
@@ -159,8 +160,21 @@ def deploy_docker(host, env, clean=False):
     backend_service = "backend-dev" if env == "dev" else "backend-prod"
 
     if clean:
+        # IMPORTANT: scope removal to THIS compose file's services. Dev and
+        # prod share one compose project label (same directory), so an
+        # unscoped `down --remove-orphans` also destroys the other
+        # environment's running containers.
+        # Dev volumes are not external, so -v would destroy the dev database/
+        # MinIO data — container removal alone is enough for rename/rebuild.
+        # Prod volumes are external:true, so -v is safe there.
+        all_services = (
+            "backend-dev frontend-dev database-dev storage-dev redis-dev"
+            if env == "dev"
+            else "backend-prod database-prod storage-prod redis-prod"
+        )
+        wipe = "--rmi all -v " if env == "prod" else ""
         print("\n[CLEAN] Removing existing containers...")
-        ssh_run(ssh, f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} down --rmi all -v --remove-orphans || true", "Stopping containers")
+        ssh_run(ssh, f"cd {REMOTE_DIR} && docker compose -f {compose_file} --env-file {env_file} down {wipe}{all_services} || true", "Stopping containers")
 
     commands = [
         (f"mkdir -p {REMOTE_DIR}", "Ensuring directory exists"),
@@ -281,11 +295,12 @@ def main():
         epilog="""
 Examples:
   python deploy.py --dev --local           Dev deployment via local network
+  python deploy.py --dev --local --clean   Dev clean redeploy (containers only, volumes kept)
   python deploy.py --dev --tailscale       Dev deployment via Tailscale
   python deploy.py --prod --local          Prod: rebuild backend + push to GitHub (prod branch)
   python deploy.py --prod --tailscale      Prod via Tailscale + push to GitHub
   python deploy.py --prod --cloudflare     Prod: rebuild + direct Cloudflare Pages deploy
-  python deploy.py --prod --local --clean  Full clean redeploy
+  python deploy.py --prod --local --clean  Full clean redeploy (images removed; external volumes kept)
 """,
     )
 
@@ -297,7 +312,7 @@ Examples:
     env.add_argument("--dev", action="store_true", help="Deploy dev environment (branch: main)")
     env.add_argument("--prod", action="store_true", help="Deploy production environment (branch: prod)")
 
-    parser.add_argument("--clean", action="store_true", help="Clean deploy: remove all containers/images/volumes first (prod only)")
+    parser.add_argument("--clean", action="store_true", help="Clean deploy: remove old containers first (dev keeps volumes; prod also removes images)")
     parser.add_argument("--cloudflare", action="store_true", help="Also deploy frontend directly to Cloudflare Pages (prod only)")
 
     args = parser.parse_args()
@@ -310,9 +325,6 @@ Examples:
 
     if args.cloudflare and not args.prod:
         parser.error("--cloudflare can only be used with --prod")
-
-    if args.clean and not args.prod:
-        parser.error("--clean can only be used with --prod")
 
     host = LOCAL_HOST if args.local else TAILSCALE_HOST
     network_name = "local" if args.local else "tailscale"
