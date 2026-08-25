@@ -96,8 +96,8 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col gap-4 h-full min-h-0">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ShieldCheck className="w-6 h-6" />
@@ -121,7 +121,7 @@ export default function RolesPage() {
       {deleteError && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 mb-4 px-4 py-3 rounded-xl text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/50"
+          className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl text-sm bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/50 shrink-0"
         >
           <span>{deleteError}</span>
           <button onClick={() => setDeleteError("")} aria-label="Dismiss" className="shrink-0 hover:opacity-70 transition-opacity">
@@ -130,15 +130,15 @@ export default function RolesPage() {
         </div>
       )}
 
-      <div className="neu-flat overflow-hidden text-foreground">
+      <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         <table className="w-full">
-          <thead>
-            <tr className="bg-muted/30 border-b border-border/50">
-              <th className="text-left px-4 py-3 text-sm font-semibold">Role</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Type</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Rank</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Users</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold">Permissions</th>
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-muted/30">
+            <tr>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Role</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Type</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Rank</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Users</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Permissions</th>
               {canManageRoles && <th className="w-10"></th>}
             </tr>
           </thead>

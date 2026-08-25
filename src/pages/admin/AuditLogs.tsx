@@ -16,6 +16,7 @@ export default function AuditLogs() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [jumpValue, setJumpValue] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -30,6 +31,14 @@ export default function AuditLogs() {
   }, [page]);
 
   const totalPages = Math.ceil(total / 50);
+
+  function handleJump() {
+    const n = parseInt(jumpValue, 10);
+    if (Number.isFinite(n) && n >= 1 && n <= totalPages) {
+      setPage(n);
+    }
+    setJumpValue("");
+  }
 
   return (
     <div className="flex flex-col gap-3 h-full min-h-0">
@@ -86,7 +95,19 @@ export default function AuditLogs() {
           >
             Previous
           </button>
-          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+          <span className="text-sm text-muted-foreground">Page</span>
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={jumpValue}
+            onChange={(e) => setJumpValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleJump(); }}
+            onBlur={handleJump}
+            placeholder={String(page)}
+            className="w-14 px-2 py-1 neu-concave rounded-lg bg-transparent text-foreground text-sm text-center"
+          />
+          <span className="text-sm text-muted-foreground">of {totalPages}</span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}

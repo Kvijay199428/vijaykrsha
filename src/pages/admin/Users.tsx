@@ -136,8 +136,8 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex flex-col gap-4 h-full min-h-0">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <UsersIcon className="w-6 h-6" />
@@ -158,7 +158,7 @@ export default function UsersPage() {
         )}
       </div>
 
-      <div className="flex gap-3 mb-4">
+      <div className="flex gap-3 shrink-0">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -190,17 +190,17 @@ export default function UsersPage() {
         </select>
       </div>
 
-      <div className="neu-flat overflow-hidden text-foreground">
+      <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         <table className="w-full">
-          <thead>
-            <tr className="bg-muted/30 border-b border-border/50">
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">User</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Name</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Role</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Status</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Created By</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">2FA</th>
-              <th className="text-left px-4 py-3 text-sm font-semibold text-foreground">Last Login</th>
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-muted/30">
+            <tr>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">User</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Name</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Role</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Status</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Created By</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">2FA</th>
+              <th className="text-left px-4 py-3 text-sm font-bold text-foreground">Last Login</th>
               {canManage && <th className="w-10"></th>}
             </tr>
           </thead>

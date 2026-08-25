@@ -45,13 +45,13 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-8">
-      <div>
+    <div className="flex flex-col gap-6 h-full min-h-0">
+      <div className="shrink-0">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="text-muted-foreground text-sm">Overview of your admin console</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         {cards.map((card) => (
           <div key={card.label} className="neu-convex p-6">
             <div className="flex items-center justify-between mb-4">
@@ -63,14 +63,14 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="neu-flat">
-        <div className="flex items-center justify-between p-6 border-b border-border/50">
+      <div className="neu-flat flex flex-col gap-3 flex-1 min-h-0">
+        <div className="flex items-center justify-between p-6 border-b border-border/50 shrink-0">
           <h2 className="font-semibold">Recent Messages</h2>
           <Link to="/vega/admin/inbox" className="text-sm text-primary hover:underline flex items-center gap-1">
             View all <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
-        <div className="divide-y divide-border/50">
+        <div className="divide-y divide-border/50 overflow-auto flex-1 min-h-0">
           {recent.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">No messages yet.</p>
           ) : (
