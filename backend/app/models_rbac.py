@@ -48,6 +48,8 @@ class Permission:
     MESSAGES_DELETE = "messages.delete"
     MESSAGES_NOTES = "messages.notes"
     MESSAGES_TAGS = "messages.tags"
+    MESSAGES_RESTORE = "messages.restore"
+    MESSAGES_EMPTY_TRASH = "messages.empty_trash"
 
     USERS_VIEW = "users.view"
     USERS_CREATE = "users.create"
@@ -68,6 +70,7 @@ class Permission:
     ALL = [
         DASHBOARD_VIEW,
         MESSAGES_VIEW, MESSAGES_UPDATE, MESSAGES_DELETE, MESSAGES_NOTES, MESSAGES_TAGS,
+        MESSAGES_RESTORE, MESSAGES_EMPTY_TRASH,
         USERS_VIEW, USERS_CREATE, USERS_UPDATE, USERS_DISABLE, USERS_DELETE,
         USERS_RESET_PASSWORD, USERS_MANAGE_2FA,
         SETTINGS_VIEW, SETTINGS_UPDATE,
@@ -82,6 +85,7 @@ ROLE_PERMISSIONS = {
     "admin": [
         Permission.DASHBOARD_VIEW,
         Permission.MESSAGES_VIEW, Permission.MESSAGES_UPDATE, Permission.MESSAGES_NOTES, Permission.MESSAGES_TAGS,
+        Permission.MESSAGES_RESTORE, Permission.MESSAGES_EMPTY_TRASH,
         Permission.USERS_VIEW, Permission.USERS_CREATE, Permission.USERS_UPDATE, Permission.USERS_DISABLE,
         Permission.USERS_RESET_PASSWORD,
         Permission.SETTINGS_VIEW, Permission.AUDIT_LOGS_VIEW,
@@ -90,6 +94,7 @@ ROLE_PERMISSIONS = {
     "manager": [
         Permission.DASHBOARD_VIEW,
         Permission.MESSAGES_VIEW, Permission.MESSAGES_UPDATE, Permission.MESSAGES_NOTES, Permission.MESSAGES_TAGS,
+        Permission.MESSAGES_RESTORE,
         Permission.USERS_VIEW, Permission.USERS_DISABLE,
         Permission.SETTINGS_VIEW,
         Permission.ROLES_VIEW, Permission.ROLES_MANAGE,

@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight, ChevronRight } from "lucide-react";
+import { MessageSquare, Mail, Clock, CheckCircle, Trash2, ArrowRight, ChevronRight } from "lucide-react";
 
 interface Stats {
   total_messages: number;
   new_messages: number;
   in_progress: number;
   resolved: number;
+  trashed_count?: number;
 }
 
 interface Message {
@@ -42,6 +43,7 @@ export default function Dashboard() {
     { label: "New", value: stats?.new_messages ?? 0, icon: Mail, color: "text-orange-500" },
     { label: "In Progress", value: stats?.in_progress ?? 0, icon: Clock, color: "text-yellow-500" },
     { label: "Resolved", value: stats?.resolved ?? 0, icon: CheckCircle, color: "text-accent" },
+    { label: "Trash", value: stats?.trashed_count ?? 0, icon: Trash2, color: "text-red-500" },
   ];
 
   return (
@@ -51,7 +53,7 @@ export default function Dashboard() {
         <p className="text-muted-foreground text-sm">Overview of your admin console</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 shrink-0">
         {cards.map((card) => (
           <div key={card.label} className="neu-convex p-6">
             <div className="flex items-center justify-between mb-4">

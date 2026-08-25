@@ -10,6 +10,9 @@ import {
   MessageSquare,
   Paperclip,
   FileText,
+  Trash2,
+  RotateCcw,
+  Clock,
 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
 import {
@@ -19,6 +22,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
 
 interface Note {
   id: string;
@@ -54,6 +58,9 @@ interface Message {
   channel: string;
   source_page: string;
   created_at: string;
+  deleted_at?: string;
+  trash_expires_at?: string;
+  trashed?: boolean;
   notes: Note[];
   tags: Tag_[];
   attachments?: Attachment[];
@@ -67,11 +74,12 @@ export default function MessageDetail() {
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
 
-  // Modal states
   const [showTagModal, setShowTagModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showTrashDialog, setShowTrashDialog] = useState(false);
+  const [showPermDeleteDialog, setShowPermDeleteDialog] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Form inputs (used inside modals)
   const [tagInput, setTagInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
 
@@ -139,6 +147,38 @@ export default function MessageDetail() {
     setMessage(refreshed);
   }
 
+  async function trashMessage() {
+    if (!id) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPIMESSAGETRASH(id), { method: "POST" });
+      navigate("/vega/admin/inbox");
+    } catch {}
+    setActionLoading(false);
+    setShowTrashDialog(false);
+  }
+
+  async function restoreMessage() {
+    if (!id) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHRESTORE(id), { method: "POST" });
+      navigate("/vega/admin/inbox");
+    } catch {}
+    setActionLoading(false);
+  }
+
+  async function permanentDelete() {
+    if (!id) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHPERMANENT(id), { method: "DELETE" });
+      navigate("/vega/admin/trash");
+    } catch {}
+    setActionLoading(false);
+    setShowPermDeleteDialog(false);
+  }
+
   if (loading)
     return (
       <div className="p-8 text-center text-sm text-muted-foreground">
@@ -147,20 +187,54 @@ export default function MessageDetail() {
     );
   if (!message) return null;
 
+  const isTrashed = message.trashed || !!message.deleted_at;
+
   return (
-    <div className="flex flex-col gap-3 h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0">
       {/* ── Header ─────────────────────────────────── */}
-      <div className="shrink-0">
+      <div className="shrink-0 mb-4">
         <button
-          onClick={() => navigate("/vega/admin/inbox")}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-3"
+          onClick={() => isTrashed ? navigate("/vega/admin/trash") : navigate("/vega/admin/inbox")}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-3 transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to inbox
+          <ArrowLeft className="h-4 w-4" /> {isTrashed ? "Back to trash" : "Back to inbox"}
         </button>
 
-        <div className="flex items-start justify-between gap-4">
+        {isTrashed && (
+          <div className="mb-3 p-3 neu-convex rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Trash2 className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground">
+                This message is in Trash. Deleted{" "}
+                {new Date(message.deleted_at!).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
+                {message.trash_expires_at && (
+                  <> Automatically deleted{" "}
+                  {new Date(message.trash_expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.</>
+                )}
+              </span>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={restoreMessage}
+                disabled={actionLoading}
+                className="px-3 py-1.5 text-sm neu-btn flex items-center gap-1.5"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Restore
+              </button>
+              <button
+                onClick={() => setShowPermDeleteDialog(true)}
+                disabled={actionLoading}
+                className="px-3 py-1.5 text-sm neu-btn text-red-500 flex items-center gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete forever
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold leading-tight">
+            <h1 className="text-2xl font-bold leading-tight break-words">
               {message.subject}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -170,57 +244,70 @@ export default function MessageDetail() {
               {message.reference}
             </span>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <NeuSelect
-              value={status}
-              onChange={(v) => {
-                setStatus(v);
-                updateField("status", v);
-              }}
-              options={[
-                { value: "new", label: "New" },
-                { value: "in_progress", label: "In Progress" },
-                { value: "waiting", label: "Waiting" },
-                { value: "resolved", label: "Resolved" },
-                { value: "spam", label: "Spam" },
-              ]}
-            />
-            <NeuSelect
-              value={priority}
-              onChange={(v) => {
-                setPriority(v);
-                updateField("priority", v);
-              }}
-              options={[
-                { value: "low", label: "Low" },
-                { value: "normal", label: "Normal" },
-                { value: "high", label: "High" },
-                { value: "urgent", label: "Urgent" },
-              ]}
-            />
+          <div className="flex gap-2 shrink-0 flex-wrap">
+            {!isTrashed && (
+              <>
+                <NeuSelect
+                  value={status}
+                  onChange={(v) => {
+                    setStatus(v);
+                    updateField("status", v);
+                  }}
+                  options={[
+                    { value: "new", label: "New" },
+                    { value: "in_progress", label: "In Progress" },
+                    { value: "waiting", label: "Waiting" },
+                    { value: "resolved", label: "Resolved" },
+                    { value: "spam", label: "Spam" },
+                  ]}
+                />
+                <NeuSelect
+                  value={priority}
+                  onChange={(v) => {
+                    setPriority(v);
+                    updateField("priority", v);
+                  }}
+                  options={[
+                    { value: "low", label: "Low" },
+                    { value: "normal", label: "Normal" },
+                    { value: "high", label: "High" },
+                    { value: "urgent", label: "Urgent" },
+                  ]}
+                />
+                <button
+                  onClick={() => setShowTrashDialog(true)}
+                  className="px-3 py-1.5 neu-btn text-sm flex items-center gap-1.5 text-muted-foreground hover:text-red-500 transition-colors"
+                  title="Move to trash"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Two-column content ─────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(300px,0.9fr)] gap-4">
+      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
         {/* ── Left: Message ────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto">
-          <div className="neu-flat rounded-xl p-6 space-y-5">
-            {/* Body */}
+        <div className="min-h-0 overflow-y-auto space-y-4">
+          {/* Body */}
+          <div className="neu-flat rounded-xl p-5">
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
               {message.body}
             </p>
+          </div>
 
-            {/* Metadata grid */}
-            <div className="grid grid-cols-3 gap-4 text-xs">
+          {/* Metadata */}
+          <div className="neu-flat rounded-xl p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
               <div>
-                <span className="text-muted-foreground">Channel</span>
-                <p className="font-medium mt-0.5">{message.channel}</p>
+                <span className="text-muted-foreground block mb-0.5">Channel</span>
+                <p className="font-medium">{message.channel}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Received</span>
-                <p className="font-medium mt-0.5">
+                <span className="text-muted-foreground block mb-0.5">Received</span>
+                <p className="font-medium">
                   {new Date(message.created_at).toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",
@@ -235,55 +322,63 @@ export default function MessageDetail() {
               </div>
               {message.sender_phone && (
                 <div>
-                  <span className="text-muted-foreground">Phone</span>
-                  <p className="font-medium mt-0.5">{message.sender_phone}</p>
+                  <span className="text-muted-foreground block mb-0.5">Phone</span>
+                  <p className="font-medium">{message.sender_phone}</p>
+                </div>
+              )}
+              {message.source_page && (
+                <div>
+                  <span className="text-muted-foreground block mb-0.5">Source</span>
+                  <p className="font-medium truncate" title={message.source_page}>
+                    {message.source_page}
+                  </p>
                 </div>
               )}
             </div>
-
-            {/* Attachments */}
-            {message.attachments && message.attachments.length > 0 && (
-              <div className="border-t border-border/50 pt-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
-                  <Paperclip className="h-3.5 w-3.5" /> Attachments &middot;{" "}
-                  {message.attachments.length}
-                </h3>
-                <div className="space-y-2">
-                  {message.attachments.map((att) => (
-                    <a
-                      key={att.id}
-                      href={`/api${att.url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors group"
-                      title={att.content_type ?? "Download"}
-                    >
-                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="truncate flex-1 min-w-0">
-                        {att.filename}
-                      </span>
-                      {typeof att.size === "number" && (
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {att.size >= 1048576
-                            ? `${(att.size / 1048576).toFixed(1)} MB`
-                            : `${(att.size / 1024).toFixed(1)} KB`}
-                        </span>
-                      )}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
+
+          {/* Attachments */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="neu-flat rounded-xl p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Paperclip className="h-3.5 w-3.5" /> Attachments &middot;{" "}
+                {message.attachments.length}
+              </h3>
+              <div className="space-y-2">
+                {message.attachments.map((att) => (
+                  <a
+                    key={att.id}
+                    href={`/api${att.url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors group"
+                    title={att.content_type ?? "Download"}
+                  >
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="truncate flex-1 min-w-0">
+                      {att.filename}
+                    </span>
+                    {typeof att.size === "number" && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {att.size >= 1048576
+                          ? `${(att.size / 1048576).toFixed(1)} MB`
+                          : `${(att.size / 1024).toFixed(1)} KB`}
+                      </span>
+                    )}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Right: Sidebar ───────────────────────── */}
-        <div className="space-y-4 lg:sticky lg:top-0 lg:h-full lg:overflow-y-auto min-h-0">
+        <div className="space-y-4 min-h-0 overflow-y-auto">
           {/* Tags card */}
           <div className="neu-flat rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Tag className="h-4 w-4" /> Tags
+                <Tag className="h-4 w-4 text-primary" /> Tags
               </h3>
               <button
                 onClick={() => setShowTagModal(true)}
@@ -294,13 +389,13 @@ export default function MessageDetail() {
               </button>
             </div>
             {message.tags.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No tags yet</p>
+              <p className="text-xs text-muted-foreground italic">No tags yet</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {message.tags.map((t) => (
                   <span
                     key={t.id}
-                    className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
+                    className="px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full font-medium"
                   >
                     {t.name}
                   </span>
@@ -313,7 +408,7 @@ export default function MessageDetail() {
           <div className="neu-flat rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" /> Internal Notes
+                <MessageSquare className="h-4 w-4 text-primary" /> Notes
               </h3>
               <button
                 onClick={() => setShowNoteModal(true)}
@@ -324,17 +419,18 @@ export default function MessageDetail() {
               </button>
             </div>
             {message.notes.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No notes yet</p>
+              <p className="text-xs text-muted-foreground italic">No notes yet</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {message.notes
                   .slice()
                   .reverse()
                   .slice(0, 3)
                   .map((n) => (
-                    <div key={n.id} className="p-2.5 neu-concave rounded-lg">
+                    <div key={n.id} className="p-2.5 neu-concave rounded-xl">
                       <p className="text-xs leading-relaxed">{n.body}</p>
-                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                      <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
                         {new Date(n.created_at).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
@@ -347,6 +443,14 @@ export default function MessageDetail() {
                       </p>
                     </div>
                   ))}
+                {message.notes.length > 3 && (
+                  <button
+                    onClick={() => setShowNoteModal(true)}
+                    className="text-xs text-primary hover:underline w-full text-center py-1"
+                  >
+                    View all {message.notes.length} notes
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -363,7 +467,6 @@ export default function MessageDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Current tags */}
           {message.tags.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
@@ -389,7 +492,6 @@ export default function MessageDetail() {
             </div>
           )}
 
-          {/* Add tag form */}
           <form onSubmit={addTag} className="flex gap-2">
             <input
               value={tagInput}
@@ -418,7 +520,6 @@ export default function MessageDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Add note form */}
           <form onSubmit={addNote} className="space-y-3">
             <textarea
               value={noteInput}
@@ -438,7 +539,6 @@ export default function MessageDetail() {
             </div>
           </form>
 
-          {/* Previous notes */}
           {message.notes.length > 0 && (
             <div className="border-t border-border/50 pt-4 mt-2">
               <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
@@ -470,6 +570,29 @@ export default function MessageDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Trash Dialog ─────────────────────────────── */}
+      <DeleteMessageDialog
+        open={showTrashDialog}
+        onOpenChange={setShowTrashDialog}
+        title="Move to Trash?"
+        message="This message will be moved to Trash and permanently deleted after the retention period."
+        confirmLabel="Move to Trash"
+        loading={actionLoading}
+        onConfirm={trashMessage}
+      />
+
+      {/* ── Permanent Delete Dialog ──────────────────── */}
+      <DeleteMessageDialog
+        open={showPermDeleteDialog}
+        onOpenChange={setShowPermDeleteDialog}
+        title="Permanently delete message?"
+        message="This action cannot be undone. The message, attachments, notes and tags will be permanently removed."
+        confirmLabel="Delete forever"
+        danger
+        loading={actionLoading}
+        onConfirm={permanentDelete}
+      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import SessionExpiryWarning from "../../components/SessionExpiryWarning";
 import {
   LayoutDashboard,
   Inbox,
+  Trash2,
   Settings,
   Users,
   ShieldCheck,
@@ -18,6 +19,7 @@ import {
 const navItems = [
   { to: "/vega/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: null },
   { to: "/vega/admin/inbox", label: "Inbox", icon: Inbox, roles: null },
+  { to: "/vega/admin/trash", label: "Trash", icon: Trash2, roles: null },
   { to: "/vega/admin/settings", label: "Settings", icon: Settings, roles: null },
   { to: "/vega/admin/users", label: "Users", icon: Users, roles: ["owner", "admin", "manager"] },
   { to: "/vega/admin/roles", label: "Roles", icon: ShieldCheck, roles: ["owner", "admin", "manager"] },

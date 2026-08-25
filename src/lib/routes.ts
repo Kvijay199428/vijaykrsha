@@ -51,4 +51,14 @@ export const ROUTES = {
   // Message tag removal
   ADMINAPIMESSAGETAGDELETE: (messageId: string, tagId: string) =>
     `${API}/admin/api/messages/${messageId}/tags/${tagId}`,
+
+  // Trash
+  ADMINAPIMESSAGETRASH: (id: string) => `${API}/admin/api/messages/${id}/trash`,
+  ADMINAPITRASH: `${API}/admin/api/trash`,
+  ADMINAPITRASHBYID: (id: string) => `${API}/admin/api/trash/${id}`,
+  ADMINAPITRASHRESTORE: (id: string) => `${API}/admin/api/trash/${id}/restore`,
+  ADMINAPITRASHPERMANENT: (id: string) => `${API}/admin/api/trash/${id}`,
+  ADMINAPITRASHBULKRESTORE: `${API}/admin/api/trash/bulk/restore`,
+  ADMINAPITRASHBULKDELETE: `${API}/admin/api/trash/bulk/delete`,
+  ADMINAPITRASHEMPTY: `${API}/admin/api/trash/empty`,
 } as const;

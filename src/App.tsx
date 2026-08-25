@@ -18,6 +18,7 @@ import Settings from "@/pages/admin/Settings";
 import UsersPage from "@/pages/admin/Users";
 import RolesPage from "@/pages/admin/Roles";
 import AuditLogs from "@/pages/admin/AuditLogs";
+import Trash from "@/pages/admin/Trash";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="inbox" element={<Inbox />} />
+          <Route path="trash" element={<Trash />} />
           <Route path="messages/:id" element={<MessageDetail />} />
           <Route path="settings" element={<Settings />} />
           <Route path="users" element={<UsersPage />} />

@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { Search, Paperclip, ChevronRight } from "lucide-react";
+import { Search, Paperclip, ChevronRight, Trash2 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
+import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
 
 interface Message {
   id: string;
@@ -25,6 +26,10 @@ export default function Inbox() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<Message | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -40,6 +45,50 @@ export default function Inbox() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [page, search, statusFilter]);
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === messages.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(messages.map((m) => m.id)));
+    }
+  }
+
+  async function trashOne(id: string) {
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPIMESSAGETRASH(id), { method: "POST" });
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setTotal((prev) => prev - 1);
+      setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    } catch {}
+    setActionLoading(false);
+    setDeleteTarget(null);
+  }
+
+  async function bulkTrash() {
+    setActionLoading(true);
+    const ids = Array.from(selected);
+    for (const id of ids) {
+      try {
+        await apiFetch(ROUTES.ADMINAPIMESSAGETRASH(id), { method: "POST" });
+      } catch {}
+    }
+    setMessages((prev) => prev.filter((m) => !selected.has(m.id)));
+    setTotal((prev) => prev - ids.length);
+    setSelected(new Set());
+    setActionLoading(false);
+    setBulkDeleteOpen(false);
+  }
 
   const totalPages = Math.ceil(total / 20);
 
@@ -75,6 +124,27 @@ export default function Inbox() {
         />
       </div>
 
+      {/* Bulk actions bar */}
+      {selected.size > 0 && (
+        <div className="shrink-0 flex items-center gap-3 px-4 py-2 neu-convex rounded-xl">
+          <input
+            type="checkbox"
+            checked={selected.size === messages.length && messages.length > 0}
+            onChange={toggleSelectAll}
+            className="h-4 w-4 rounded border-border accent-primary"
+          />
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => setBulkDeleteOpen(true)}
+            disabled={actionLoading}
+            className="px-3 py-1.5 text-sm neu-btn text-red-500 flex items-center gap-1.5"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Move to Trash
+          </button>
+        </div>
+      )}
+
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
@@ -83,18 +153,27 @@ export default function Inbox() {
         ) : (
           <div className="divide-y divide-border/50">
             {messages.map((msg) => (
-              <Link
-                key={msg.id}
-                to={`/vega/admin/messages/${msg.id}`}
-                className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
+              <div key={msg.id} className="flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors">
+                {/* Checkbox */}
+                <input
+                  type="checkbox"
+                  checked={selected.has(msg.id)}
+                  onChange={() => toggleSelect(msg.id)}
+                  className="h-4 w-4 rounded border-border accent-primary shrink-0"
+                />
+
+                {/* Link content */}
+                <Link
+                  to={`/vega/admin/messages/${msg.id}`}
+                  className="flex-1 min-w-0"
+                >
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-sm truncate">{msg.sender_name || "Anonymous"}</p>
                     <span className="text-xs text-muted-foreground">({msg.sender_email})</span>
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{msg.subject}</p>
-                </div>
+                </Link>
+
                 <div className="flex items-center gap-3 ml-4">
                   {msg.attachment_count ? (
                     <span className="text-muted-foreground" title="Has attachments">
@@ -119,9 +198,17 @@ export default function Inbox() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(msg.created_at).toLocaleDateString()}
                   </span>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.preventDefault(); setDeleteTarget(msg); }}
+                    className="p-1 neu-btn rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
+                    title="Move to trash"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                   <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         )}
@@ -148,6 +235,28 @@ export default function Inbox() {
           </button>
         </div>
       )}
+
+      {/* Single delete dialog */}
+      <DeleteMessageDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Move to Trash?"
+        message={`This message will be moved to Trash and permanently deleted after the retention period.`}
+        confirmLabel="Move to Trash"
+        loading={actionLoading}
+        onConfirm={() => deleteTarget && trashOne(deleteTarget.id)}
+      />
+
+      {/* Bulk delete dialog */}
+      <DeleteMessageDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Move selected to Trash?"
+        message={`This will move ${selected.size} message${selected.size !== 1 ? "s" : ""} to Trash.`}
+        confirmLabel="Move to Trash"
+        loading={actionLoading}
+        onConfirm={bulkTrash}
+      />
     </div>
   );
 }

@@ -88,6 +88,10 @@ class AuditEvent(str, enum.Enum):
     totp_disabled = "totp_disabled"
     role_created = "role_created"
     role_deleted = "role_deleted"
+    message_trashed = "message_trashed"
+    message_restored = "message_restored"
+    message_permanently_deleted = "message_permanently_deleted"
+    trash_retention_changed = "trash_retention_changed"
 
 
 class DeviceState(str, enum.Enum):
@@ -241,6 +245,9 @@ class ContactMessage(Base):
     assigned_to = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"))
     first_viewed_at = Column(DateTime(timezone=True))
     resolved_at = Column(DateTime(timezone=True))
+    deleted_at = Column(DateTime(timezone=True))
+    trash_expires_at = Column(DateTime(timezone=True))
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"))
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 
@@ -315,6 +322,7 @@ class AdminSetting(Base):
     otp_resend_seconds = Column(Integer, nullable=False, default=60)
     max_login_attempts = Column(SmallInteger, nullable=False, default=5)
     session_idle_minutes = Column(Integer, nullable=False, default=30)
+    trash_retention_days = Column(Integer, nullable=False, default=30)
     updated_by = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"))
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 

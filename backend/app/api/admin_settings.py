@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models import AdminSetting, AuditEvent, AuditLog, AdminUser
-from app.api.deps import get_current_admin, require_owner
+from app.api.deps import get_current_admin, require_owner, require_permission
+from app.models_rbac import Permission
 from app.security.password_policy import (
     PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, validate_password_strength,
 )
@@ -17,6 +18,14 @@ from app.services.totp_service import (
 from app.security.sessions import revoke_other_sessions
 
 router = APIRouter(prefix="/admin/api", tags=["settings"])
+
+
+def _audit_setting(db: AsyncSession, event: AuditEvent, admin_id, meta=None):
+    db.add(AuditLog(
+        event=event,
+        actor_admin_id=admin_id,
+        metadata_=meta or {},
+    ))
 
 
 class TotpEnableRequest(BaseModel):
@@ -37,6 +46,10 @@ class PasswordChangeRequest(BaseModel):
         return validate_password_strength(v)
 
 
+class SettingsUpdate(BaseModel):
+    trash_retention_days: int | None = None
+
+
 @router.get("/settings")
 async def get_settings(admin: AdminUser = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(AdminSetting).where(AdminSetting.id == 1))
@@ -52,7 +65,37 @@ async def get_settings(admin: AdminUser = Depends(get_current_admin), db: AsyncS
         "otp_length": setting.otp_length,
         "otp_ttl_seconds": setting.otp_ttl_seconds,
         "session_idle_minutes": setting.session_idle_minutes,
+        "trash_retention_days": setting.trash_retention_days,
     }
+
+
+@router.patch("/settings")
+async def update_settings(
+    body: SettingsUpdate,
+    admin: AdminUser = Depends(require_permission(Permission.SETTINGS_UPDATE)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(AdminSetting).where(AdminSetting.id == 1))
+    setting = result.scalar_one_or_none()
+    if not setting:
+        setting = AdminSetting()
+        db.add(setting)
+        await db.flush()
+
+    if body.trash_retention_days is not None:
+        if body.trash_retention_days < 1 or body.trash_retention_days > 3650:
+            raise HTTPException(400, "retention_days_out_of_range")
+        old_days = setting.trash_retention_days
+        setting.trash_retention_days = body.trash_retention_days
+        _audit_setting(db, AuditEvent.trash_retention_changed, admin.id, {
+            "old_days": old_days,
+            "new_days": body.trash_retention_days,
+        })
+
+    setting.updated_by = admin.id
+    setting.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/settings/totp/setup")
@@ -216,15 +259,18 @@ async def get_stats(
     from app.models import ContactMessage, MessageStatus
     from sqlalchemy import func
 
-    total = (await db.execute(select(func.count(ContactMessage.id)))).scalar()
+    total = (await db.execute(select(func.count(ContactMessage.id)).where(ContactMessage.deleted_at.isnot(None) == False))).scalar()  # noqa: E712
     new_count = (await db.execute(
-        select(func.count(ContactMessage.id)).where(ContactMessage.status == MessageStatus.new)
+        select(func.count(ContactMessage.id)).where(ContactMessage.status == MessageStatus.new, ContactMessage.deleted_at.isnot(None) == False)  # noqa: E712
     )).scalar()
     in_progress = (await db.execute(
-        select(func.count(ContactMessage.id)).where(ContactMessage.status == MessageStatus.in_progress)
+        select(func.count(ContactMessage.id)).where(ContactMessage.status == MessageStatus.in_progress, ContactMessage.deleted_at.isnot(None) == False)  # noqa: E712
     )).scalar()
     resolved = (await db.execute(
-        select(func.count(ContactMessage.id)).where(ContactMessage.status == MessageStatus.resolved)
+        select(func.count(ContactMessage.id)).where(ContactMessage.status == MessageStatus.resolved, ContactMessage.deleted_at.isnot(None) == False)  # noqa: E712
+    )).scalar()
+    trashed = (await db.execute(
+        select(func.count(ContactMessage.id)).where(ContactMessage.deleted_at.isnot(None))
     )).scalar()
 
     return {
@@ -232,4 +278,5 @@ async def get_stats(
         "new_messages": new_count,
         "in_progress": in_progress,
         "resolved": resolved,
+        "trashed_count": trashed,
     }

@@ -101,6 +101,17 @@ class StorageService:
         # after response headers were already sent (empty 200).
         return _iter()
 
+    # ── delete ──────────────────────────────────────────────────────
+    def _delete_sync(self, object_key: str) -> None:
+        try:
+            self._client.delete_object(Bucket=self._bucket, Key=object_key)
+        except ClientError as exc:
+            raise StorageError(f"delete failed for {object_key}: {exc}") from exc
+
+    async def delete_attachment(self, object_key: str) -> None:
+        """Remove an object from storage."""
+        await asyncio.to_thread(self._delete_sync, object_key)
+
 
 _storage: StorageService | None = None
 

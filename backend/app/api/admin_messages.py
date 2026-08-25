@@ -50,8 +50,8 @@ async def list_messages(
     admin: AdminUser = Depends(require_permission(Permission.MESSAGES_VIEW)),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(ContactMessage)
-    count_stmt = select(func.count(ContactMessage.id))
+    stmt = select(ContactMessage).where(ContactMessage.deleted_at.isnot(None) == False)  # noqa: E712
+    count_stmt = select(func.count(ContactMessage.id)).where(ContactMessage.deleted_at.isnot(None) == False)  # noqa: E712
 
     if status:
         stmt = stmt.where(ContactMessage.status == status)
@@ -120,6 +120,18 @@ async def get_message(
     )).scalar_one_or_none()
     if not msg:
         raise HTTPException(404, "not_found")
+
+    if msg.deleted_at:
+        return {
+            **{k: None for k in ["notes", "tags", "attachments"]},
+            "id": str(msg.id),
+            "reference": msg.public_reference,
+            "subject": msg.subject,
+            "sender_name": msg.sender_name,
+            "sender_email": msg.sender_email,
+            "trashed": True,
+            "deleted_at": msg.deleted_at.isoformat(),
+        }
 
     if not msg.first_viewed_at:
         msg.first_viewed_at = datetime.now(timezone.utc)

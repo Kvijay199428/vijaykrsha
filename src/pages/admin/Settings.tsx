@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { getPasswordErrors } from "@/lib/passwordValidation";
-import { Shield, Lock, Copy, Check, User } from "lucide-react";
+import { Shield, Lock, Copy, Check, User, Trash2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { NeuSelect } from "@/components/ui/select";
 
 export default function Settings() {
   const [totpEnabled, setTotpEnabled] = useState(false);
@@ -20,10 +21,16 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  const [retentionDays, setRetentionDays] = useState("30");
+  const [retentionSaving, setRetentionSaving] = useState(false);
+
   useEffect(() => {
     apiFetch(ROUTES.ADMINAPISETTINGS)
       .then((r) => r.json())
-      .then((data) => setTotpEnabled(data.totp_enabled))
+      .then((data) => {
+        setTotpEnabled(data.totp_enabled);
+        if (data.trash_retention_days) setRetentionDays(String(data.trash_retention_days));
+      })
       .catch(() => {});
   }, []);
 
@@ -144,6 +151,24 @@ export default function Settings() {
     }
   }
 
+  async function saveRetention() {
+    setRetentionSaving(true);
+    setError("");
+    setMsg("");
+    try {
+      const res = await apiFetch(ROUTES.ADMINAPISETTINGS, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trash_retention_days: parseInt(retentionDays) }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      setMsg("Retention period saved");
+    } catch {
+      setError("Failed to save retention period");
+    }
+    setRetentionSaving(false);
+  }
+
   return (
     <div className="flex flex-col gap-4 h-full min-h-0 max-w-2xl overflow-auto">
       <div>
@@ -163,6 +188,10 @@ export default function Settings() {
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="w-4 h-4" />
             Profile
+          </TabsTrigger>
+          <TabsTrigger value="trash" className="flex items-center gap-2">
+            <Trash2 className="w-4 h-4" />
+            Trash
           </TabsTrigger>
         </TabsList>
 
@@ -293,6 +322,46 @@ export default function Settings() {
                 Change Password
               </button>
             </form>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="trash">
+          <div className="neu-flat p-6 space-y-4">
+            <div>
+              <h2 className="font-semibold mb-1">Message Trash</h2>
+              <p className="text-sm text-muted-foreground">
+                Deleted messages are automatically and permanently removed after the selected retention period.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Retention period</label>
+              <NeuSelect
+                value={retentionDays}
+                onChange={setRetentionDays}
+                options={[
+                  { value: "7", label: "7 days" },
+                  { value: "14", label: "14 days" },
+                  { value: "30", label: "30 days" },
+                  { value: "60", label: "60 days" },
+                  { value: "90", label: "90 days" },
+                  { value: "180", label: "180 days" },
+                  { value: "365", label: "365 days" },
+                ]}
+                className="w-full sm:w-48"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New deletions will be retained for {retentionDays} days. Changing this setting does not change the expiration date of messages already in Trash.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={saveRetention}
+                disabled={retentionSaving}
+                className="px-4 py-2 neu-btn text-sm font-medium"
+              >
+                {retentionSaving ? "Saving..." : "Save changes"}
+              </button>
+            </div>
           </div>
         </TabsContent>
       </Tabs>
