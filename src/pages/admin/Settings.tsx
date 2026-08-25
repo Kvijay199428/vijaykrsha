@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { getPasswordErrors } from "@/lib/passwordValidation";
-import { Shield, Lock, Copy, Check } from "lucide-react";
+import { Shield, Lock, Copy, Check, User } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 export default function Settings() {
   const [totpEnabled, setTotpEnabled] = useState(false);
@@ -73,7 +74,6 @@ export default function Settings() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // fallback
       const el = document.createElement("textarea");
       el.value = totpSecret;
       document.body.appendChild(el);
@@ -154,137 +154,148 @@ export default function Settings() {
       {msg && <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl text-sm">{msg}</div>}
       {error && <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm">{error}</div>}
 
-      <div className="neu-flat p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 neu-btn rounded-xl">
-            <Shield className="h-5 w-5 text-primary" />
-          </div>
-          <h2 className="font-semibold">Two-Factor Authentication</h2>
-        </div>
-        <p className="text-sm text-muted-foreground mb-4">
-          {totpEnabled ? "TOTP is currently enabled" : "TOTP is currently disabled"}
-        </p>
-        {!showSetup ? (
-          totpEnabled ? (
-            <div className="space-y-3">
-              <p className="text-sm">Enter your TOTP code to disable:</p>
-              <form onSubmit={disableTotp} className="flex gap-2">
-                <input
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                  placeholder="000000"
-                  className="px-3 py-1 neu-concave rounded-xl text-foreground text-sm font-mono w-32 bg-transparent"
-                  maxLength={6}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-                <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
-                  Disable
+      <Tabs defaultValue="totp" className="flex flex-col min-h-0">
+        <TabsList className="self-start">
+          <TabsTrigger value="totp" className="flex items-center gap-2">
+            <Shield className="w-4 h-4" />
+            TOTP
+          </TabsTrigger>
+          <TabsTrigger value="profile" className="flex items-center gap-2">
+            <User className="w-4 h-4" />
+            Profile
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="totp">
+          <div className="neu-flat p-6">
+            <p className="text-sm text-muted-foreground mb-4">
+              {totpEnabled ? "TOTP is currently enabled" : "TOTP is currently disabled"}
+            </p>
+            {!showSetup ? (
+              totpEnabled ? (
+                <div className="space-y-3">
+                  <p className="text-sm">Enter your TOTP code to disable:</p>
+                  <form onSubmit={disableTotp} className="flex gap-2">
+                    <input
+                      value={totpCode}
+                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000"
+                      className="px-3 py-1 neu-concave rounded-xl text-foreground text-sm font-mono w-32 bg-transparent"
+                      maxLength={6}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                    />
+                    <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-destructive-foreground text-sm bg-destructive">
+                      Disable
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
+                  Enable TOTP
                 </button>
-              </form>
-            </div>
-          ) : (
-            <button onClick={startTotpSetup} disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
-              Enable TOTP
-            </button>
-          )
-        ) : (
-          <div className="space-y-4">
-            {provisioningUri && (
-              <div className="flex justify-center">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(provisioningUri)}&size=200x200&margin=10`}
-                  alt="TOTP QR Code"
-                  className="rounded-xl"
-                  width={200}
-                  height={200}
-                />
+              )
+            ) : (
+              <div className="space-y-4">
+                {provisioningUri && (
+                  <div className="flex justify-center">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(provisioningUri)}&size=200x200&margin=10`}
+                      alt="TOTP QR Code"
+                      className="rounded-xl"
+                      width={200}
+                      height={200}
+                    />
+                  </div>
+                )}
+                <div className="neu-concave p-4 rounded-xl">
+                  <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm font-mono break-all flex-1">{totpSecret}</code>
+                    <button
+                      onClick={copySecret}
+                      className="p-1.5 rounded-lg hover:bg-muted/40 transition-colors shrink-0"
+                      title="Copy secret"
+                    >
+                      {copied ? (
+                        <Check className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <Copy className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <form onSubmit={enableTotp} className="flex gap-2">
+                  <input
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="000000"
+                    className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
+                    maxLength={6}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                  <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-primary-foreground text-sm font-semibold">
+                    Verify & Enable
+                  </button>
+                </form>
               </div>
             )}
-            <div className="neu-concave p-4 rounded-xl">
-              <p className="text-xs text-muted-foreground mb-2">Add this secret to your authenticator app:</p>
-              <div className="flex items-center gap-2">
-                <code className="text-sm font-mono break-all flex-1">{totpSecret}</code>
-                <button
-                  onClick={copySecret}
-                  className="p-1.5 rounded-lg hover:bg-muted/40 transition-colors shrink-0"
-                  title="Copy secret"
-                >
-                  {copied ? (
-                    <Check className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </button>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="profile">
+          <div className="neu-flat p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 neu-btn rounded-xl">
+                <Lock className="h-5 w-5 text-primary" />
               </div>
+              <h2 className="font-semibold">Change Password</h2>
             </div>
-            <form onSubmit={enableTotp} className="flex gap-2">
+            <form onSubmit={changePassword} className="space-y-3">
               <input
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="000000"
-                className="px-3 py-1 neu-concave rounded-xl text-sm font-mono w-32 bg-transparent"
-                maxLength={6}
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Current password"
+                className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+                required
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
               />
-              <button type="submit" disabled={loading} className="px-4 py-1 neu-btn text-primary-foreground text-sm font-semibold">
-                Verify & Enable
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password"
+                className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+                required
+                minLength={6}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+                required
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
+                Change Password
               </button>
             </form>
           </div>
-        )}
-      </div>
-
-      <div className="neu-flat p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 neu-btn rounded-xl">
-            <Lock className="h-5 w-5 text-primary" />
-          </div>
-          <h2 className="font-semibold">Change Password</h2>
-        </div>
-        <form onSubmit={changePassword} className="space-y-3">
-          <input
-            type="password"
-            value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            placeholder="Current password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-            required
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="New password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-            required
-            minLength={6}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Confirm new password"
-            className="w-full px-3 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
-            required
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <button type="submit" disabled={loading} className="px-4 py-2 neu-btn text-primary-foreground text-sm font-semibold">
-            Change Password
-          </button>
-        </form>
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
