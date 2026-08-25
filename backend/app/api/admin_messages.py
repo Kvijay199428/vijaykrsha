@@ -24,8 +24,6 @@ router = APIRouter(prefix="/admin/api/messages", tags=["messages"])
 
 # Content types that must never render inline in the admin browser context.
 _HOSTILE_TYPES = ("text/html", "application/xhtml", "image/svg")
-# Content types safe enough to preview inline.
-_INLINE_TYPES = ("image/", "text/plain", "application/pdf")
 
 
 class MessageUpdate(BaseModel):
@@ -193,15 +191,12 @@ async def download_attachment(
     if not att:
         raise HTTPException(404, "not_found")
 
+    # Always download: browser preview of untrusted uploads is never useful
+    # here, and a navigation to an inline body reads as a blank page.
     content_type = (att.content_type or "application/octet-stream").lower()
     if content_type.startswith(_HOSTILE_TYPES):
-        # Never let stored content execute in the admin browser context.
         content_type = "application/octet-stream"
-        disposition = "attachment"
-    elif content_type.startswith(_INLINE_TYPES):
-        disposition = "inline"
-    else:
-        disposition = "attachment"
+    disposition = "attachment"
 
     ascii_name = att.original_filename.encode("ascii", "ignore").decode() or "download"
     quoted_name = quote(att.original_filename)

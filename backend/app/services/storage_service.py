@@ -96,7 +96,10 @@ class StorageService:
                     break
                 yield chunk
 
-        return _iter
+        # Return the running iterator — the bare generator function would
+        # make StreamingResponse fail with "'function' object is not iterable"
+        # after response headers were already sent (empty 200).
+        return _iter()
 
 
 _storage: StorageService | None = None
