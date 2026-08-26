@@ -164,7 +164,7 @@ export default function AdminLayout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-2">
+      <main className="flex-1 overflow-hidden p-2">
         <div className="h-full neu-flat rounded-2xl p-6 flex flex-col gap-3">
           <SessionExpiryWarning />
           <Outlet />

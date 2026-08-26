@@ -15,6 +15,7 @@ import {
   FileText,
   ArrowLeft,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
 import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
@@ -138,6 +139,11 @@ export default function Inbox() {
 
   /* ── Mobile: show which pane ── */
   const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+
+  /* ── Sidebar collapsible cards ── */
+  const [tagsOpen, setTagsOpen] = useState(true);
+  const [notesOpen, setNotesOpen] = useState(true);
+  const [attachmentsOpen, setAttachmentsOpen] = useState(true);
 
   /* ────────────────────────────────────────────────
      Fetch message list
@@ -387,12 +393,6 @@ export default function Inbox() {
         <div className="flex flex-col min-h-0 gap-2">
           {/* Header + search */}
           <div className="shrink-0 space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-lg font-bold">Inbox</h1>
-                <p className="text-muted-foreground text-xs">{total} messages</p>
-              </div>
-            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <input
@@ -558,14 +558,12 @@ export default function Inbox() {
             </div>
           ) : (
             <div className="flex flex-col min-h-0 gap-3">
-              {/* Detail header */}
-              <div className="shrink-0">
+              {/* Sender header */}
+              <div className="shrink-0 neu-flat rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-xl font-bold leading-tight break-words">{detail.subject}</h2>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {detail.sender_name} &middot; {detail.sender_email}
-                    </p>
+                    <p className="font-semibold text-sm truncate">{detail.sender_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{detail.sender_email}</p>
                     <span className="inline-block mt-1 font-mono text-xs neu-concave px-2 py-0.5 rounded-lg text-muted-foreground">
                       {detail.reference}
                     </span>
@@ -600,13 +598,6 @@ export default function Inbox() {
                 </div>
               </div>
 
-              {/* Body */}
-              <div className="neu-flat rounded-xl p-5 flex-1 min-h-0 overflow-y-auto">
-                <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                  {detail.body}
-                </p>
-              </div>
-
               {/* Metadata */}
               <div className="shrink-0 neu-flat rounded-xl p-4">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
@@ -637,99 +628,146 @@ export default function Inbox() {
                 </div>
               </div>
 
-              {/* Attachments */}
-              {detail.attachments && detail.attachments.length > 0 && (
-                <div className="shrink-0 neu-flat rounded-xl p-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
-                    <Paperclip className="h-3.5 w-3.5" /> Attachments &middot; {detail.attachments.length}
-                  </h3>
-                  <div className="space-y-2">
-                    {detail.attachments.map((att) => (
-                      <a
-                        key={att.id}
-                        href={`/api${att.url}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors"
-                      >
-                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <span className="truncate flex-1 min-w-0">{att.filename}</span>
-                        {typeof att.size === "number" && (
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {att.size >= 1048576 ? `${(att.size / 1048576).toFixed(1)} MB` : `${(att.size / 1024).toFixed(1)} KB`}
-                          </span>
-                        )}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Body */}
+              <div className="neu-flat rounded-xl p-5 flex-1 min-h-0 overflow-y-auto">
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                  {detail.body}
+                </p>
+              </div>
             </div>
           )}
         </div>
 
-        {/* ── Pane 3: Tags + Notes ────────────────── */}
-        <div className="flex flex-col min-h-0 gap-3">
+        {/* ── Pane 3: Sidebar ────────────────── */}
+        <div className="flex flex-col min-h-0 h-full gap-3">
           {detail ? (
             <>
-              {/* Tags */}
-              <div className="neu-flat rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold flex items-center gap-2">
+              {/* Tags card */}
+              <div className="neu-flat rounded-xl overflow-hidden shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setTagsOpen(v => !v)}
+                  className="w-full flex items-center justify-between p-4"
+                >
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     <Tag className="h-4 w-4 text-primary" /> Tags
-                  </h3>
-                  <button onClick={() => setShowTagModal(true)} className="p-1.5 neu-btn rounded-lg" title="Manage tags">
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                {detail.tags.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">No tags yet</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {detail.tags.map((t) => (
-                      <span key={t.id} className="px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full font-medium">
-                        {t.name}
-                      </span>
-                    ))}
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${tagsOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {tagsOpen && (
+                  <div className="px-4 pb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      {detail.tags.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic">No tags yet</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {detail.tags.map((t) => (
+                            <span key={t.id} className="px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full font-medium">
+                              {t.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <button onClick={() => setShowTagModal(true)} className="p-1.5 neu-btn rounded-lg ml-auto shrink-0" title="Manage tags">
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Notes */}
-              <div className="neu-flat rounded-xl p-4 flex-1 min-h-0 overflow-y-auto">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold flex items-center gap-2">
+              {/* Notes card — flex-1 takes remaining space */}
+              <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setNotesOpen(v => !v)}
+                  className="shrink-0 w-full flex items-center justify-between p-4"
+                >
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     <MessageSquare className="h-4 w-4 text-primary" /> Notes
-                  </h3>
-                  <button onClick={() => setShowNoteModal(true)} className="p-1.5 neu-btn rounded-lg" title="Add note">
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                {detail.notes.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">No notes yet</p>
-                ) : (
-                  <div className="space-y-2.5">
-                    {detail.notes.slice().reverse().slice(0, 5).map((n) => (
-                      <div key={n.id} className="p-2.5 neu-concave rounded-xl">
-                        <p className="text-xs leading-relaxed">{n.body}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} &middot;{" "}
-                          {new Date(n.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                        </p>
-                      </div>
-                    ))}
-                    {detail.notes.length > 5 && (
-                      <button
-                        onClick={() => setShowNoteModal(true)}
-                        className="text-xs text-primary hover:underline w-full text-center py-1"
-                      >
-                        View all {detail.notes.length} notes
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${notesOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {notesOpen && (
+                  <div className="px-4 pb-4 min-h-0 overflow-y-auto flex-1">
+                    <div className="flex items-center justify-between mb-3">
+                      {detail.notes.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic">No notes yet</p>
+                      ) : null}
+                      <button onClick={() => setShowNoteModal(true)} className="p-1.5 neu-btn rounded-lg ml-auto shrink-0" title="Add note">
+                        <Plus className="h-3.5 w-3.5" />
                       </button>
+                    </div>
+                    {detail.notes.length > 0 && (
+                      <div className="space-y-2.5">
+                        {detail.notes.slice().reverse().slice(0, 5).map((n) => (
+                          <div key={n.id} className="p-2.5 neu-concave rounded-xl">
+                            <p className="text-xs leading-relaxed">{n.body}</p>
+                            <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} &middot;{" "}
+                              {new Date(n.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                            </p>
+                          </div>
+                        ))}
+                        {detail.notes.length > 5 && (
+                          <button
+                            onClick={() => setShowNoteModal(true)}
+                            className="text-xs text-primary hover:underline w-full text-center py-1"
+                          >
+                            View all {detail.notes.length} notes
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
               </div>
+
+              {/* Attachments card — flex-1 takes remaining space */}
+              {detail.attachments && detail.attachments.length > 0 && (
+                <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => setAttachmentsOpen(v => !v)}
+                    className="shrink-0 w-full flex items-center justify-between p-4"
+                  >
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <Paperclip className="h-4 w-4 text-primary" /> Attachments · {detail.attachments.length}
+                    </div>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${attachmentsOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {attachmentsOpen && (
+                    <div className="px-4 pb-4 min-h-0 overflow-y-auto flex-1">
+                      <div className="space-y-2">
+                        {detail.attachments.map((att) => (
+                          <a
+                            key={att.id}
+                            href={`/api${att.url}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors"
+                          >
+                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="truncate flex-1 min-w-0">{att.filename}</span>
+                            {typeof att.size === "number" && (
+                              <span className="text-xs text-muted-foreground shrink-0">
+                                {att.size >= 1048576 ? `${(att.size / 1048576).toFixed(1)} MB` : `${(att.size / 1024).toFixed(1)} KB`}
+                              </span>
+                            )}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
