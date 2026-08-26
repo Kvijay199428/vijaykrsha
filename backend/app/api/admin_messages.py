@@ -1,5 +1,5 @@
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
 import structlog
@@ -13,7 +13,7 @@ from app.db import get_db
 from app.models import (
     ContactMessage, MessageStatus, MessagePriority, MessageNote,
     AuditEvent, AuditLog, MessageTag, ContactMessageTag, AdminUser,
-    MessageAttachment,
+    MessageAttachment, AdminSetting,
 )
 from app.api.deps import require_permission
 from app.models_rbac import Permission
@@ -30,6 +30,8 @@ class MessageUpdate(BaseModel):
     status: MessageStatus | None = None
     priority: MessagePriority | None = None
     assigned_to: str | None = None
+    is_pinned: bool | None = None
+    is_flagged: bool | None = None
 
 
 class NoteRequest(BaseModel):
@@ -38,6 +40,16 @@ class NoteRequest(BaseModel):
 
 class TagRequest(BaseModel):
     tag_name: str
+
+
+class BulkIdsRequest(BaseModel):
+    message_ids: list[UUID]
+
+
+class BulkPinFlagRequest(BaseModel):
+    message_ids: list[UUID]
+    is_pinned: bool | None = None
+    is_flagged: bool | None = None
 
 
 @router.get("")
@@ -73,7 +85,7 @@ async def list_messages(
 
     total = (await db.execute(count_stmt)).scalar()
     offset = (page - 1) * limit
-    stmt = stmt.order_by(desc(ContactMessage.created_at)).offset(offset).limit(limit)
+    stmt = stmt.order_by(ContactMessage.is_pinned.desc(), desc(ContactMessage.created_at)).offset(offset).limit(limit)
     result = await db.execute(stmt)
     messages = result.scalars().all()
 
@@ -100,6 +112,8 @@ async def list_messages(
                 "channel": m.channel,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
                 "attachment_count": attachment_counts.get(m.id, 0),
+                "is_pinned": m.is_pinned,
+                "is_flagged": m.is_flagged,
             }
             for m in messages
         ],
@@ -164,6 +178,10 @@ async def get_message(
         "channel": msg.channel,
         "source_page": msg.source_page,
         "created_at": msg.created_at.isoformat() if msg.created_at else None,
+        "is_pinned": msg.is_pinned,
+        "pinned_at": msg.pinned_at.isoformat() if msg.pinned_at else None,
+        "is_flagged": msg.is_flagged,
+        "flagged_at": msg.flagged_at.isoformat() if msg.flagged_at else None,
         "notes": [
             {
                 "id": str(n.id),
@@ -257,8 +275,24 @@ async def update_message(
     if body.assigned_to is not None:
         values["assigned_to"] = UUID(body.assigned_to) if body.assigned_to else None
 
+    now = datetime.now(timezone.utc)
+
+    if body.is_pinned is not None and body.is_pinned != msg.is_pinned:
+        values["is_pinned"] = body.is_pinned
+        values["pinned_at"] = now if body.is_pinned else None
+        values["pinned_by"] = admin.id if body.is_pinned else None
+        event = AuditEvent.message_pinned if body.is_pinned else AuditEvent.message_unpinned
+        _audit(db, event, admin.id, message_id)
+
+    if body.is_flagged is not None and body.is_flagged != msg.is_flagged:
+        values["is_flagged"] = body.is_flagged
+        values["flagged_at"] = now if body.is_flagged else None
+        values["flagged_by"] = admin.id if body.is_flagged else None
+        event = AuditEvent.message_flagged if body.is_flagged else AuditEvent.message_unflagged
+        _audit(db, event, admin.id, message_id)
+
     if values:
-        values["updated_at"] = datetime.now(timezone.utc)
+        values["updated_at"] = now
         await db.execute(
             update(ContactMessage).where(ContactMessage.id == message_id).values(**values)
         )
@@ -287,6 +321,116 @@ async def delete_message(
     _audit(db, AuditEvent.message_deleted, admin.id, message_id, admin.id)
     await db.commit()
     return {"status": "ok"}
+
+
+async def _get_retention_days(db: AsyncSession) -> int:
+    result = await db.execute(select(AdminSetting).where(AdminSetting.id == 1))
+    setting = result.scalar_one_or_none()
+    return setting.trash_retention_days if setting else 30
+
+
+@router.post("/{message_id}/trash")
+async def trash_message(
+    message_id: UUID,
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_DELETE)),
+    db: AsyncSession = Depends(get_db),
+):
+    msg = (await db.execute(
+        select(ContactMessage).where(ContactMessage.id == message_id)
+    )).scalar_one_or_none()
+    if not msg:
+        raise HTTPException(404, "not_found")
+
+    if msg.deleted_at:
+        return {"status": "ok", "message": "already_trashed"}
+
+    now = datetime.now(timezone.utc)
+    retention_days = await _get_retention_days(db)
+    msg.deleted_at = now
+    msg.trash_expires_at = now + timedelta(days=retention_days)
+    msg.deleted_by = admin.id
+    msg.updated_at = now
+
+    _audit(db, AuditEvent.message_trashed, admin.id, message_id, {
+        "retention_days": retention_days,
+        "trash_expires_at": msg.trash_expires_at.isoformat(),
+    })
+    await db.commit()
+
+    return {
+        "status": "ok",
+        "deleted_at": msg.deleted_at.isoformat(),
+        "trash_expires_at": msg.trash_expires_at.isoformat(),
+    }
+
+
+@router.post("/bulk/trash")
+async def bulk_trash(
+    body: BulkIdsRequest,
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_DELETE)),
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    retention_days = await _get_retention_days(db)
+    trashed = 0
+
+    for mid in body.message_ids:
+        msg = (await db.execute(
+            select(ContactMessage).where(ContactMessage.id == mid)
+        )).scalar_one_or_none()
+        if msg and not msg.deleted_at:
+            msg.deleted_at = now
+            msg.trash_expires_at = now + timedelta(days=retention_days)
+            msg.deleted_by = admin.id
+            msg.updated_at = now
+            trashed += 1
+
+    if trashed:
+        _audit(db, AuditEvent.message_trashed, admin.id, None, {"count": trashed})
+    await db.commit()
+    return {"status": "ok", "trashed": trashed}
+
+
+@router.patch("/bulk")
+async def bulk_pin_flag(
+    body: BulkPinFlagRequest,
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_UPDATE)),
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    updated = 0
+
+    for mid in body.message_ids:
+        msg = (await db.execute(
+            select(ContactMessage).where(ContactMessage.id == mid)
+        )).scalar_one_or_none()
+        if not msg:
+            continue
+
+        values = {"updated_at": now}
+
+        if body.is_pinned is not None and body.is_pinned != msg.is_pinned:
+            values["is_pinned"] = body.is_pinned
+            values["pinned_at"] = now if body.is_pinned else None
+            values["pinned_by"] = admin.id if body.is_pinned else None
+            event = AuditEvent.message_pinned if body.is_pinned else AuditEvent.message_unpinned
+            _audit(db, event, admin.id, mid)
+
+        if body.is_flagged is not None and body.is_flagged != msg.is_flagged:
+            values["is_flagged"] = body.is_flagged
+            values["flagged_at"] = now if body.is_flagged else None
+            values["flagged_by"] = admin.id if body.is_flagged else None
+            event = AuditEvent.message_flagged if body.is_flagged else AuditEvent.message_unflagged
+            _audit(db, event, admin.id, mid)
+
+        if len(values) > 1:
+            await db.execute(
+                update(ContactMessage).where(ContactMessage.id == mid).values(**values)
+            )
+            updated += 1
+
+    await db.commit()
+    return {"status": "ok", "updated": updated}
 
 
 @router.post("/{message_id}/notes")

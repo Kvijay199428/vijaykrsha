@@ -92,6 +92,10 @@ class AuditEvent(str, enum.Enum):
     message_restored = "message_restored"
     message_permanently_deleted = "message_permanently_deleted"
     trash_retention_changed = "trash_retention_changed"
+    message_pinned = "message_pinned"
+    message_unpinned = "message_unpinned"
+    message_flagged = "message_flagged"
+    message_unflagged = "message_unflagged"
 
 
 class DeviceState(str, enum.Enum):
@@ -248,6 +252,12 @@ class ContactMessage(Base):
     deleted_at = Column(DateTime(timezone=True))
     trash_expires_at = Column(DateTime(timezone=True))
     deleted_by = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"))
+    is_pinned = Column(Boolean, nullable=False, default=False)
+    pinned_at = Column(DateTime(timezone=True))
+    pinned_by = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"))
+    is_flagged = Column(Boolean, nullable=False, default=False)
+    flagged_at = Column(DateTime(timezone=True))
+    flagged_by = Column(UUID(as_uuid=True), ForeignKey("admin_users.id", ondelete="SET NULL"))
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
 

@@ -547,6 +547,7 @@ import Settings from "@/pages/admin/Settings";
 import UsersPage from "@/pages/admin/Users";
 import RolesPage from "@/pages/admin/Roles";
 import AuditLogs from "@/pages/admin/AuditLogs";
+import Trash from "@/pages/admin/Trash";
 
 export default function App() {
   return (
@@ -561,6 +562,7 @@ export default function App() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="inbox" element={<Inbox />} />
+          <Route path="trash" element={<Trash />} />
           <Route path="messages/:id" element={<MessageDetail />} />
           <Route path="settings" element={<Settings />} />
           <Route path="users" element={<UsersPage />} />
@@ -591,6 +593,64 @@ export default function App() {
         }
       />
     </Routes>
+  );
+}
+```
+
+```tsx
+// File: src\components\admin\DeleteMessageDialog.tsx
+import { Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+
+interface DeleteMessageDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  loading?: boolean;
+  onConfirm: () => void;
+}
+
+export default function DeleteMessageDialog({
+  open,
+  onOpenChange,
+  title,
+  message,
+  confirmLabel,
+  danger = false,
+  loading = false,
+  onConfirm,
+}: DeleteMessageDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{message}</DialogDescription>
+        </DialogHeader>
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => onOpenChange(false)}
+            className="px-4 py-2 text-sm neu-btn"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading}
+            className={`px-4 py-2 text-sm neu-btn font-medium flex items-center gap-2 ${
+              danger ? "text-red-500" : ""
+            }`}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {loading ? "Working..." : confirmLabel}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 ```
@@ -3261,6 +3321,16 @@ export const ROUTES = {
   // Message tag removal
   ADMINAPIMESSAGETAGDELETE: (messageId: string, tagId: string) =>
     `${API}/admin/api/messages/${messageId}/tags/${tagId}`,
+
+  // Trash
+  ADMINAPIMESSAGETRASH: (id: string) => `${API}/admin/api/messages/${id}/trash`,
+  ADMINAPITRASH: `${API}/admin/api/trash`,
+  ADMINAPITRASHBYID: (id: string) => `${API}/admin/api/trash/${id}`,
+  ADMINAPITRASHRESTORE: (id: string) => `${API}/admin/api/trash/${id}/restore`,
+  ADMINAPITRASHPERMANENT: (id: string) => `${API}/admin/api/trash/${id}`,
+  ADMINAPITRASHBULKRESTORE: `${API}/admin/api/trash/bulk/restore`,
+  ADMINAPITRASHBULKDELETE: `${API}/admin/api/trash/bulk/delete`,
+  ADMINAPITRASHEMPTY: `${API}/admin/api/trash/empty`,
 } as const;
 ```
 
@@ -3541,6 +3611,7 @@ import SessionExpiryWarning from "../../components/SessionExpiryWarning";
 import {
   LayoutDashboard,
   Inbox,
+  Trash2,
   Settings,
   Users,
   ShieldCheck,
@@ -3553,6 +3624,7 @@ import {
 const navItems = [
   { to: "/vega/admin/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: null },
   { to: "/vega/admin/inbox", label: "Inbox", icon: Inbox, roles: null },
+  { to: "/vega/admin/trash", label: "Trash", icon: Trash2, roles: null },
   { to: "/vega/admin/settings", label: "Settings", icon: Settings, roles: null },
   { to: "/vega/admin/users", label: "Users", icon: Users, roles: ["owner", "admin", "manager"] },
   { to: "/vega/admin/roles", label: "Roles", icon: ShieldCheck, roles: ["owner", "admin", "manager"] },
@@ -3840,13 +3912,14 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { MessageSquare, Mail, Clock, CheckCircle, ArrowRight, ChevronRight } from "lucide-react";
+import { MessageSquare, Mail, Clock, CheckCircle, Trash2, ArrowRight, ChevronRight } from "lucide-react";
 
 interface Stats {
   total_messages: number;
   new_messages: number;
   in_progress: number;
   resolved: number;
+  trashed_count?: number;
 }
 
 interface Message {
@@ -3880,6 +3953,7 @@ export default function Dashboard() {
     { label: "New", value: stats?.new_messages ?? 0, icon: Mail, color: "text-orange-500" },
     { label: "In Progress", value: stats?.in_progress ?? 0, icon: Clock, color: "text-yellow-500" },
     { label: "Resolved", value: stats?.resolved ?? 0, icon: CheckCircle, color: "text-accent" },
+    { label: "Trash", value: stats?.trashed_count ?? 0, icon: Trash2, color: "text-red-500" },
   ];
 
   return (
@@ -3889,7 +3963,7 @@ export default function Dashboard() {
         <p className="text-muted-foreground text-sm">Overview of your admin console</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 shrink-0">
         {cards.map((card) => (
           <div key={card.label} className="neu-convex p-6">
             <div className="flex items-center justify-between mb-4">
@@ -3951,8 +4025,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
-import { Search, Paperclip, ChevronRight } from "lucide-react";
+import { Search, Paperclip, ChevronRight, Trash2 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
+import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
 
 interface Message {
   id: string;
@@ -3974,6 +4049,10 @@ export default function Inbox() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleteTarget, setDeleteTarget] = useState<Message | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -3989,6 +4068,50 @@ export default function Inbox() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [page, search, statusFilter]);
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === messages.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(messages.map((m) => m.id)));
+    }
+  }
+
+  async function trashOne(id: string) {
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPIMESSAGETRASH(id), { method: "POST" });
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setTotal((prev) => prev - 1);
+      setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    } catch {}
+    setActionLoading(false);
+    setDeleteTarget(null);
+  }
+
+  async function bulkTrash() {
+    setActionLoading(true);
+    const ids = Array.from(selected);
+    for (const id of ids) {
+      try {
+        await apiFetch(ROUTES.ADMINAPIMESSAGETRASH(id), { method: "POST" });
+      } catch {}
+    }
+    setMessages((prev) => prev.filter((m) => !selected.has(m.id)));
+    setTotal((prev) => prev - ids.length);
+    setSelected(new Set());
+    setActionLoading(false);
+    setBulkDeleteOpen(false);
+  }
 
   const totalPages = Math.ceil(total / 20);
 
@@ -4024,6 +4147,27 @@ export default function Inbox() {
         />
       </div>
 
+      {/* Bulk actions bar */}
+      {selected.size > 0 && (
+        <div className="shrink-0 flex items-center gap-3 px-4 py-2 neu-convex rounded-xl">
+          <input
+            type="checkbox"
+            checked={selected.size === messages.length && messages.length > 0}
+            onChange={toggleSelectAll}
+            className="h-4 w-4 rounded border-border accent-primary"
+          />
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => setBulkDeleteOpen(true)}
+            disabled={actionLoading}
+            className="px-3 py-1.5 text-sm neu-btn text-red-500 flex items-center gap-1.5"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Move to Trash
+          </button>
+        </div>
+      )}
+
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
@@ -4032,18 +4176,27 @@ export default function Inbox() {
         ) : (
           <div className="divide-y divide-border/50">
             {messages.map((msg) => (
-              <Link
-                key={msg.id}
-                to={`/vega/admin/messages/${msg.id}`}
-                className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
+              <div key={msg.id} className="flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors">
+                {/* Checkbox */}
+                <input
+                  type="checkbox"
+                  checked={selected.has(msg.id)}
+                  onChange={() => toggleSelect(msg.id)}
+                  className="h-4 w-4 rounded border-border accent-primary shrink-0"
+                />
+
+                {/* Link content */}
+                <Link
+                  to={`/vega/admin/messages/${msg.id}`}
+                  className="flex-1 min-w-0"
+                >
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-sm truncate">{msg.sender_name || "Anonymous"}</p>
                     <span className="text-xs text-muted-foreground">({msg.sender_email})</span>
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{msg.subject}</p>
-                </div>
+                </Link>
+
                 <div className="flex items-center gap-3 ml-4">
                   {msg.attachment_count ? (
                     <span className="text-muted-foreground" title="Has attachments">
@@ -4068,9 +4221,17 @@ export default function Inbox() {
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(msg.created_at).toLocaleDateString()}
                   </span>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => { e.preventDefault(); setDeleteTarget(msg); }}
+                    className="p-1 neu-btn rounded-lg text-muted-foreground hover:text-red-500 transition-colors"
+                    title="Move to trash"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
                   <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                 </div>
-              </Link>
+              </div>
             ))}
           </div>
         )}
@@ -4097,6 +4258,28 @@ export default function Inbox() {
           </button>
         </div>
       )}
+
+      {/* Single delete dialog */}
+      <DeleteMessageDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Move to Trash?"
+        message={`This message will be moved to Trash and permanently deleted after the retention period.`}
+        confirmLabel="Move to Trash"
+        loading={actionLoading}
+        onConfirm={() => deleteTarget && trashOne(deleteTarget.id)}
+      />
+
+      {/* Bulk delete dialog */}
+      <DeleteMessageDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Move selected to Trash?"
+        message={`This will move ${selected.size} message${selected.size !== 1 ? "s" : ""} to Trash.`}
+        confirmLabel="Move to Trash"
+        loading={actionLoading}
+        onConfirm={bulkTrash}
+      />
     </div>
   );
 }
@@ -4116,6 +4299,9 @@ import {
   MessageSquare,
   Paperclip,
   FileText,
+  Trash2,
+  RotateCcw,
+  Clock,
 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
 import {
@@ -4125,6 +4311,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
 
 interface Note {
   id: string;
@@ -4160,6 +4347,9 @@ interface Message {
   channel: string;
   source_page: string;
   created_at: string;
+  deleted_at?: string;
+  trash_expires_at?: string;
+  trashed?: boolean;
   notes: Note[];
   tags: Tag_[];
   attachments?: Attachment[];
@@ -4173,11 +4363,12 @@ export default function MessageDetail() {
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
 
-  // Modal states
   const [showTagModal, setShowTagModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showTrashDialog, setShowTrashDialog] = useState(false);
+  const [showPermDeleteDialog, setShowPermDeleteDialog] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Form inputs (used inside modals)
   const [tagInput, setTagInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
 
@@ -4245,6 +4436,38 @@ export default function MessageDetail() {
     setMessage(refreshed);
   }
 
+  async function trashMessage() {
+    if (!id) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPIMESSAGETRASH(id), { method: "POST" });
+      navigate("/vega/admin/inbox");
+    } catch {}
+    setActionLoading(false);
+    setShowTrashDialog(false);
+  }
+
+  async function restoreMessage() {
+    if (!id) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHRESTORE(id), { method: "POST" });
+      navigate("/vega/admin/inbox");
+    } catch {}
+    setActionLoading(false);
+  }
+
+  async function permanentDelete() {
+    if (!id) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHPERMANENT(id), { method: "DELETE" });
+      navigate("/vega/admin/trash");
+    } catch {}
+    setActionLoading(false);
+    setShowPermDeleteDialog(false);
+  }
+
   if (loading)
     return (
       <div className="p-8 text-center text-sm text-muted-foreground">
@@ -4253,20 +4476,54 @@ export default function MessageDetail() {
     );
   if (!message) return null;
 
+  const isTrashed = message.trashed || !!message.deleted_at;
+
   return (
-    <div className="flex flex-col gap-3 h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0">
       {/* ── Header ─────────────────────────────────── */}
-      <div className="shrink-0">
+      <div className="shrink-0 mb-4">
         <button
-          onClick={() => navigate("/vega/admin/inbox")}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-3"
+          onClick={() => isTrashed ? navigate("/vega/admin/trash") : navigate("/vega/admin/inbox")}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-3 transition-colors"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to inbox
+          <ArrowLeft className="h-4 w-4" /> {isTrashed ? "Back to trash" : "Back to inbox"}
         </button>
 
-        <div className="flex items-start justify-between gap-4">
+        {isTrashed && (
+          <div className="mb-3 p-3 neu-convex rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <Trash2 className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-muted-foreground">
+                This message is in Trash. Deleted{" "}
+                {new Date(message.deleted_at!).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
+                {message.trash_expires_at && (
+                  <> Automatically deleted{" "}
+                  {new Date(message.trash_expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.</>
+                )}
+              </span>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={restoreMessage}
+                disabled={actionLoading}
+                className="px-3 py-1.5 text-sm neu-btn flex items-center gap-1.5"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Restore
+              </button>
+              <button
+                onClick={() => setShowPermDeleteDialog(true)}
+                disabled={actionLoading}
+                className="px-3 py-1.5 text-sm neu-btn text-red-500 flex items-center gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete forever
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold leading-tight">
+            <h1 className="text-2xl font-bold leading-tight break-words">
               {message.subject}
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -4276,57 +4533,70 @@ export default function MessageDetail() {
               {message.reference}
             </span>
           </div>
-          <div className="flex gap-2 shrink-0">
-            <NeuSelect
-              value={status}
-              onChange={(v) => {
-                setStatus(v);
-                updateField("status", v);
-              }}
-              options={[
-                { value: "new", label: "New" },
-                { value: "in_progress", label: "In Progress" },
-                { value: "waiting", label: "Waiting" },
-                { value: "resolved", label: "Resolved" },
-                { value: "spam", label: "Spam" },
-              ]}
-            />
-            <NeuSelect
-              value={priority}
-              onChange={(v) => {
-                setPriority(v);
-                updateField("priority", v);
-              }}
-              options={[
-                { value: "low", label: "Low" },
-                { value: "normal", label: "Normal" },
-                { value: "high", label: "High" },
-                { value: "urgent", label: "Urgent" },
-              ]}
-            />
+          <div className="flex gap-2 shrink-0 flex-wrap">
+            {!isTrashed && (
+              <>
+                <NeuSelect
+                  value={status}
+                  onChange={(v) => {
+                    setStatus(v);
+                    updateField("status", v);
+                  }}
+                  options={[
+                    { value: "new", label: "New" },
+                    { value: "in_progress", label: "In Progress" },
+                    { value: "waiting", label: "Waiting" },
+                    { value: "resolved", label: "Resolved" },
+                    { value: "spam", label: "Spam" },
+                  ]}
+                />
+                <NeuSelect
+                  value={priority}
+                  onChange={(v) => {
+                    setPriority(v);
+                    updateField("priority", v);
+                  }}
+                  options={[
+                    { value: "low", label: "Low" },
+                    { value: "normal", label: "Normal" },
+                    { value: "high", label: "High" },
+                    { value: "urgent", label: "Urgent" },
+                  ]}
+                />
+                <button
+                  onClick={() => setShowTrashDialog(true)}
+                  className="px-3 py-1.5 neu-btn text-sm flex items-center gap-1.5 text-muted-foreground hover:text-red-500 transition-colors"
+                  title="Move to trash"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Two-column content ─────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(300px,0.9fr)] gap-4">
+      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
         {/* ── Left: Message ────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto">
-          <div className="neu-flat rounded-xl p-6 space-y-5">
-            {/* Body */}
+        <div className="min-h-0 overflow-y-auto space-y-4">
+          {/* Body */}
+          <div className="neu-flat rounded-xl p-5">
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
               {message.body}
             </p>
+          </div>
 
-            {/* Metadata grid */}
-            <div className="grid grid-cols-3 gap-4 text-xs">
+          {/* Metadata */}
+          <div className="neu-flat rounded-xl p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
               <div>
-                <span className="text-muted-foreground">Channel</span>
-                <p className="font-medium mt-0.5">{message.channel}</p>
+                <span className="text-muted-foreground block mb-0.5">Channel</span>
+                <p className="font-medium">{message.channel}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">Received</span>
-                <p className="font-medium mt-0.5">
+                <span className="text-muted-foreground block mb-0.5">Received</span>
+                <p className="font-medium">
                   {new Date(message.created_at).toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",
@@ -4341,55 +4611,63 @@ export default function MessageDetail() {
               </div>
               {message.sender_phone && (
                 <div>
-                  <span className="text-muted-foreground">Phone</span>
-                  <p className="font-medium mt-0.5">{message.sender_phone}</p>
+                  <span className="text-muted-foreground block mb-0.5">Phone</span>
+                  <p className="font-medium">{message.sender_phone}</p>
+                </div>
+              )}
+              {message.source_page && (
+                <div>
+                  <span className="text-muted-foreground block mb-0.5">Source</span>
+                  <p className="font-medium truncate" title={message.source_page}>
+                    {message.source_page}
+                  </p>
                 </div>
               )}
             </div>
-
-            {/* Attachments */}
-            {message.attachments && message.attachments.length > 0 && (
-              <div className="border-t border-border/50 pt-4">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
-                  <Paperclip className="h-3.5 w-3.5" /> Attachments &middot;{" "}
-                  {message.attachments.length}
-                </h3>
-                <div className="space-y-2">
-                  {message.attachments.map((att) => (
-                    <a
-                      key={att.id}
-                      href={`/api${att.url}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors group"
-                      title={att.content_type ?? "Download"}
-                    >
-                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="truncate flex-1 min-w-0">
-                        {att.filename}
-                      </span>
-                      {typeof att.size === "number" && (
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {att.size >= 1048576
-                            ? `${(att.size / 1048576).toFixed(1)} MB`
-                            : `${(att.size / 1024).toFixed(1)} KB`}
-                        </span>
-                      )}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
+
+          {/* Attachments */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="neu-flat rounded-xl p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                <Paperclip className="h-3.5 w-3.5" /> Attachments &middot;{" "}
+                {message.attachments.length}
+              </h3>
+              <div className="space-y-2">
+                {message.attachments.map((att) => (
+                  <a
+                    key={att.id}
+                    href={`/api${att.url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors group"
+                    title={att.content_type ?? "Download"}
+                  >
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="truncate flex-1 min-w-0">
+                      {att.filename}
+                    </span>
+                    {typeof att.size === "number" && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {att.size >= 1048576
+                          ? `${(att.size / 1048576).toFixed(1)} MB`
+                          : `${(att.size / 1024).toFixed(1)} KB`}
+                      </span>
+                    )}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Right: Sidebar ───────────────────────── */}
-        <div className="space-y-4 lg:sticky lg:top-0 lg:h-full lg:overflow-y-auto min-h-0">
+        <div className="space-y-4 min-h-0 overflow-y-auto">
           {/* Tags card */}
           <div className="neu-flat rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Tag className="h-4 w-4" /> Tags
+                <Tag className="h-4 w-4 text-primary" /> Tags
               </h3>
               <button
                 onClick={() => setShowTagModal(true)}
@@ -4400,13 +4678,13 @@ export default function MessageDetail() {
               </button>
             </div>
             {message.tags.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No tags yet</p>
+              <p className="text-xs text-muted-foreground italic">No tags yet</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {message.tags.map((t) => (
                   <span
                     key={t.id}
-                    className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
+                    className="px-2.5 py-1 bg-primary/10 text-primary text-xs rounded-full font-medium"
                   >
                     {t.name}
                   </span>
@@ -4419,7 +4697,7 @@ export default function MessageDetail() {
           <div className="neu-flat rounded-xl p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" /> Internal Notes
+                <MessageSquare className="h-4 w-4 text-primary" /> Notes
               </h3>
               <button
                 onClick={() => setShowNoteModal(true)}
@@ -4430,17 +4708,18 @@ export default function MessageDetail() {
               </button>
             </div>
             {message.notes.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No notes yet</p>
+              <p className="text-xs text-muted-foreground italic">No notes yet</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {message.notes
                   .slice()
                   .reverse()
                   .slice(0, 3)
                   .map((n) => (
-                    <div key={n.id} className="p-2.5 neu-concave rounded-lg">
+                    <div key={n.id} className="p-2.5 neu-concave rounded-xl">
                       <p className="text-xs leading-relaxed">{n.body}</p>
-                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                      <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
                         {new Date(n.created_at).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
@@ -4453,6 +4732,14 @@ export default function MessageDetail() {
                       </p>
                     </div>
                   ))}
+                {message.notes.length > 3 && (
+                  <button
+                    onClick={() => setShowNoteModal(true)}
+                    className="text-xs text-primary hover:underline w-full text-center py-1"
+                  >
+                    View all {message.notes.length} notes
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -4469,7 +4756,6 @@ export default function MessageDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Current tags */}
           {message.tags.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
@@ -4495,7 +4781,6 @@ export default function MessageDetail() {
             </div>
           )}
 
-          {/* Add tag form */}
           <form onSubmit={addTag} className="flex gap-2">
             <input
               value={tagInput}
@@ -4524,7 +4809,6 @@ export default function MessageDetail() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Add note form */}
           <form onSubmit={addNote} className="space-y-3">
             <textarea
               value={noteInput}
@@ -4544,7 +4828,6 @@ export default function MessageDetail() {
             </div>
           </form>
 
-          {/* Previous notes */}
           {message.notes.length > 0 && (
             <div className="border-t border-border/50 pt-4 mt-2">
               <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
@@ -4576,6 +4859,29 @@ export default function MessageDetail() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Trash Dialog ─────────────────────────────── */}
+      <DeleteMessageDialog
+        open={showTrashDialog}
+        onOpenChange={setShowTrashDialog}
+        title="Move to Trash?"
+        message="This message will be moved to Trash and permanently deleted after the retention period."
+        confirmLabel="Move to Trash"
+        loading={actionLoading}
+        onConfirm={trashMessage}
+      />
+
+      {/* ── Permanent Delete Dialog ──────────────────── */}
+      <DeleteMessageDialog
+        open={showPermDeleteDialog}
+        onOpenChange={setShowPermDeleteDialog}
+        title="Permanently delete message?"
+        message="This action cannot be undone. The message, attachments, notes and tags will be permanently removed."
+        confirmLabel="Delete forever"
+        danger
+        loading={actionLoading}
+        onConfirm={permanentDelete}
+      />
     </div>
   );
 }
@@ -4981,8 +5287,9 @@ import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { getPasswordErrors } from "@/lib/passwordValidation";
-import { Shield, Lock, Copy, Check, User } from "lucide-react";
+import { Shield, Lock, Copy, Check, User, Trash2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { NeuSelect } from "@/components/ui/select";
 
 export default function Settings() {
   const [totpEnabled, setTotpEnabled] = useState(false);
@@ -4999,10 +5306,16 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
+  const [retentionDays, setRetentionDays] = useState("30");
+  const [retentionSaving, setRetentionSaving] = useState(false);
+
   useEffect(() => {
     apiFetch(ROUTES.ADMINAPISETTINGS)
       .then((r) => r.json())
-      .then((data) => setTotpEnabled(data.totp_enabled))
+      .then((data) => {
+        setTotpEnabled(data.totp_enabled);
+        if (data.trash_retention_days) setRetentionDays(String(data.trash_retention_days));
+      })
       .catch(() => {});
   }, []);
 
@@ -5123,6 +5436,24 @@ export default function Settings() {
     }
   }
 
+  async function saveRetention() {
+    setRetentionSaving(true);
+    setError("");
+    setMsg("");
+    try {
+      const res = await apiFetch(ROUTES.ADMINAPISETTINGS, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trash_retention_days: parseInt(retentionDays) }),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      setMsg("Retention period saved");
+    } catch {
+      setError("Failed to save retention period");
+    }
+    setRetentionSaving(false);
+  }
+
   return (
     <div className="flex flex-col gap-4 h-full min-h-0 max-w-2xl overflow-auto">
       <div>
@@ -5142,6 +5473,10 @@ export default function Settings() {
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="w-4 h-4" />
             Profile
+          </TabsTrigger>
+          <TabsTrigger value="trash" className="flex items-center gap-2">
+            <Trash2 className="w-4 h-4" />
+            Trash
           </TabsTrigger>
         </TabsList>
 
@@ -5272,6 +5607,46 @@ export default function Settings() {
                 Change Password
               </button>
             </form>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="trash">
+          <div className="neu-flat p-6 space-y-4">
+            <div>
+              <h2 className="font-semibold mb-1">Message Trash</h2>
+              <p className="text-sm text-muted-foreground">
+                Deleted messages are automatically and permanently removed after the selected retention period.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Retention period</label>
+              <NeuSelect
+                value={retentionDays}
+                onChange={setRetentionDays}
+                options={[
+                  { value: "7", label: "7 days" },
+                  { value: "14", label: "14 days" },
+                  { value: "30", label: "30 days" },
+                  { value: "60", label: "60 days" },
+                  { value: "90", label: "90 days" },
+                  { value: "180", label: "180 days" },
+                  { value: "365", label: "365 days" },
+                ]}
+                className="w-full sm:w-48"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New deletions will be retained for {retentionDays} days. Changing this setting does not change the expiration date of messages already in Trash.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={saveRetention}
+                disabled={retentionSaving}
+                className="px-4 py-2 neu-btn text-sm font-medium"
+              >
+                {retentionSaving ? "Saving..." : "Save changes"}
+              </button>
+            </div>
           </div>
         </TabsContent>
       </Tabs>
@@ -5446,6 +5821,336 @@ export default function Setup() {
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+```
+
+```tsx
+// File: src\pages\admin\Trash.tsx
+import { useEffect, useState } from "react";
+import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
+import { Search, Trash2, RotateCcw } from "lucide-react";
+import { NeuSelect } from "@/components/ui/select";
+import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
+
+interface TrashMessage {
+  id: string;
+  reference: string;
+  sender_name: string;
+  sender_email: string;
+  subject: string;
+  deleted_at: string;
+  trash_expires_at: string;
+}
+
+function daysUntil(dateStr: string): number {
+  const now = new Date();
+  const exp = new Date(dateStr);
+  return Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function ExpiryBadge({ expiresAt }: { expiresAt: string }) {
+  const days = daysUntil(expiresAt);
+  if (days <= 0) return <span className="text-xs font-bold text-red-500">Expires today</span>;
+  if (days <= 2) return <span className="text-xs font-bold text-red-500">Expires in {days} day{days !== 1 ? "s" : ""}</span>;
+  if (days <= 7) return <span className="text-xs text-amber-600">Expires in {days} days</span>;
+  return <span className="text-xs text-muted-foreground">Expires in {days} days</span>;
+}
+
+export default function Trash() {
+  const [messages, setMessages] = useState<TrashMessage[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [expiryFilter, setExpiryFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Dialogs
+  const [deleteTarget, setDeleteTarget] = useState<TrashMessage | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    if (search) params.set("search", search);
+    if (expiryFilter) params.set("expiry", expiryFilter);
+    apiFetch(`${ROUTES.ADMINAPITRASH}?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setMessages(data.items ?? []);
+        setTotal(data.total ?? 0);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [page, search, expiryFilter]);
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function restoreOne(id: string) {
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHRESTORE(id), { method: "POST" });
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setTotal((prev) => prev - 1);
+      setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    } catch {}
+    setActionLoading(false);
+  }
+
+  async function deleteOne(id: string) {
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHPERMANENT(id), { method: "DELETE" });
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      setTotal((prev) => prev - 1);
+      setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    } catch {}
+    setActionLoading(false);
+    setDeleteTarget(null);
+  }
+
+  async function bulkRestore() {
+    setActionLoading(true);
+    const ids = Array.from(selected);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHBULKRESTORE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_ids: ids }),
+      });
+      setMessages((prev) => prev.filter((m) => !selected.has(m.id)));
+      setTotal((prev) => prev - ids.length);
+      setSelected(new Set());
+    } catch {}
+    setActionLoading(false);
+  }
+
+  async function bulkDelete() {
+    setActionLoading(true);
+    const ids = Array.from(selected);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHBULKDELETE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_ids: ids }),
+      });
+      setMessages((prev) => prev.filter((m) => !selected.has(m.id)));
+      setTotal((prev) => prev - ids.length);
+      setSelected(new Set());
+    } catch {}
+    setActionLoading(false);
+    setBulkDeleteOpen(false);
+  }
+
+  async function emptyTrash() {
+    setActionLoading(true);
+    try {
+      await apiFetch(ROUTES.ADMINAPITRASHEMPTY, { method: "POST" });
+      setTotal(0);
+      setMessages([]);
+      setSelected(new Set());
+    } catch {}
+    setActionLoading(false);
+    setEmptyTrashOpen(false);
+  }
+
+  const totalPages = Math.ceil(total / 20);
+
+  return (
+    <div className="flex flex-col gap-3 h-full min-h-0">
+      {/* Header */}
+      <div className="shrink-0">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Trash</h1>
+            <p className="text-muted-foreground text-sm">
+              {total} deleted message{total !== 1 ? "s" : ""}
+            </p>
+          </div>
+          {total > 0 && (
+            <button
+              onClick={() => setEmptyTrashOpen(true)}
+              className="px-3 py-1.5 text-sm neu-btn text-red-500 flex items-center gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Empty Trash
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            placeholder="Search deleted messages..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="w-full pl-10 pr-4 py-2 neu-concave rounded-xl bg-transparent text-foreground text-sm"
+          />
+        </div>
+        <NeuSelect
+          value={expiryFilter}
+          onChange={(v) => { setExpiryFilter(v); setPage(1); }}
+          options={[
+            { value: "", label: "All" },
+            { value: "7", label: "Expiring within 7 days" },
+            { value: "30", label: "Expiring within 30 days" },
+          ]}
+          className="w-full sm:w-auto"
+        />
+      </div>
+
+      {/* Bulk actions bar */}
+      {selected.size > 0 && (
+        <div className="shrink-0 flex items-center gap-3 px-4 py-2 neu-convex rounded-xl">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="flex-1" />
+          <button
+            onClick={bulkRestore}
+            disabled={actionLoading}
+            className="px-3 py-1.5 text-sm neu-btn flex items-center gap-1.5"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Restore selected
+          </button>
+          <button
+            onClick={() => setBulkDeleteOpen(true)}
+            disabled={actionLoading}
+            className="px-3 py-1.5 text-sm neu-btn text-red-500 flex items-center gap-1.5"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete permanently
+          </button>
+        </div>
+      )}
+
+      {/* Message list */}
+      <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
+        {loading ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
+        ) : messages.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">Trash is empty.</div>
+        ) : (
+          <div className="divide-y divide-border/50">
+            {messages.map((msg) => (
+              <div key={msg.id} className="flex items-center gap-3 p-4 hover:bg-muted/30 transition-colors">
+                {/* Checkbox */}
+                <input
+                  type="checkbox"
+                  checked={selected.has(msg.id)}
+                  onChange={() => toggleSelect(msg.id)}
+                  className="h-4 w-4 rounded border-border accent-primary shrink-0"
+                />
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-sm truncate">{msg.sender_name || "Anonymous"}</p>
+                    <span className="text-xs text-muted-foreground">({msg.sender_email})</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground truncate">{msg.subject}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="text-xs text-muted-foreground">
+                      Deleted {new Date(msg.deleted_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                    <ExpiryBadge expiresAt={msg.trash_expires_at} />
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => restoreOne(msg.id)}
+                    disabled={actionLoading}
+                    className="px-2.5 py-1 text-xs neu-btn flex items-center gap-1"
+                    title="Restore to Inbox"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Restore
+                  </button>
+                  <button
+                    onClick={() => setDeleteTarget(msg)}
+                    disabled={actionLoading}
+                    className="px-2.5 py-1 text-xs neu-btn text-red-500 flex items-center gap-1"
+                    title="Delete forever"
+                  >
+                    <Trash2 className="h-3 w-3" /> Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 shrink-0">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="px-3 py-1 neu-btn text-sm disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      )}
+
+      {/* Single permanent delete dialog */}
+      <DeleteMessageDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Permanently delete message?"
+        message={`This action cannot be undone. The message, attachments, notes and tags will be permanently removed.`}
+        confirmLabel="Delete forever"
+        danger
+        loading={actionLoading}
+        onConfirm={() => deleteTarget && deleteOne(deleteTarget.id)}
+      />
+
+      {/* Bulk permanent delete dialog */}
+      <DeleteMessageDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title="Permanently delete selected messages?"
+        message={`This will permanently delete ${selected.size} message${selected.size !== 1 ? "s" : ""}. This cannot be undone.`}
+        confirmLabel="Delete permanently"
+        danger
+        loading={actionLoading}
+        onConfirm={bulkDelete}
+      />
+
+      {/* Empty trash dialog */}
+      <DeleteMessageDialog
+        open={emptyTrashOpen}
+        onOpenChange={setEmptyTrashOpen}
+        title="Empty Trash?"
+        message={`This will permanently delete all ${total} message${total !== 1 ? "s" : ""} currently in Trash. This cannot be undone.`}
+        confirmLabel="Delete all forever"
+        danger
+        loading={actionLoading}
+        onConfirm={emptyTrash}
+      />
     </div>
   );
 }

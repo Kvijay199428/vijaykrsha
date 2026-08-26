@@ -65,42 +65,6 @@ def _audit(db: AsyncSession, event: AuditEvent, admin_id=None, message_id=None, 
     ))
 
 
-# ── Trash a message ──────────────────────────────────────────────
-@router.post("/{message_id}/trash")
-async def trash_message(
-    message_id: UUID,
-    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_DELETE)),
-    db: AsyncSession = Depends(get_db),
-):
-    msg = (await db.execute(
-        select(ContactMessage).where(ContactMessage.id == message_id)
-    )).scalar_one_or_none()
-    if not msg:
-        raise HTTPException(404, "not_found")
-
-    if msg.deleted_at:
-        return {"status": "ok", "message": "already_trashed"}
-
-    now = datetime.now(timezone.utc)
-    retention_days = await _get_retention_days(db)
-    msg.deleted_at = now
-    msg.trash_expires_at = now + timedelta(days=retention_days)
-    msg.deleted_by = admin.id
-    msg.updated_at = now
-
-    _audit(db, AuditEvent.message_trashed, admin.id, message_id, {
-        "retention_days": retention_days,
-        "trash_expires_at": msg.trash_expires_at.isoformat(),
-    })
-    await db.commit()
-
-    return {
-        "status": "ok",
-        "deleted_at": msg.deleted_at.isoformat(),
-        "trash_expires_at": msg.trash_expires_at.isoformat(),
-    }
-
-
 # ── List trash ───────────────────────────────────────────────────
 @router.get("")
 async def list_trash(

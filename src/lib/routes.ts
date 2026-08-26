@@ -54,6 +54,8 @@ export const ROUTES = {
 
   // Trash
   ADMINAPIMESSAGETRASH: (id: string) => `${API}/admin/api/messages/${id}/trash`,
+  ADMINAPIMESSAGESTRASHBULK: `${API}/admin/api/messages/bulk/trash`,
+  ADMINAPIMESSAGEBULKACTION: `${API}/admin/api/messages/bulk`,
   ADMINAPITRASH: `${API}/admin/api/trash`,
   ADMINAPITRASHBYID: (id: string) => `${API}/admin/api/trash/${id}`,
   ADMINAPITRASHRESTORE: (id: string) => `${API}/admin/api/trash/${id}/restore`,
