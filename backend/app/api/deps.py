@@ -4,12 +4,15 @@ from fastapi import Request, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
+from app.config import get_settings
 from app.models import (
     AdminUser, AdminSession, AdminRole as AdminRoleEnum,
     AdminStatus, Device,
 )
 from app.models_rbac import AdminRole, AdminRolePermission, AdminPermission, Permission
 from app.security.sessions import get_session, touch_session
+
+settings = get_settings()
 
 
 def _extract_token(request: Request) -> str | None:
@@ -23,7 +26,7 @@ def _extract_token(request: Request) -> str | None:
 
 
 def _extract_device_token(request: Request) -> str | None:
-    return request.cookies.get("__Host-device")
+    return request.cookies.get(settings.device_cookie_name)
 
 
 async def get_current_admin(

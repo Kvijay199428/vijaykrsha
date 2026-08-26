@@ -30,7 +30,7 @@ def issue_csrf_cookie(response, token: str | None = None) -> str:
     response.set_cookie(
         CSRF_COOKIE_NAME, token,
         httponly=False,  # JS must read it to echo into X-CSRF-Token
-        secure=True,
+        secure=settings.cookie_secure,
         samesite="lax",
         max_age=12 * 3600,
         path="/",

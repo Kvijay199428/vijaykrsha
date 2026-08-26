@@ -191,7 +191,7 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
     db.add(admin)
     await db.flush()
 
-    device_token = request.cookies.get("__Host-device")
+    device_token = request.cookies.get(settings.device_cookie_name)
     device, is_new, new_device_token = await identify_or_create_device(
         db, device_token, admin.id,
         ip, request.headers.get("user-agent"),
@@ -209,14 +209,14 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
     })
     resp.set_cookie(
         "vks_session", token,
-        httponly=True, secure=True, samesite="lax",
+        httponly=True, secure=settings.cookie_secure, samesite="lax",
         max_age=12 * 3600,
         path="/",
     )
     issue_csrf_cookie(resp)
     resp.set_cookie(
-        "__Host-device", new_device_token,
-        httponly=True, secure=True, samesite="lax",
+        settings.device_cookie_name, new_device_token,
+        httponly=True, secure=settings.cookie_secure, samesite="lax",
         max_age=365 * 24 * 3600,
         path="/",
     )
@@ -313,7 +313,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     admin.locked_until = None
     await db.commit()
 
-    device_token = request.cookies.get("__Host-device")
+    device_token = request.cookies.get(settings.device_cookie_name)
     device, is_new, new_device_token = await identify_or_create_device(
         db, device_token, admin.id,
         ip, ua,
@@ -425,7 +425,7 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
 
     admin = (await db.execute(select(AdminUser).where(AdminUser.id == challenge.admin_id))).scalar_one_or_none()
 
-    device_token = request.cookies.get("__Host-device")
+    device_token = request.cookies.get(settings.device_cookie_name)
     device, is_new, new_device_token = await identify_or_create_device(
         db, device_token, admin.id, ip, ua,
     )
@@ -451,14 +451,14 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
     })
     resp.set_cookie(
         "vks_session", token,
-        httponly=True, secure=True, samesite="lax",
+        httponly=True, secure=settings.cookie_secure, samesite="lax",
         max_age=12 * 3600 if body.remember_me else 2 * 3600,
         path="/",
     )
     issue_csrf_cookie(resp)
     resp.set_cookie(
-        "__Host-device", new_device_token,
-        httponly=True, secure=True, samesite="lax",
+        settings.device_cookie_name, new_device_token,
+        httponly=True, secure=settings.cookie_secure, samesite="lax",
         max_age=365 * 24 * 3600,
         path="/",
     )
@@ -500,7 +500,7 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
         )
         raise HTTPException(401, "invalid_totp")
 
-    device_token = request.cookies.get("__Host-device")
+    device_token = request.cookies.get(settings.device_cookie_name)
     device, is_new, new_device_token = await identify_or_create_device(
         db, device_token, admin.id, ip, ua,
     )
@@ -523,14 +523,14 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
     })
     resp.set_cookie(
         "vks_session", token,
-        httponly=True, secure=True, samesite="lax",
+        httponly=True, secure=settings.cookie_secure, samesite="lax",
         max_age=12 * 3600 if body.remember_me else 2 * 3600,
         path="/",
     )
     issue_csrf_cookie(resp)
     resp.set_cookie(
-        "__Host-device", new_device_token,
-        httponly=True, secure=True, samesite="lax",
+        settings.device_cookie_name, new_device_token,
+        httponly=True, secure=settings.cookie_secure, samesite="lax",
         max_age=365 * 24 * 3600,
         path="/",
     )
@@ -547,7 +547,7 @@ async def trust_device_endpoint(
     ip = request.client.host if request.client else "unknown"
     ua = request.headers.get("user-agent", "")
 
-    device_token = request.cookies.get("__Host-device")
+    device_token = request.cookies.get(settings.device_cookie_name)
     if not device_token:
         raise HTTPException(400, "no_device_cookie")
 
@@ -571,8 +571,8 @@ async def trust_device_endpoint(
 
         resp = JSONResponse(content={"status": "trusted", "device_id": str(device.id)})
         resp.set_cookie(
-            "__Host-trusted-device", trust_secret,
-            httponly=True, secure=True, samesite="lax",
+            settings.trusted_device_cookie_name, trust_secret,
+            httponly=True, secure=settings.cookie_secure, samesite="lax",
             max_age=settings.TRUST_EXPIRY_DAYS * 24 * 3600,
             path="/",
         )
@@ -581,7 +581,7 @@ async def trust_device_endpoint(
         from app.security.devices import revoke_all_trust_for_device
         await revoke_all_trust_for_device(db, device.id)
         resp = JSONResponse(content={"status": "trust_removed"})
-        resp.delete_cookie("__Host-trusted-device", path="/")
+        resp.delete_cookie(settings.trusted_device_cookie_name, path="/")
         return resp
 
 
@@ -634,7 +634,7 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
         )
     resp = JSONResponse(content={"status": "ok"})
     resp.delete_cookie("vks_session")
-    resp.delete_cookie("__Host-trusted-device", path="/")
+    resp.delete_cookie(settings.trusted_device_cookie_name, path="/")
     return resp
 
 

@@ -118,6 +118,18 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     @property
+    def cookie_secure(self) -> bool:
+        return self.PRODUCTION
+
+    @property
+    def device_cookie_name(self) -> str:
+        return "__Host-device" if self.PRODUCTION else "vks_device"
+
+    @property
+    def trusted_device_cookie_name(self) -> str:
+        return "__Host-trusted-device" if self.PRODUCTION else "vks_trusted_device"
+
+    @property
     def allowed_attachment_extensions(self) -> frozenset[str]:
         return frozenset(
             e.strip().lower() for e in self.ALLOWED_ATTACHMENT_EXTENSIONS.split(",") if e.strip()

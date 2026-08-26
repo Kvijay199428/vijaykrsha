@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
+from app.config import get_settings
 from app.models import (
     AdminUser, Device, DeviceState, TrustedDevice,
     AuditEvent, AuditLog, AdminSession,
@@ -19,6 +20,7 @@ from app.security.rate_limit import RedisBlocklist
 import structlog
 
 logger = structlog.get_logger()
+settings = get_settings()
 router = APIRouter(prefix="/admin/api", tags=["devices"])
 
 
@@ -64,7 +66,7 @@ async def list_devices(
     result = await db.execute(stmt)
     devices = result.scalars().all()
 
-    current_device_token = request.cookies.get("__Host-device")
+    current_device_token = request.cookies.get(settings.device_cookie_name)
     current_device_id = None
     if current_device_token:
         import hashlib
@@ -139,7 +141,7 @@ async def revoke_device_endpoint(
     if not device:
         raise HTTPException(404, "device_not_found")
 
-    current_token = request.cookies.get("__Host-device")
+    current_token = request.cookies.get(settings.device_cookie_name)
     if current_token:
         import hashlib
         current_hash = hashlib.sha256(current_token.encode()).hexdigest()
@@ -171,7 +173,7 @@ async def block_device_endpoint(
     if not device:
         raise HTTPException(404, "device_not_found")
 
-    current_token = request.cookies.get("__Host-device")
+    current_token = request.cookies.get(settings.device_cookie_name)
     if current_token:
         import hashlib
         current_hash = hashlib.sha256(current_token.encode()).hexdigest()
