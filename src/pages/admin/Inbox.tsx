@@ -106,6 +106,61 @@ function priorityColor(p: string) {
   }
 }
 
+/* ── Skeleton loaders ─────────────────────────────── */
+
+function MessageListSkeleton() {
+  return (
+    <div className="divide-y divide-border/50">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-start gap-2 p-3">
+          <div className="h-3.5 w-3.5 rounded skeleton-shimmer shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="h-3 w-1/3 rounded skeleton-shimmer" />
+            <div className="h-3 w-2/3 rounded skeleton-shimmer" />
+            <div className="flex items-center gap-2 mt-1">
+              <div className="h-4 w-14 rounded-full skeleton-shimmer" />
+              <div className="h-4 w-14 rounded-full skeleton-shimmer" />
+              <div className="ml-auto h-3 w-16 rounded skeleton-shimmer" />
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-1 shrink-0">
+            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
+            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
+            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MessageDetailSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 flex-1 min-h-0">
+      <div className="shrink-0 neu-flat rounded-xl p-4 space-y-3">
+        <div className="h-4 w-1/3 rounded skeleton-shimmer" />
+        <div className="h-3 w-1/2 rounded skeleton-shimmer" />
+        <div className="h-5 w-20 rounded skeleton-shimmer" />
+      </div>
+      <div className="shrink-0 neu-flat rounded-xl p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="h-8 rounded skeleton-shimmer" />
+          <div className="h-8 rounded skeleton-shimmer" />
+          <div className="h-8 rounded skeleton-shimmer" />
+          <div className="h-8 rounded skeleton-shimmer" />
+        </div>
+      </div>
+      <div className="neu-flat rounded-xl p-5 flex-1 min-h-0 space-y-2">
+        <div className="h-3 w-full rounded skeleton-shimmer" />
+        <div className="h-3 w-full rounded skeleton-shimmer" />
+        <div className="h-3 w-5/6 rounded skeleton-shimmer" />
+        <div className="h-3 w-4/6 rounded skeleton-shimmer" />
+        <div className="h-3 w-full rounded skeleton-shimmer" />
+      </div>
+    </div>
+  );
+}
+
 /* ── Component ───────────────────────────────────── */
 
 export default function Inbox() {
@@ -441,7 +496,7 @@ export default function Inbox() {
           {/* List */}
           <div className="neu-flat overflow-y-auto flex-1 min-h-0 text-foreground">
             {loading ? (
-              <div className="p-6 text-center text-xs text-muted-foreground">Loading...</div>
+              <MessageListSkeleton />
             ) : listError ? (
               <div className="p-6 text-center text-xs text-red-500">{listError}</div>
             ) : messages.length === 0 ? (
@@ -545,9 +600,7 @@ export default function Inbox() {
         {/* ── Pane 2: Message Detail ───────────────── */}
         <div className="flex flex-col min-h-0">
           {detailLoading ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              Loading message...
-            </div>
+            <MessageDetailSkeleton />
           ) : detailError ? (
             <div className="flex-1 flex items-center justify-center text-sm text-red-500">
               {detailError}
@@ -643,22 +696,26 @@ export default function Inbox() {
           {detail ? (
             <>
               {/* Tags card */}
-              <div className="neu-flat rounded-xl overflow-hidden shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setTagsOpen(v => !v)}
-                  className="w-full flex items-center justify-between p-4"
-                >
-                  <div className="flex items-center gap-2 text-sm font-semibold">
+              <div className="shrink-0">
+                <div className="w-full flex items-center justify-between p-4">
+                  <button
+                    type="button"
+                    onClick={() => setTagsOpen(v => !v)}
+                    className="flex items-center gap-2 text-sm font-semibold"
+                  >
                     <Tag className="h-4 w-4 text-primary" /> Tags
-                  </div>
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform ${tagsOpen ? "rotate-180" : ""}`}
-                  />
-                </button>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${tagsOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  <button onClick={() => setShowTagModal(true)} className="p-1.5 neu-btn rounded-lg shrink-0" title="Manage tags">
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
                 {tagsOpen && (
-                  <div className="px-4 pb-4">
-                    <div className="flex items-center justify-between mb-3">
+                  <div className="neu-flat rounded-xl overflow-hidden shrink-0 mx-2 mb-2">
+                    <div className="px-4 py-3">
                       {detail.tags.length === 0 ? (
                         <p className="text-xs text-muted-foreground italic">No tags yet</p>
                       ) : (
@@ -670,99 +727,99 @@ export default function Inbox() {
                           ))}
                         </div>
                       )}
-                      <button onClick={() => setShowTagModal(true)} className="p-1.5 neu-btn rounded-lg ml-auto shrink-0" title="Manage tags">
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
                     </div>
                   </div>
                 )}
               </div>
 
               {/* Notes card — flex-1 takes remaining space */}
-              <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1">
-                <button
-                  type="button"
-                  onClick={() => setNotesOpen(v => !v)}
-                  className="shrink-0 w-full flex items-center justify-between p-4"
-                >
-                  <div className="flex items-center gap-2 text-sm font-semibold">
+              <div className="flex flex-col min-h-0 flex-1">
+                <div className="shrink-0 w-full flex items-center justify-between p-4">
+                  <button
+                    type="button"
+                    onClick={() => setNotesOpen(v => !v)}
+                    className="flex items-center gap-2 text-sm font-semibold"
+                  >
                     <MessageSquare className="h-4 w-4 text-primary" /> Notes
-                  </div>
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform ${notesOpen ? "rotate-180" : ""}`}
-                  />
-                </button>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${notesOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  <button onClick={() => setShowNoteModal(true)} className="p-1.5 neu-btn rounded-lg shrink-0" title="Add note">
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
                 {notesOpen && (
-                  <div className="px-4 pb-4 min-h-0 overflow-y-auto flex-1">
-                    <div className="flex items-center justify-between mb-3">
+                  <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1 mx-2 mb-2">
+                    <div className="px-4 py-3 min-h-0 overflow-y-auto flex-1">
                       {detail.notes.length === 0 ? (
                         <p className="text-xs text-muted-foreground italic">No notes yet</p>
-                      ) : null}
-                      <button onClick={() => setShowNoteModal(true)} className="p-1.5 neu-btn rounded-lg ml-auto shrink-0" title="Add note">
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {detail.notes.slice().reverse().slice(0, 5).map((n) => (
+                            <div key={n.id} className="p-2.5 neu-concave rounded-xl">
+                              <p className="text-xs leading-relaxed">{n.body}</p>
+                              <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} &middot;{" "}
+                                {new Date(n.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                              </p>
+                            </div>
+                          ))}
+                          {detail.notes.length > 5 && (
+                            <button
+                              onClick={() => setShowNoteModal(true)}
+                              className="text-xs text-primary hover:underline w-full text-center py-1"
+                            >
+                              View all {detail.notes.length} notes
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {detail.notes.length > 0 && (
-                      <div className="space-y-2.5">
-                        {detail.notes.slice().reverse().slice(0, 5).map((n) => (
-                          <div key={n.id} className="p-2.5 neu-concave rounded-xl">
-                            <p className="text-xs leading-relaxed">{n.body}</p>
-                            <p className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} &middot;{" "}
-                              {new Date(n.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                            </p>
-                          </div>
-                        ))}
-                        {detail.notes.length > 5 && (
-                          <button
-                            onClick={() => setShowNoteModal(true)}
-                            className="text-xs text-primary hover:underline w-full text-center py-1"
-                          >
-                            View all {detail.notes.length} notes
-                          </button>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
 
               {/* Attachments card — flex-1 takes remaining space */}
               {detail.attachments && detail.attachments.length > 0 && (
-                <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={() => setAttachmentsOpen(v => !v)}
-                    className="shrink-0 w-full flex items-center justify-between p-4"
-                  >
-                    <div className="flex items-center gap-2 text-sm font-semibold">
+                <div className="flex flex-col min-h-0 flex-1">
+                  <div className="shrink-0 w-full flex items-center justify-between p-4">
+                    <button
+                      type="button"
+                      onClick={() => setAttachmentsOpen(v => !v)}
+                      className="flex items-center gap-2 text-sm font-semibold"
+                    >
                       <Paperclip className="h-4 w-4 text-primary" /> Attachments · {detail.attachments.length}
-                    </div>
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform ${attachmentsOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform ${attachmentsOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  </div>
+
                   {attachmentsOpen && (
-                    <div className="px-4 pb-4 min-h-0 overflow-y-auto flex-1">
-                      <div className="space-y-2">
-                        {detail.attachments.map((att) => (
-                          <a
-                            key={att.id}
-                            href={`/api${att.url}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors"
-                          >
-                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <span className="truncate flex-1 min-w-0">{att.filename}</span>
-                            {typeof att.size === "number" && (
-                              <span className="text-xs text-muted-foreground shrink-0">
-                                {att.size >= 1048576 ? `${(att.size / 1048576).toFixed(1)} MB` : `${(att.size / 1024).toFixed(1)} KB`}
-                              </span>
-                            )}
-                          </a>
-                        ))}
+                    <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1 mx-2 mb-2">
+                      <div className="px-4 py-3 min-h-0 overflow-y-auto flex-1">
+                        <div className="space-y-2">
+                          {detail.attachments.map((att) => (
+                            <a
+                              key={att.id}
+                              href={`/api${att.url}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 px-3 py-2.5 neu-concave rounded-xl text-sm hover:bg-muted/30 transition-colors"
+                            >
+                              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <span className="truncate flex-1 min-w-0">{att.filename}</span>
+                              {typeof att.size === "number" && (
+                                <span className="text-xs text-muted-foreground shrink-0">
+                                  {att.size >= 1048576 ? `${(att.size / 1048576).toFixed(1)} MB` : `${(att.size / 1024).toFixed(1)} KB`}
+                                </span>
+                              )}
+                            </a>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -806,7 +863,7 @@ export default function Inbox() {
             )}
             <div className="neu-flat overflow-y-auto flex-1 min-h-0">
               {loading ? (
-                <div className="p-6 text-center text-xs text-muted-foreground">Loading...</div>
+                <MessageListSkeleton />
               ) : messages.length === 0 ? (
                 <div className="p-6 text-center text-xs text-muted-foreground">No messages.</div>
               ) : (
@@ -855,7 +912,7 @@ export default function Inbox() {
               <ArrowLeft className="h-4 w-4" /> Back to inbox
             </button>
             {detailLoading ? (
-              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Loading...</div>
+              <MessageDetailSkeleton />
             ) : detailError ? (
               <div className="flex-1 flex items-center justify-center text-sm text-red-500">{detailError}</div>
             ) : detail ? (

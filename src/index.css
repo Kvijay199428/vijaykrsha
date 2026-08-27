@@ -530,3 +530,22 @@ body {
     transition: none;
   }
 }
+
+/* ── Skeleton shimmer loading ── */
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-background) 0%,
+    var(--color-border) 50%,
+    var(--color-background) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
