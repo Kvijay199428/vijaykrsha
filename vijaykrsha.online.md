@@ -659,6 +659,7 @@ export default function DeleteMessageDialog({
 // File: src\components\admin\ProtectedRoute.tsx
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { Skeleton } from "../ui/skeleton";
 
 export default function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -666,10 +667,18 @@ export default function ProtectedRoute() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Checking session...</p>
+      <div className="admin-theme min-h-screen bg-background text-foreground" role="status" aria-label="Checking session">
+        <div className="max-w-md mx-auto p-8 space-y-6">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-10 w-10 rounded-xl" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+          <div className="neu-flat rounded-xl p-6 space-y-3">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-5/6" />
+            <Skeleton className="h-8 w-full rounded-lg mt-4" />
+          </div>
         </div>
       </div>
     );
@@ -1685,6 +1694,112 @@ export function NeuSelect({
     </div>
   );
 }
+```
+
+```tsx
+// File: src\components\ui\skeleton.tsx
+import { type HTMLAttributes, forwardRef } from "react";
+
+const Skeleton = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className = "", ...props }, ref) => (
+    <div
+      ref={ref}
+      aria-hidden="true"
+      className={`skeleton-shimmer ${className}`}
+      {...props}
+    />
+  )
+);
+Skeleton.displayName = "Skeleton";
+
+interface SkeletonTableRowsProps {
+  rows?: number;
+  cols?: number;
+  colSpan?: number;
+}
+
+const SkeletonTableRows = forwardRef<
+  HTMLTableSectionElement,
+  SkeletonTableRowsProps & HTMLAttributes<HTMLTableSectionElement>
+>(({ rows = 6, cols = 4, colSpan, className = "", ...props }, ref) => (
+  <tbody
+    ref={ref}
+    aria-hidden="true"
+    className={`${className}`}
+    {...props}
+  >
+    {Array.from({ length: rows }).map((_, r) => (
+      <tr key={r} className="border-b border-border/50 last:border-0">
+        <td colSpan={colSpan ?? cols} className="px-4 py-3">
+          <div className="flex items-center gap-4">
+            {Array.from({ length: cols }).map((_, c) => (
+              <div
+                key={c}
+                className="h-4 flex-1 rounded skeleton-shimmer"
+                style={{ maxWidth: `${Math.min(85, 60 + c * 8)}%` }}
+              />
+            ))}
+          </div>
+        </td>
+      </tr>
+    ))}
+  </tbody>
+));
+SkeletonTableRows.displayName = "SkeletonTableRows";
+
+interface SkeletonListRowsProps {
+  rows?: number;
+}
+
+const SkeletonListRows = forwardRef<
+  HTMLDivElement,
+  SkeletonListRowsProps & HTMLAttributes<HTMLDivElement>
+>(({ rows = 8, className = "", ...props }, ref) => (
+  <div ref={ref} aria-hidden="true" className={`divide-y divide-border/50 ${className}`} {...props}>
+    {Array.from({ length: rows }).map((_, i) => (
+      <div key={i} className="flex items-start gap-3 p-4">
+        <div className="h-10 w-10 rounded-xl skeleton-shimmer shrink-0" />
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="h-3.5 w-1/3 rounded skeleton-shimmer" />
+          <div className="h-3 w-2/3 rounded skeleton-shimmer" />
+          <div className="h-3 w-1/4 rounded skeleton-shimmer" />
+        </div>
+        <div className="h-4 w-16 rounded-full skeleton-shimmer shrink-0 self-center" />
+      </div>
+    ))}
+  </div>
+));
+SkeletonListRows.displayName = "SkeletonListRows";
+
+const SkeletonDetail = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
+  ({ className = "", ...props }, ref) => (
+    <div ref={ref} aria-hidden="true" className={`flex flex-col gap-3 ${className}`} {...props}>
+      <div className="shrink-0 neu-flat rounded-xl p-4 space-y-3">
+        <div className="h-4 w-1/3 rounded skeleton-shimmer" />
+        <div className="h-3 w-1/2 rounded skeleton-shimmer" />
+        <div className="h-5 w-20 rounded skeleton-shimmer" />
+      </div>
+      <div className="shrink-0 neu-flat rounded-xl p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="h-8 rounded skeleton-shimmer" />
+          <div className="h-8 rounded skeleton-shimmer" />
+          <div className="h-8 rounded skeleton-shimmer" />
+          <div className="h-8 rounded skeleton-shimmer" />
+        </div>
+      </div>
+      <div className="neu-flat rounded-xl p-5 flex-1 min-h-0 space-y-2">
+        <div className="h-3 w-full rounded skeleton-shimmer" />
+        <div className="h-3 w-full rounded skeleton-shimmer" />
+        <div className="h-3 w-5/6 rounded skeleton-shimmer" />
+        <div className="h-3 w-4/6 rounded skeleton-shimmer" />
+        <div className="h-3 w-full rounded skeleton-shimmer" />
+      </div>
+    </div>
+  )
+);
+SkeletonDetail.displayName = "SkeletonDetail";
+
+export { Skeleton, SkeletonTableRows, SkeletonListRows, SkeletonDetail };
 ```
 
 ```tsx
@@ -3806,6 +3921,7 @@ export default function AdminLayout() {
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { SkeletonTableRows } from "@/components/ui/skeleton";
 
 interface AuditLog {
   id: number;
@@ -3853,18 +3969,18 @@ export default function AuditLogs() {
       </div>
 
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
-        {loading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
-        ) : (
-          <table className="w-full">
-            <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
-              <tr>
-                <th className="text-left p-3 text-sm font-bold text-foreground">Event</th>
-                <th className="text-left p-3 text-sm font-bold text-foreground">Actor</th>
-                <th className="text-left p-3 text-sm font-bold text-foreground">IP</th>
-                <th className="text-left p-3 text-sm font-bold text-foreground">Time</th>
-              </tr>
-            </thead>
+        <table className="w-full">
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
+            <tr>
+              <th className="text-left p-3 text-sm font-bold text-foreground">Event</th>
+              <th className="text-left p-3 text-sm font-bold text-foreground">Actor</th>
+              <th className="text-left p-3 text-sm font-bold text-foreground">IP</th>
+              <th className="text-left p-3 text-sm font-bold text-foreground">Time</th>
+            </tr>
+          </thead>
+          {loading ? (
+            <SkeletonTableRows rows={10} cols={4} />
+          ) : (
             <tbody className="divide-y divide-border/50">
               {logs.map((log) => (
                 <tr key={log.id} className="hover:bg-muted/20 transition-colors">
@@ -3887,8 +4003,8 @@ export default function AuditLogs() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        )}
+          )}
+        </table>
       </div>
 
       {totalPages > 1 && (
@@ -3933,6 +4049,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { Skeleton } from "@/components/ui/skeleton";
 import { MessageSquare, Mail, Clock, CheckCircle, Trash2, ArrowRight, ChevronRight } from "lucide-react";
 
 interface Stats {
@@ -3957,16 +4074,20 @@ interface Message {
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch(ROUTES.ADMINAPISTATS)
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {});
-    apiFetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`)
-      .then((r) => r.json())
-      .then((data) => setRecent(data.items ?? []))
-      .catch(() => {});
+    setLoading(true);
+    Promise.all([
+      apiFetch(ROUTES.ADMINAPISTATS).then((r) => r.json()),
+      apiFetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`).then((r) => r.json()),
+    ])
+      .then(([statsData, recentData]) => {
+        setStats(statsData);
+        setRecent(recentData.items ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const cards = [
@@ -3985,15 +4106,25 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 shrink-0">
-        {cards.map((card) => (
-          <div key={card.label} className="neu-convex p-6">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-muted-foreground">{card.label}</span>
-              <card.icon className={`h-5 w-5 ${card.color}`} />
-            </div>
-            <p className="text-3xl font-bold">{card.value}</p>
-          </div>
-        ))}
+        {loading
+          ? cards.map((card) => (
+              <div key={card.label} className="neu-convex p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <Skeleton className="h-4 w-24 rounded" />
+                  <Skeleton className="h-5 w-5 rounded" />
+                </div>
+                <Skeleton className="h-8 w-16 rounded" />
+              </div>
+            ))
+          : cards.map((card) => (
+              <div key={card.label} className="neu-convex p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm text-muted-foreground">{card.label}</span>
+                  <card.icon className={`h-5 w-5 ${card.color}`} />
+                </div>
+                <p className="text-3xl font-bold">{card.value}</p>
+              </div>
+            ))}
       </div>
 
       <div className="neu-flat flex flex-col gap-3 flex-1 min-h-0">
@@ -4004,7 +4135,21 @@ export default function Dashboard() {
           </Link>
         </div>
         <div className="divide-y divide-border/50 overflow-auto flex-1 min-h-0">
-          {recent.length === 0 ? (
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between p-4">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <Skeleton className="h-4 w-1/3 rounded" />
+                  <Skeleton className="h-3 w-2/3 rounded" />
+                </div>
+                <div className="flex items-center gap-3 ml-4">
+                  <Skeleton className="h-5 w-14 rounded-full" />
+                  <Skeleton className="h-3 w-16 rounded" />
+                  <Skeleton className="h-4 w-4 rounded" />
+                </div>
+              </div>
+            ))
+          ) : recent.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">No messages yet.</p>
           ) : (
             recent.map((msg) => (
@@ -4045,6 +4190,7 @@ export default function Dashboard() {
 import { useEffect, useState, useCallback } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Search,
   Paperclip,
@@ -4157,20 +4303,20 @@ function MessageListSkeleton() {
     <div className="divide-y divide-border/50">
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="flex items-start gap-2 p-3">
-          <div className="h-3.5 w-3.5 rounded skeleton-shimmer shrink-0 mt-0.5" />
+          <Skeleton className="h-3.5 w-3.5 rounded shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="h-3 w-1/3 rounded skeleton-shimmer" />
-            <div className="h-3 w-2/3 rounded skeleton-shimmer" />
+            <Skeleton className="h-3 w-1/3 rounded" />
+            <Skeleton className="h-3 w-2/3 rounded" />
             <div className="flex items-center gap-2 mt-1">
-              <div className="h-4 w-14 rounded-full skeleton-shimmer" />
-              <div className="h-4 w-14 rounded-full skeleton-shimmer" />
-              <div className="ml-auto h-3 w-16 rounded skeleton-shimmer" />
+              <Skeleton className="h-4 w-14 rounded-full" />
+              <Skeleton className="h-4 w-14 rounded-full" />
+              <Skeleton className="ml-auto h-3 w-16 rounded" />
             </div>
           </div>
           <div className="flex flex-col items-center gap-1 shrink-0">
-            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
-            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
-            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
+            <Skeleton className="h-3.5 w-3.5 rounded" />
+            <Skeleton className="h-3.5 w-3.5 rounded" />
+            <Skeleton className="h-3.5 w-3.5 rounded" />
           </div>
         </div>
       ))}
@@ -4182,24 +4328,95 @@ function MessageDetailSkeleton() {
   return (
     <div className="flex flex-col gap-3 flex-1 min-h-0">
       <div className="shrink-0 neu-flat rounded-xl p-4 space-y-3">
-        <div className="h-4 w-1/3 rounded skeleton-shimmer" />
-        <div className="h-3 w-1/2 rounded skeleton-shimmer" />
-        <div className="h-5 w-20 rounded skeleton-shimmer" />
+        <Skeleton className="h-4 w-1/3 rounded" />
+        <Skeleton className="h-3 w-1/2 rounded" />
+        <Skeleton className="h-5 w-20 rounded" />
       </div>
       <div className="shrink-0 neu-flat rounded-xl p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="h-8 rounded skeleton-shimmer" />
-          <div className="h-8 rounded skeleton-shimmer" />
-          <div className="h-8 rounded skeleton-shimmer" />
-          <div className="h-8 rounded skeleton-shimmer" />
+          <Skeleton className="h-8 rounded" />
+          <Skeleton className="h-8 rounded" />
+          <Skeleton className="h-8 rounded" />
+          <Skeleton className="h-8 rounded" />
         </div>
       </div>
       <div className="neu-flat rounded-xl p-5 flex-1 min-h-0 space-y-2">
-        <div className="h-3 w-full rounded skeleton-shimmer" />
-        <div className="h-3 w-full rounded skeleton-shimmer" />
-        <div className="h-3 w-5/6 rounded skeleton-shimmer" />
-        <div className="h-3 w-4/6 rounded skeleton-shimmer" />
-        <div className="h-3 w-full rounded skeleton-shimmer" />
+        <Skeleton className="h-3 w-full rounded" />
+        <Skeleton className="h-3 w-full rounded" />
+        <Skeleton className="h-3 w-5/6 rounded" />
+        <Skeleton className="h-3 w-4/6 rounded" />
+        <Skeleton className="h-3 w-full rounded" />
+      </div>
+    </div>
+  );
+}
+
+function MessageSidebarSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 flex-1 min-h-0">
+      <div className="shrink-0">
+        <div className="w-full flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-3.5 w-14 rounded" />
+          </div>
+          <Skeleton className="h-5 w-5 rounded-lg" />
+        </div>
+        <div className="neu-flat rounded-xl overflow-hidden mx-2 mb-2">
+          <div className="px-4 py-3 space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="h-5 w-12 rounded-full" />
+              <Skeleton className="h-5 w-14 rounded-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0">
+        <div className="shrink-0 w-full flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-3.5 w-14 rounded" />
+            <Skeleton className="h-4 w-4 rounded" />
+          </div>
+          <Skeleton className="h-5 w-5 rounded-lg" />
+        </div>
+        <div className="neu-flat rounded-xl overflow-hidden mx-2 mb-2">
+          <div className="px-4 py-3 space-y-3">
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-3/4 rounded" />
+              <Skeleton className="h-3 w-1/2 rounded" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-2/3 rounded" />
+              <Skeleton className="h-3 w-1/3 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0">
+        <div className="shrink-0 w-full flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-3.5 w-24 rounded" />
+            <Skeleton className="h-4 w-4 rounded" />
+          </div>
+          <Skeleton className="h-5 w-5 rounded-lg" />
+        </div>
+        <div className="neu-flat rounded-xl overflow-hidden mx-2 mb-2">
+          <div className="px-4 py-3 space-y-2">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-4 rounded shrink-0" />
+              <Skeleton className="h-3 w-1/2 rounded" />
+              <Skeleton className="ml-auto h-3 w-10 rounded" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-4 rounded shrink-0" />
+              <Skeleton className="h-3 w-1/3 rounded" />
+              <Skeleton className="ml-auto h-3 w-10 rounded" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -4649,11 +4866,7 @@ export default function Inbox() {
             <div className="flex-1 flex items-center justify-center text-sm text-red-500">
               {detailError}
             </div>
-          ) : !detail ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              Select a message to view
-            </div>
-          ) : (
+          ) : !detail ? null : (
             <div className="flex flex-col min-h-0 gap-3">
               {/* Sender header */}
               <div className="shrink-0 neu-flat rounded-xl p-4">
@@ -4737,7 +4950,9 @@ export default function Inbox() {
 
         {/* ── Pane 3: Sidebar ────────────────── */}
         <div className="flex flex-col min-h-0 h-full gap-3">
-          {detail ? (
+          {detailLoading ? (
+            <MessageSidebarSkeleton />
+          ) : detail ? (
             <>
               {/* Tags card */}
               <div className="shrink-0">
@@ -4870,11 +5085,7 @@ export default function Inbox() {
                 </div>
               )}
             </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              Select a message
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -5084,6 +5295,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { SkeletonDetail } from "@/components/ui/skeleton";
 import {
   ArrowLeft,
   Plus,
@@ -5263,8 +5475,8 @@ export default function MessageDetail() {
 
   if (loading)
     return (
-      <div className="p-8 text-center text-sm text-muted-foreground">
-        Loading...
+      <div className="h-full min-h-0">
+        <SkeletonDetail />
       </div>
     );
   if (!message) return null;
@@ -5695,6 +5907,7 @@ import {
   X,
 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
+import { SkeletonTableRows } from "@/components/ui/skeleton";
 
 interface RoleItem {
   id: string;
@@ -5827,12 +6040,11 @@ export default function RolesPage() {
               {canManageRoles && <th className="w-10"></th>}
             </tr>
           </thead>
+          {loading ? (
+            <SkeletonTableRows rows={6} cols={canManageRoles ? 5 : 4} />
+          ) : (
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={canManageRoles ? 6 : 5} className="text-center py-8 text-muted-foreground">Loading...</td>
-              </tr>
-            ) : roles.length === 0 ? (
+            {roles.length === 0 ? (
               <tr>
                 <td colSpan={canManageRoles ? 6 : 5} className="text-center py-8 text-muted-foreground">No roles found</td>
               </tr>
@@ -5877,6 +6089,7 @@ export default function RolesPage() {
               ))
             )}
           </tbody>
+          )}
         </table>
       </div>
 
@@ -6627,6 +6840,7 @@ import { apiFetch } from "@/lib/adminApi";
 import { Search, Trash2, RotateCcw } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
 import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
+import { SkeletonListRows } from "@/components/ui/skeleton";
 
 interface TrashMessage {
   id: string;
@@ -6831,7 +7045,7 @@ export default function Trash() {
       {/* Message list */}
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         {loading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
+          <SkeletonListRows rows={8} />
         ) : messages.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Trash is empty.</div>
         ) : (
@@ -6979,6 +7193,7 @@ import {
   Copy,
 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
+import { Skeleton, SkeletonTableRows } from "@/components/ui/skeleton";
 
 interface AdminUser {
   id: string;
@@ -7162,12 +7377,11 @@ export default function UsersPage() {
               {canManage && <th className="w-10"></th>}
             </tr>
           </thead>
+          {loading ? (
+            <SkeletonTableRows rows={8} cols={canManage ? 7 : 6} />
+          ) : (
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={canManage ? 8 : 7} className="text-center py-8 text-muted-foreground">Loading...</td>
-              </tr>
-            ) : filtered.length === 0 ? (
+            {filtered.length === 0 ? (
               <tr>
                 <td colSpan={canManage ? 8 : 7} className="text-center py-8 text-muted-foreground">No users found</td>
               </tr>
@@ -7274,6 +7488,7 @@ export default function UsersPage() {
               })
             )}
           </tbody>
+          )}
         </table>
       </div>
 
@@ -7731,7 +7946,12 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
       <h2 className="text-lg font-semibold mb-4">Configure TOTP for {user.username}</h2>
       {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
 
-      {step === "loading" && <p className="text-muted-foreground text-sm">Loading...</p>}
+      {step === "loading" && (
+        <div className="flex flex-col items-center py-6">
+          <Skeleton className="h-[200px] w-[200px] rounded-xl" />
+          <Skeleton className="h-3 w-40 mt-4" />
+        </div>
+      )}
 
       {step === "scan" && (
         <>

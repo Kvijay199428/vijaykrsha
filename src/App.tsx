@@ -13,7 +13,6 @@ import ProtectedRoute from "@/components/admin/ProtectedRoute";
 import AdminLayout from "@/pages/admin/AdminLayout";
 import Dashboard from "@/pages/admin/Dashboard";
 import Inbox from "@/pages/admin/Inbox";
-import MessageDetail from "@/pages/admin/MessageDetail";
 import Settings from "@/pages/admin/Settings";
 import UsersPage from "@/pages/admin/Users";
 import RolesPage from "@/pages/admin/Roles";
@@ -34,7 +33,10 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="trash" element={<Trash />} />
-          <Route path="messages/:id" element={<MessageDetail />} />
+          <Route
+            path="messages/:id"
+            element={<Navigate to="/vega/admin/inbox" replace />}
+          />
           <Route path="settings" element={<Settings />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="roles" element={<RolesPage />} />

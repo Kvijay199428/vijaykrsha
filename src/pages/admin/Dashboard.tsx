@@ -108,7 +108,7 @@ export default function Dashboard() {
             recent.map((msg) => (
               <Link
                 key={msg.id}
-                to={`/vega/admin/messages/${msg.id}`}
+                to={`/vega/admin/inbox?message=${msg.id}`}
                 className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors"
               >
                 <div className="flex-1 min-w-0">

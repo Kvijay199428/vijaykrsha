@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -236,6 +237,9 @@ function MessageSidebarSkeleton() {
 /* ── Component ───────────────────────────────────── */
 
 export default function Inbox() {
+  /* ── Router deep-link ── */
+  const [searchParams, setSearchParams] = useSearchParams();
+
   /* ── List state ── */
   const [messages, setMessages] = useState<ListMessage[]>([]);
   const [total, setTotal] = useState(0);
@@ -318,6 +322,19 @@ export default function Inbox() {
   useEffect(() => {
     if (activeId) fetchDetail(activeId);
   }, [activeId, fetchDetail]);
+
+  /* ── Deep-link from dashboard (?message=<id>) ─── */
+
+  useEffect(() => {
+    const messageId = searchParams.get("message");
+    if (messageId) {
+      setActiveId(messageId);
+      setMobileView("detail");
+      const next = new URLSearchParams(searchParams);
+      next.delete("message");
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   /* ── Select a message ── */
 
