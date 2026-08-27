@@ -732,8 +732,8 @@ export default function Inbox() {
                 )}
               </div>
 
-              {/* Notes card — flex-1 takes remaining space */}
-              <div className="flex flex-col min-h-0 flex-1">
+              {/* Notes card */}
+              <div className="shrink-0">
                 <div className="shrink-0 w-full flex items-center justify-between p-4">
                   <button
                     type="button"
@@ -751,8 +751,8 @@ export default function Inbox() {
                 </div>
 
                 {notesOpen && (
-                  <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1 mx-2 mb-2">
-                    <div className="px-4 py-3 min-h-0 overflow-y-auto flex-1">
+                  <div className="neu-flat rounded-xl overflow-hidden shrink-0 mx-2 mb-2">
+                    <div className="px-4 py-3">
                       {detail.notes.length === 0 ? (
                         <p className="text-xs text-muted-foreground italic">No notes yet</p>
                       ) : (
@@ -782,9 +782,9 @@ export default function Inbox() {
                 )}
               </div>
 
-              {/* Attachments card — flex-1 takes remaining space */}
+              {/* Attachments card */}
               {detail.attachments && detail.attachments.length > 0 && (
-                <div className="flex flex-col min-h-0 flex-1">
+                <div className="shrink-0">
                   <div className="shrink-0 w-full flex items-center justify-between p-4">
                     <button
                       type="button"
@@ -799,8 +799,8 @@ export default function Inbox() {
                   </div>
 
                   {attachmentsOpen && (
-                    <div className="neu-flat rounded-xl overflow-hidden flex flex-col min-h-0 flex-1 mx-2 mb-2">
-                      <div className="px-4 py-3 min-h-0 overflow-y-auto flex-1">
+                    <div className="neu-flat rounded-xl overflow-hidden shrink-0 mx-2 mb-2">
+                      <div className="px-4 py-3">
                         <div className="space-y-2">
                           {detail.attachments.map((att) => (
                             <a
