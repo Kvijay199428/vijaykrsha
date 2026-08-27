@@ -26,6 +26,7 @@ import {
   Copy,
 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
+import { Skeleton, SkeletonTableRows } from "@/components/ui/skeleton";
 
 interface AdminUser {
   id: string;
@@ -209,12 +210,11 @@ export default function UsersPage() {
               {canManage && <th className="w-10"></th>}
             </tr>
           </thead>
+          {loading ? (
+            <SkeletonTableRows rows={8} cols={canManage ? 7 : 6} />
+          ) : (
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={canManage ? 8 : 7} className="text-center py-8 text-muted-foreground">Loading...</td>
-              </tr>
-            ) : filtered.length === 0 ? (
+            {filtered.length === 0 ? (
               <tr>
                 <td colSpan={canManage ? 8 : 7} className="text-center py-8 text-muted-foreground">No users found</td>
               </tr>
@@ -321,6 +321,7 @@ export default function UsersPage() {
               })
             )}
           </tbody>
+          )}
         </table>
       </div>
 
@@ -778,7 +779,12 @@ function TotpSetupDialog({ user, onClose, onDone }: { user: AdminUser; onClose: 
       <h2 className="text-lg font-semibold mb-4">Configure TOTP for {user.username}</h2>
       {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-xl text-sm">{error}</div>}
 
-      {step === "loading" && <p className="text-muted-foreground text-sm">Loading...</p>}
+      {step === "loading" && (
+        <div className="flex flex-col items-center py-6">
+          <Skeleton className="h-[200px] w-[200px] rounded-xl" />
+          <Skeleton className="h-3 w-40 mt-4" />
+        </div>
+      )}
 
       {step === "scan" && (
         <>

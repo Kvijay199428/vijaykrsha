@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { SkeletonTableRows } from "@/components/ui/skeleton";
 
 interface AuditLog {
   id: number;
@@ -48,18 +49,18 @@ export default function AuditLogs() {
       </div>
 
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
-        {loading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
-        ) : (
-          <table className="w-full">
-            <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
-              <tr>
-                <th className="text-left p-3 text-sm font-bold text-foreground">Event</th>
-                <th className="text-left p-3 text-sm font-bold text-foreground">Actor</th>
-                <th className="text-left p-3 text-sm font-bold text-foreground">IP</th>
-                <th className="text-left p-3 text-sm font-bold text-foreground">Time</th>
-              </tr>
-            </thead>
+        <table className="w-full">
+          <thead className="sticky top-0 z-10 border-b border-border/50 bg-background">
+            <tr>
+              <th className="text-left p-3 text-sm font-bold text-foreground">Event</th>
+              <th className="text-left p-3 text-sm font-bold text-foreground">Actor</th>
+              <th className="text-left p-3 text-sm font-bold text-foreground">IP</th>
+              <th className="text-left p-3 text-sm font-bold text-foreground">Time</th>
+            </tr>
+          </thead>
+          {loading ? (
+            <SkeletonTableRows rows={10} cols={4} />
+          ) : (
             <tbody className="divide-y divide-border/50">
               {logs.map((log) => (
                 <tr key={log.id} className="hover:bg-muted/20 transition-colors">
@@ -82,8 +83,8 @@ export default function AuditLogs() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        )}
+          )}
+        </table>
       </div>
 
       {totalPages > 1 && (

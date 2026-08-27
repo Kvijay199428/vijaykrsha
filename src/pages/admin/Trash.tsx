@@ -4,6 +4,7 @@ import { apiFetch } from "@/lib/adminApi";
 import { Search, Trash2, RotateCcw } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
 import DeleteMessageDialog from "@/components/admin/DeleteMessageDialog";
+import { SkeletonListRows } from "@/components/ui/skeleton";
 
 interface TrashMessage {
   id: string;
@@ -208,7 +209,7 @@ export default function Trash() {
       {/* Message list */}
       <div className="neu-flat overflow-auto flex-1 min-h-0 text-foreground">
         {loading ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">Loading...</div>
+          <SkeletonListRows rows={8} />
         ) : messages.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Trash is empty.</div>
         ) : (

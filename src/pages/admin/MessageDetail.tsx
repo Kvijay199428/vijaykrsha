@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { SkeletonDetail } from "@/components/ui/skeleton";
 import {
   ArrowLeft,
   Plus,
@@ -181,8 +182,8 @@ export default function MessageDetail() {
 
   if (loading)
     return (
-      <div className="p-8 text-center text-sm text-muted-foreground">
-        Loading...
+      <div className="h-full min-h-0">
+        <SkeletonDetail />
       </div>
     );
   if (!message) return null;

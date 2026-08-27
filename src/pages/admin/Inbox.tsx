@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Search,
   Paperclip,
@@ -113,20 +114,20 @@ function MessageListSkeleton() {
     <div className="divide-y divide-border/50">
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="flex items-start gap-2 p-3">
-          <div className="h-3.5 w-3.5 rounded skeleton-shimmer shrink-0 mt-0.5" />
+          <Skeleton className="h-3.5 w-3.5 rounded shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="h-3 w-1/3 rounded skeleton-shimmer" />
-            <div className="h-3 w-2/3 rounded skeleton-shimmer" />
+            <Skeleton className="h-3 w-1/3 rounded" />
+            <Skeleton className="h-3 w-2/3 rounded" />
             <div className="flex items-center gap-2 mt-1">
-              <div className="h-4 w-14 rounded-full skeleton-shimmer" />
-              <div className="h-4 w-14 rounded-full skeleton-shimmer" />
-              <div className="ml-auto h-3 w-16 rounded skeleton-shimmer" />
+              <Skeleton className="h-4 w-14 rounded-full" />
+              <Skeleton className="h-4 w-14 rounded-full" />
+              <Skeleton className="ml-auto h-3 w-16 rounded" />
             </div>
           </div>
           <div className="flex flex-col items-center gap-1 shrink-0">
-            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
-            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
-            <div className="h-3.5 w-3.5 rounded skeleton-shimmer" />
+            <Skeleton className="h-3.5 w-3.5 rounded" />
+            <Skeleton className="h-3.5 w-3.5 rounded" />
+            <Skeleton className="h-3.5 w-3.5 rounded" />
           </div>
         </div>
       ))}
@@ -138,24 +139,24 @@ function MessageDetailSkeleton() {
   return (
     <div className="flex flex-col gap-3 flex-1 min-h-0">
       <div className="shrink-0 neu-flat rounded-xl p-4 space-y-3">
-        <div className="h-4 w-1/3 rounded skeleton-shimmer" />
-        <div className="h-3 w-1/2 rounded skeleton-shimmer" />
-        <div className="h-5 w-20 rounded skeleton-shimmer" />
+        <Skeleton className="h-4 w-1/3 rounded" />
+        <Skeleton className="h-3 w-1/2 rounded" />
+        <Skeleton className="h-5 w-20 rounded" />
       </div>
       <div className="shrink-0 neu-flat rounded-xl p-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="h-8 rounded skeleton-shimmer" />
-          <div className="h-8 rounded skeleton-shimmer" />
-          <div className="h-8 rounded skeleton-shimmer" />
-          <div className="h-8 rounded skeleton-shimmer" />
+          <Skeleton className="h-8 rounded" />
+          <Skeleton className="h-8 rounded" />
+          <Skeleton className="h-8 rounded" />
+          <Skeleton className="h-8 rounded" />
         </div>
       </div>
       <div className="neu-flat rounded-xl p-5 flex-1 min-h-0 space-y-2">
-        <div className="h-3 w-full rounded skeleton-shimmer" />
-        <div className="h-3 w-full rounded skeleton-shimmer" />
-        <div className="h-3 w-5/6 rounded skeleton-shimmer" />
-        <div className="h-3 w-4/6 rounded skeleton-shimmer" />
-        <div className="h-3 w-full rounded skeleton-shimmer" />
+        <Skeleton className="h-3 w-full rounded" />
+        <Skeleton className="h-3 w-full rounded" />
+        <Skeleton className="h-3 w-5/6 rounded" />
+        <Skeleton className="h-3 w-4/6 rounded" />
+        <Skeleton className="h-3 w-full rounded" />
       </div>
     </div>
   );

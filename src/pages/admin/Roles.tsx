@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { NeuSelect } from "@/components/ui/select";
+import { SkeletonTableRows } from "@/components/ui/skeleton";
 
 interface RoleItem {
   id: string;
@@ -143,12 +144,11 @@ export default function RolesPage() {
               {canManageRoles && <th className="w-10"></th>}
             </tr>
           </thead>
+          {loading ? (
+            <SkeletonTableRows rows={6} cols={canManageRoles ? 5 : 4} />
+          ) : (
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={canManageRoles ? 6 : 5} className="text-center py-8 text-muted-foreground">Loading...</td>
-              </tr>
-            ) : roles.length === 0 ? (
+            {roles.length === 0 ? (
               <tr>
                 <td colSpan={canManageRoles ? 6 : 5} className="text-center py-8 text-muted-foreground">No roles found</td>
               </tr>
@@ -193,6 +193,7 @@ export default function RolesPage() {
               ))
             )}
           </tbody>
+          )}
         </table>
       </div>
 
