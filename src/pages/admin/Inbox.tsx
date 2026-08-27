@@ -162,6 +162,77 @@ function MessageDetailSkeleton() {
   );
 }
 
+function MessageSidebarSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 flex-1 min-h-0">
+      <div className="shrink-0">
+        <div className="w-full flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-3.5 w-14 rounded" />
+          </div>
+          <Skeleton className="h-5 w-5 rounded-lg" />
+        </div>
+        <div className="neu-flat rounded-xl overflow-hidden mx-2 mb-2">
+          <div className="px-4 py-3 space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="h-5 w-12 rounded-full" />
+              <Skeleton className="h-5 w-14 rounded-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0">
+        <div className="shrink-0 w-full flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-3.5 w-14 rounded" />
+            <Skeleton className="h-4 w-4 rounded" />
+          </div>
+          <Skeleton className="h-5 w-5 rounded-lg" />
+        </div>
+        <div className="neu-flat rounded-xl overflow-hidden mx-2 mb-2">
+          <div className="px-4 py-3 space-y-3">
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-3/4 rounded" />
+              <Skeleton className="h-3 w-1/2 rounded" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-2/3 rounded" />
+              <Skeleton className="h-3 w-1/3 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="shrink-0">
+        <div className="shrink-0 w-full flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-4 rounded" />
+            <Skeleton className="h-3.5 w-24 rounded" />
+            <Skeleton className="h-4 w-4 rounded" />
+          </div>
+          <Skeleton className="h-5 w-5 rounded-lg" />
+        </div>
+        <div className="neu-flat rounded-xl overflow-hidden mx-2 mb-2">
+          <div className="px-4 py-3 space-y-2">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-4 rounded shrink-0" />
+              <Skeleton className="h-3 w-1/2 rounded" />
+              <Skeleton className="ml-auto h-3 w-10 rounded" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-4 w-4 rounded shrink-0" />
+              <Skeleton className="h-3 w-1/3 rounded" />
+              <Skeleton className="ml-auto h-3 w-10 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Component ───────────────────────────────────── */
 
 export default function Inbox() {
@@ -606,11 +677,7 @@ export default function Inbox() {
             <div className="flex-1 flex items-center justify-center text-sm text-red-500">
               {detailError}
             </div>
-          ) : !detail ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              Select a message to view
-            </div>
-          ) : (
+          ) : !detail ? null : (
             <div className="flex flex-col min-h-0 gap-3">
               {/* Sender header */}
               <div className="shrink-0 neu-flat rounded-xl p-4">
@@ -694,7 +761,9 @@ export default function Inbox() {
 
         {/* ── Pane 3: Sidebar ────────────────── */}
         <div className="flex flex-col min-h-0 h-full gap-3">
-          {detail ? (
+          {detailLoading ? (
+            <MessageSidebarSkeleton />
+          ) : detail ? (
             <>
               {/* Tags card */}
               <div className="shrink-0">
@@ -827,11 +896,7 @@ export default function Inbox() {
                 </div>
               )}
             </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-              Select a message
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
 

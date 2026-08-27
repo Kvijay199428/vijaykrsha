@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ROUTES } from "@/lib/routes";
 import { apiFetch } from "@/lib/adminApi";
+import { Skeleton } from "@/components/ui/skeleton";
 import { MessageSquare, Mail, Clock, CheckCircle, Trash2, ArrowRight, ChevronRight } from "lucide-react";
 
 interface Stats {
@@ -26,16 +27,20 @@ interface Message {
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recent, setRecent] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch(ROUTES.ADMINAPISTATS)
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {});
-    apiFetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`)
-      .then((r) => r.json())
-      .then((data) => setRecent(data.items ?? []))
-      .catch(() => {});
+    setLoading(true);
+    Promise.all([
+      apiFetch(ROUTES.ADMINAPISTATS).then((r) => r.json()),
+      apiFetch(`${ROUTES.ADMINAPIMESSAGES}?limit=5`).then((r) => r.json()),
+    ])
+      .then(([statsData, recentData]) => {
+        setStats(statsData);
+        setRecent(recentData.items ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const cards = [
@@ -54,15 +59,25 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 shrink-0">
-        {cards.map((card) => (
-          <div key={card.label} className="neu-convex p-6">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm text-muted-foreground">{card.label}</span>
-              <card.icon className={`h-5 w-5 ${card.color}`} />
-            </div>
-            <p className="text-3xl font-bold">{card.value}</p>
-          </div>
-        ))}
+        {loading
+          ? cards.map((card) => (
+              <div key={card.label} className="neu-convex p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <Skeleton className="h-4 w-24 rounded" />
+                  <Skeleton className="h-5 w-5 rounded" />
+                </div>
+                <Skeleton className="h-8 w-16 rounded" />
+              </div>
+            ))
+          : cards.map((card) => (
+              <div key={card.label} className="neu-convex p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm text-muted-foreground">{card.label}</span>
+                  <card.icon className={`h-5 w-5 ${card.color}`} />
+                </div>
+                <p className="text-3xl font-bold">{card.value}</p>
+              </div>
+            ))}
       </div>
 
       <div className="neu-flat flex flex-col gap-3 flex-1 min-h-0">
@@ -73,7 +88,21 @@ export default function Dashboard() {
           </Link>
         </div>
         <div className="divide-y divide-border/50 overflow-auto flex-1 min-h-0">
-          {recent.length === 0 ? (
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between p-4">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <Skeleton className="h-4 w-1/3 rounded" />
+                  <Skeleton className="h-3 w-2/3 rounded" />
+                </div>
+                <div className="flex items-center gap-3 ml-4">
+                  <Skeleton className="h-5 w-14 rounded-full" />
+                  <Skeleton className="h-3 w-16 rounded" />
+                  <Skeleton className="h-4 w-4 rounded" />
+                </div>
+              </div>
+            ))
+          ) : recent.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">No messages yet.</p>
           ) : (
             recent.map((msg) => (
