@@ -297,7 +297,7 @@ async def update_message(
             update(ContactMessage).where(ContactMessage.id == message_id).values(**values)
         )
 
-    _audit(db, AuditEvent.message_updated, admin.id, message_id, admin.id)
+    _audit(db, AuditEvent.message_updated, admin.id, message_id)
     await db.commit()
 
     return {"status": "ok"}
@@ -318,7 +318,7 @@ async def delete_message(
     msg.status = MessageStatus.archived
     msg.updated_at = datetime.now(timezone.utc)
 
-    _audit(db, AuditEvent.message_deleted, admin.id, message_id, admin.id)
+    _audit(db, AuditEvent.message_deleted, admin.id, message_id)
     await db.commit()
     return {"status": "ok"}
 
@@ -351,7 +351,7 @@ async def trash_message(
     msg.deleted_by = admin.id
     msg.updated_at = now
 
-    _audit(db, AuditEvent.message_trashed, admin.id, message_id, {
+    _audit(db, AuditEvent.message_trashed, admin.id, message_id, meta={
         "retention_days": retention_days,
         "trash_expires_at": msg.trash_expires_at.isoformat(),
     })
@@ -386,7 +386,7 @@ async def bulk_trash(
             trashed += 1
 
     if trashed:
-        _audit(db, AuditEvent.message_trashed, admin.id, None, {"count": trashed})
+        _audit(db, AuditEvent.message_trashed, admin.id, meta={"count": trashed})
     await db.commit()
     return {"status": "ok", "trashed": trashed}
 
@@ -531,15 +531,15 @@ async def remove_tag(
         if usage == 0:
             await db.delete(tag)
 
-    _audit(db, AuditEvent.message_tag_removed, admin.id, message_id, admin.id)
+    _audit(db, AuditEvent.message_tag_removed, admin.id, message_id)
     await db.commit()
     return {"status": "ok"}
 
 
-def _audit(db: AsyncSession, event: AuditEvent, admin_id=None, message_id=None, target_admin_id=None):
+def _audit(db: AsyncSession, event: AuditEvent, admin_id=None, message_id=None, meta=None):
     db.add(AuditLog(
         event=event,
         actor_admin_id=admin_id,
         target_message_id=message_id,
-        target_admin_id=target_admin_id,
+        metadata_=meta or {},
     ))

@@ -50,9 +50,7 @@ async def _permanent_delete(db: AsyncSession, msg: ContactMessage) -> None:
     )).scalars().all()
     for note in notes:
         await db.delete(note)
-    await db.execute(
-        update(ContactMessageTag).where(ContactMessageTag.message_id == msg.id).values()
-    )
+    # contact_message_tags rows cascade via ON DELETE CASCADE.
     await db.delete(msg)
 
 

@@ -3741,8 +3741,8 @@ export default function About() {
 
 ```tsx
 // File: src\pages\admin\AdminLayout.tsx
-import { useState, useEffect } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import AnimatedLogo from "../../components/AnimatedLogo";
 import SessionExpiryWarning from "../../components/SessionExpiryWarning";
@@ -3774,11 +3774,33 @@ const MOBILE_BREAKPOINT = 768;
 export default function AdminLayout() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(() => {
     const saved = localStorage.getItem("admin-sidebar-collapsed");
     if (saved !== null) return saved === "true";
     return window.innerWidth < MOBILE_BREAKPOINT;
   });
+  const [hoverCapsule, setHoverCapsule] = useState<{ label: string; active: boolean } | null>(null);
+  const [capsulePos, setCapsulePos] = useState<{ top: number; left: number } | null>(null);
+  const hoverElRef = useRef<HTMLElement | null>(null);
+
+  function positionCapsule() {
+    const el = hoverElRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCapsulePos({ top: rect.top + rect.height / 2, left: rect.right + 8 });
+  }
+
+  useEffect(() => {
+    if (!hoverCapsule) return;
+    const update = () => positionCapsule();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [hoverCapsule]);
 
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
@@ -3850,6 +3872,17 @@ export default function AdminLayout() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                onMouseEnter={(e) => {
+                  if (collapsed) {
+                    hoverElRef.current = e.currentTarget;
+                    setHoverCapsule({ label: item.label, active: location.pathname === item.to });
+                    positionCapsule();
+                  }
+                }}
+                onMouseLeave={() => {
+                  hoverElRef.current = null;
+                  setHoverCapsule(null);
+                }}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                     isActive
@@ -3905,6 +3938,22 @@ export default function AdminLayout() {
           </button>
         </div>
       </aside>
+
+      {collapsed && hoverCapsule && capsulePos && (
+        <div
+          className="fixed z-50 pointer-events-none"
+          style={{ top: capsulePos.top, left: capsulePos.left }}
+          role="tooltip"
+        >
+          <div
+            className={`translate-y-[-50%] neu-flat px-3 py-2.5 rounded-xl text-sm whitespace-nowrap font-medium ${
+              hoverCapsule.active ? "nav-active" : "text-foreground/75"
+            }`}
+          >
+            {hoverCapsule.label}
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden p-2">
