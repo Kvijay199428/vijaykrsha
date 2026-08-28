@@ -7,12 +7,15 @@ import {
   type ReactNode,
 } from "react";
 import { ROUTES } from "@/lib/routes";
-import { apiFetch } from "@/lib/adminApi";
+import { apiFetch, setAccessToken } from "@/lib/adminApi";
+import { fetchPublicKey, encryptPassword } from "@/lib/crypto";
 
-interface SecondFactorResult {
+interface LoginResult {
   status: "second_factor_required";
   challenge_id: string;
   methods: string[];
+  ws_ticket: string;
+  remember_me: boolean;
 }
 
 export interface RateLimitDetail {
@@ -31,16 +34,10 @@ export class RateLimitError extends Error {
   }
 }
 
-export class OtpCooldownError extends RateLimitError {
-  constructor(cooldownSeconds: number) {
-    super("Please wait before requesting a new code.", cooldownSeconds, "resend_cooldown");
-  }
-}
-
-interface AdminIdentity {
+export interface AdminIdentity {
   id: string;
   username: string;
-  display_name: string;
+  display_name?: string;
   role: string;
   role_level?: number | null;
 }
@@ -55,16 +52,10 @@ interface AuthContextType {
     username: string,
     password: string,
     rememberMe?: boolean
-  ) => Promise<SecondFactorResult>;
-  loginOtpSend: (challengeId: string) => Promise<{ cooldown_seconds: number }>;
-  loginOtpVerify: (
-    challengeId: string,
-    code: string
-  ) => Promise<{ totpRequired: boolean; challenge_id?: string }>;
-  loginTotp: (
-    challengeId: string,
-    code: string
-  ) => Promise<void>;
+  ) => Promise<LoginResult>;
+  exchangeForTokens: (
+    exchangeCode: string
+  ) => Promise<{ access_token: string; admin: AdminIdentity }>;
   logout: () => Promise<void>;
 }
 
@@ -77,7 +68,26 @@ function friendlyAuthError(msg: string): string {
   if (msg === "account_disabled") {
     return "This account has been disabled. Please contact an administrator.";
   }
+  if (msg === "encryption_key_expired") {
+    return "The encryption key expired. Please try again.";
+  }
   return msg;
+}
+
+function parseAuthError(response: Response, data: unknown, fallback: string): Error {
+  const msg = friendlyAuthError(
+    (data as { detail?: unknown })?.detail &&
+      typeof (data as { detail?: unknown }).detail === "string"
+      ? ((data as { detail: string }).detail as string)
+      : fallback
+  );
+  if (response.status === 429 || response.status === 423) {
+    const rd = (data as { retry_after?: number; type?: RateLimitDetail["type"] }) ?? {};
+    if (rd.retry_after) {
+      return new RateLimitError(msg, rd.retry_after, rd.type || "rate_limited");
+    }
+  }
+  return new Error(msg);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -95,7 +105,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error("not authenticated");
       const data = await response.json();
       setIsAuthenticated(true);
-      setAdmin(data);
+      setAdmin({
+        id: data.id,
+        username: data.username,
+        display_name: data.display_name,
+        role: data.role,
+        role_level: data.role_level,
+      });
       setSessionExpiresAt(data.session?.expires_at ?? null);
       return true;
     } catch {
@@ -115,127 +131,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username: string,
       password: string,
       rememberMe = false
-    ): Promise<SecondFactorResult> => {
+    ): Promise<LoginResult> => {
+      const { key_id, public_key } = await fetchPublicKey();
+      const password_cipher = await encryptPassword(password, public_key);
+
       const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGIN, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, remember_me: rememberMe }),
+        body: JSON.stringify({
+          username,
+          password_cipher,
+          key_id,
+          remember_me: rememberMe,
+        }),
         redirectOn401: false,
       });
 
+      const data = await response.json().catch(() => ({ detail: "Login failed" }));
+
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "Login failed" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "Login failed"
-        );
-        if (response.status === 429 || response.status === 423) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "rate_limited");
-          }
-        }
-        throw new Error(msg);
+        throw parseAuthError(response, data, "Login failed");
       }
 
-      return await response.json();
+      return data as LoginResult;
     },
     []
   );
 
-  const loginOtpSend = useCallback(
-    async (challengeId: string): Promise<{ cooldown_seconds: number }> => {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPSEND, {
+  const exchangeForTokens = useCallback(
+    async (exchangeCode: string) => {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHEXCHANGE, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: challengeId }),
+        body: JSON.stringify({ exchange_code: exchangeCode }),
         redirectOn401: false,
       });
 
+      const data = await response.json().catch(() => ({ detail: "Token exchange failed" }));
+
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "Failed to send code" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "Failed to send code"
-        );
-        if (response.status === 429) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new OtpCooldownError(data.retry_after);
-          }
-        }
-        throw new Error(msg);
+        throw parseAuthError(response, data, "Token exchange failed");
       }
 
-      return await response.json();
+      setAccessToken(data.access_token);
+      setIsAuthenticated(true);
+      setAdmin(data.admin);
+      return { access_token: data.access_token, admin: data.admin };
     },
     []
-  );
-
-  const loginOtpVerify = useCallback(
-    async (challengeId: string, code: string) => {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPVERIFY, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: challengeId, code }),
-        redirectOn401: false,
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "OTP verification failed" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "OTP verification failed"
-        );
-        if (response.status === 429) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
-          }
-        }
-        throw new Error(msg);
-      }
-
-      const data = await response.json();
-      if (data.status === "totp_required") {
-        return { totpRequired: true, challenge_id: data.challenge_id };
-      }
-
-      const authOk = await refreshAuth();
-      if (!authOk) throw new Error("Session could not be established. Please try again.");
-      return { totpRequired: false };
-    },
-    [refreshAuth]
-  );
-
-  const loginTotp = useCallback(
-    async (challengeId: string, code: string) => {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINTOTP, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: challengeId, code }),
-        redirectOn401: false,
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "TOTP verification failed" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "TOTP verification failed"
-        );
-        if (response.status === 429) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
-          }
-        }
-        throw new Error(msg);
-      }
-
-      const authOk = await refreshAuth();
-      if (!authOk) throw new Error("Session could not be established. Please try again.");
-    },
-    [refreshAuth]
   );
 
   const logout = useCallback(async () => {
@@ -243,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       credentials: "include",
     });
+    setAccessToken(null);
     setIsAuthenticated(false);
     setAdmin(null);
     setSessionExpiresAt(null);
@@ -258,9 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionExpiresAt,
         refreshAuth,
         login,
-        loginOtpSend,
-        loginOtpVerify,
-        loginTotp,
+        exchangeForTokens,
         logout,
       }}
     >

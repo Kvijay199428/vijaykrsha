@@ -1,11 +1,12 @@
 import structlog
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
+from starlette.websockets import WebSocketDisconnect
 from app.security.csrf import issue_csrf_cookie
 from app.db import get_db
 from app.models import (
@@ -19,6 +20,13 @@ from app.security.password_policy import (
     PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, validate_password_strength,
 )
 from app.security.sessions import create_session, revoke_session
+from app.security.encryption import new_encryption_keypair, decrypt_password
+from app.security.tokens import (
+    create_access_token, create_refresh_token, rotate_refresh_token,
+    revoke_refresh_token, block_access_token_jti, create_ws_ticket,
+    verify_ws_ticket, create_exchange_code, verify_exchange_code,
+    consume_exchange_code, TokenError, TokenReuseDetected,
+)
 from app.security.rate_limit import (
     login_ip_limiter, login_user_limiter, otp_send_limiter,
     otp_verify_limiter, totp_verify_limiter, setup_limiter,
@@ -46,19 +54,48 @@ from app.api.deps import (
 settings = get_settings()
 logger = structlog.get_logger()
 router = APIRouter(prefix="/admin/api/auth", tags=["auth"])
+# WebSocket auth channel lives OUTSIDE the /admin/api/* prefix so it is not
+# caught by DirectAccessGuard (which requires X-Forwarded-By: pages-proxy —
+# a header browsers cannot set on a WebSocket handshake).
+ws_router = APIRouter(tags=["auth-ws"])
 
 _DUMMY_PASSWORD_HASH = hash_password("::timing-equalizer::")
 
 
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=1, max_length=256)
+    password: str | None = Field(default=None, min_length=1, max_length=256)
+    password_cipher: str | None = None
+    key_id: str | None = None
     remember_me: bool = False
+    legacy_plaintext: bool = False
 
     @field_validator("username")
     @classmethod
     def validate_username(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator("password", "password_cipher", "key_id")
+    @classmethod
+    def strip_optionals(cls, v):
+        if v is None:
+            return v
+        return v.strip()
+
+
+class PublicKeyResponse(BaseModel):
+    key_id: str
+    public_key: str
+
+
+class ExchangeRequest(BaseModel):
+    exchange_code: str = Field(min_length=8, max_length=2048)
+
+
+class WebSocketAuthMessage(BaseModel):
+    action: str
+    method: str | None = None
+    code: str | None = None
 
 
 class SetupRequest(BaseModel):
@@ -261,9 +298,22 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     result = await db.execute(stmt)
     admin = result.scalar_one_or_none()
 
-    if not admin or not verify_password(body.password, admin.password_hash):
+    # Resolve the plaintext password. New clients encrypt it with the
+    # ephemeral RSA key (password_cipher + key_id). Legacy clients send
+    # it as plaintext (password + legacy_plaintext) to preserve
+    # backward compatibility during migration.
+    plain_password: str | None = None
+    if body.password_cipher and body.key_id:
+        try:
+            plain_password = await decrypt_password(body.key_id, body.password_cipher)
+        except ValueError:
+            plain_password = None
+    elif body.legacy_plaintext and body.password:
+        plain_password = body.password
+
+    if not admin or not plain_password or not verify_password(plain_password, admin.password_hash):
         if not admin:
-            verify_password(body.password, _DUMMY_PASSWORD_HASH)
+            verify_password(plain_password or body.password or "", _DUMMY_PASSWORD_HASH)
         if admin:
             admin.failed_login_count += 1
             lockout_dur = _get_lockout_duration(admin.failed_login_count)
@@ -349,6 +399,7 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         "challenge_id": str(challenge.id),
         "methods": methods,
         "remember_me": body.remember_me,
+        "ws_ticket": create_ws_ticket(str(challenge.id)),
     }
 
 
@@ -593,7 +644,7 @@ async def get_me(
     admin, session = deps
     now = datetime.now(timezone.utc)
 
-    if session.absolute_expires_at is not None and session.created_at is not None:
+    if session is not None and session.absolute_expires_at is not None and session.created_at is not None:
         remember_me = (session.absolute_expires_at - session.created_at) > timedelta(hours=6)
     else:
         remember_me = True
@@ -608,11 +659,11 @@ async def get_me(
         "totp_enabled": admin.totp_enabled,
         "telegram_chat_id": admin.telegram_chat_id,
         "session": {
-            "created_at": session.created_at.isoformat() if session.created_at else None,
-            "expires_at": session.expires_at.isoformat() if session.expires_at else None,
+            "created_at": session.created_at.isoformat() if session and session.created_at else None,
+            "expires_at": session.expires_at.isoformat() if session and session.expires_at else None,
             "absolute_expires_at": (
                 session.absolute_expires_at.isoformat()
-                if session.absolute_expires_at else None
+                if session and session.absolute_expires_at else None
             ),
             "remember_me": remember_me,
             "server_time": now.isoformat(),
@@ -623,19 +674,260 @@ async def get_me(
 @router.post("/logout")
 async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     token = request.cookies.get("vks_session")
+    refresh_token = request.cookies.get("refresh_token")
     ip = request.client.host if request.client else "unknown"
 
     if token:
         await revoke_session(db, token)
-        _audit(db, AuditEvent.logout, ip=ip)
-        await log_security_event(
-            db, "session_revoked", "low",
-            ip_address=ip, reason="User logout",
-        )
+
+    if refresh_token:
+        await revoke_refresh_token(refresh_token)
+
+    # Block the current access token so it cannot be reused until expiry.
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            claims = verify_access_token(auth_header[7:])
+            await block_access_token_jti(claims["jti"])
+        except TokenError:
+            pass
+
+    _audit(db, AuditEvent.logout, ip=ip)
+    await log_security_event(
+        db, "session_revoked", "low",
+        ip_address=ip, reason="User logout",
+    )
+
     resp = JSONResponse(content={"status": "ok"})
     resp.delete_cookie("vks_session")
+    resp.delete_cookie("refresh_token")
+    resp.delete_cookie("refresh_token", path="/api/admin/api/auth/refresh")
     resp.delete_cookie(settings.trusted_device_cookie_name, path="/")
     return resp
+
+
+@router.get("/public-key")
+async def public_key():
+    key_id, public_pem = await new_encryption_keypair()
+    return PublicKeyResponse(key_id=key_id, public_key=public_pem)
+
+
+@router.post("/exchange")
+async def exchange(body: ExchangeRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "")
+
+    try:
+        claims = verify_exchange_code(body.exchange_code)
+        admin_id = claims["sub"]
+        await consume_exchange_code(body.exchange_code)
+    except TokenError:
+        raise HTTPException(401, "invalid_exchange_code")
+
+    stmt = select(AdminUser).where(AdminUser.id == admin_id)
+    admin = (await db.execute(stmt)).scalar_one_or_none()
+    if not admin or admin.status != AdminStatus.active:
+        raise HTTPException(401, "invalid_exchange_code")
+
+    role_level = await get_admin_role_level(db, admin)
+
+    access_token = create_access_token(
+        str(admin.id), admin.username, admin.role, role_level,
+    )
+    refresh_token, _ = await create_refresh_token(
+        str(admin.id), remember_me=True,
+    )
+
+    await log_security_event(
+        db, "session_created", "low",
+        admin_id=admin.id, ip_address=ip, user_agent=ua,
+        reason="Session created after WebSocket 2FA verification",
+    )
+
+    resp = JSONResponse(content={
+        "access_token": access_token,
+        "expires_in": settings.JWT_ACCESS_TTL_MINUTES * 60,
+        "token_type": "Bearer",
+        "admin": {"id": str(admin.id), "username": admin.username, "role": admin.role},
+    })
+    resp.set_cookie(
+        "refresh_token", refresh_token,
+        httponly=True, secure=settings.cookie_secure, samesite="strict",
+        max_age=settings.JWT_REFRESH_TTL_DAYS * 24 * 3600,
+        path="/api/admin/api/auth/refresh",
+    )
+    return resp
+
+
+@router.post("/refresh")
+async def refresh(request: Request):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(401, "refresh_token_required")
+
+    try:
+        new_refresh_token, user_id = await rotate_refresh_token(refresh_token)
+    except TokenReuseDetected:
+        raise HTTPException(401, "refresh_token_reused")
+    except TokenError:
+        raise HTTPException(401, "refresh_token_invalid")
+
+    from app.db import async_session as _async_session
+    async with _async_session() as db:
+        stmt = select(AdminUser).where(AdminUser.id == user_id)
+        admin = (await db.execute(stmt)).scalar_one_or_none()
+        if not admin or admin.status != AdminStatus.active:
+            raise HTTPException(401, "admin_disabled")
+
+        role_level = await get_admin_role_level(db, admin)
+        access_token = create_access_token(
+            str(admin.id), admin.username, admin.role, role_level,
+        )
+
+    resp = JSONResponse(content={
+        "access_token": access_token,
+        "expires_in": settings.JWT_ACCESS_TTL_MINUTES * 60,
+        "token_type": "Bearer",
+    })
+    resp.set_cookie(
+        "refresh_token", new_refresh_token,
+        httponly=True, secure=settings.cookie_secure, samesite="strict",
+        max_age=settings.JWT_REFRESH_TTL_DAYS * 24 * 3600,
+        path="/api/admin/api/auth/refresh",
+    )
+    return resp
+
+
+@ws_router.websocket("/ws/auth")
+async def websocket_auth(websocket: WebSocket):
+    ticket = websocket.query_params.get("ticket")
+    if not ticket:
+        await websocket.close(code=4401)
+        return
+
+    try:
+        claims = verify_ws_ticket(ticket)
+    except TokenError:
+        await websocket.close(code=4403)
+        return
+
+    challenge_id = claims["sub"]
+    await websocket.accept()
+    await websocket.send_json({"event": "connected", "challenge_id": challenge_id})
+
+    ip = websocket.client.host if websocket.client else "unknown"
+
+    from app.db import async_session as session_factory
+    from app.models import AdminUser as AdminUserModel
+    from sqlalchemy import select as sselect
+    from app.services.otp_service import get_challenge as _get_challenge
+    from app.services.totp_service import decrypt_secret as _decrypt_secret
+
+    try:
+        while True:
+            raw = await websocket.receive()
+            if raw.get("type") == "websocket.disconnect":
+                break
+            if raw.get("type") != "websocket.receive":
+                continue
+            text = raw.get("text")
+            if not text:
+                continue
+            try:
+                import json
+                msg = json.loads(text)
+            except Exception:
+                continue
+
+            action = msg.get("action")
+            method = msg.get("method")
+            code = msg.get("code")
+
+            if action == "verify" and method and code:
+                allowed, _ = await otp_verify_limiter.check_and_record(f"otp_verify:{challenge_id}")
+                if not allowed:
+                    await websocket.send_json({
+                        "event": "error", "code": "rate_limited",
+                        "retry_after": 30,
+                    })
+                    continue
+
+                async with session_factory() as db:
+                    challenge = await _get_challenge(db, UUID(challenge_id))
+                    if not challenge:
+                        await websocket.send_json({"event": "error", "code": "challenge_expired"})
+                        continue
+                    admin_row = (await db.execute(
+                        sselect(AdminUserModel).where(AdminUserModel.id == challenge.admin_id)
+                    )).scalar_one_or_none()
+                    if not admin_row:
+                        await websocket.send_json({"event": "error", "code": "invalid_challenge"})
+                        continue
+
+                    if method == "telegram_otp":
+                        valid = await verify_otp(db, challenge.id, code)
+                        if not valid:
+                            await log_security_event(
+                                db, "otp_failure", "medium",
+                                admin_id=challenge.admin_id, ip_address=ip,
+                                reason="Invalid OTP code (WebSocket)",
+                            )
+                            await websocket.send_json({"event": "error", "code": "invalid_code"})
+                            continue
+                        if admin_row.totp_enabled:
+                            await websocket.send_json({"event": "state", "state": "awaiting_totp"})
+                        else:
+                            await consume_challenge(db, challenge.id)
+                            exchange_code = create_exchange_code(str(admin_row.id))
+                            await websocket.send_json({
+                                "event": "auth_success",
+                                "exchange_code": exchange_code,
+                                "admin": {
+                                    "id": str(admin_row.id),
+                                    "username": admin_row.username,
+                                    "role": admin_row.role,
+                                },
+                            })
+                            await websocket.close()
+                            break
+
+                    elif method == "totp":
+                        if not challenge.otp_verified_at:
+                            await websocket.send_json({"event": "error", "code": "otp_not_verified"})
+                            continue
+                        if not admin_row.totp_enabled or not admin_row.totp_secret_ciphertext:
+                            await websocket.send_json({"event": "error", "code": "totp_not_enabled"})
+                            continue
+                        secret = _decrypt_secret(admin_row.totp_secret_ciphertext)
+                        if not verify_totp(secret, code):
+                            await log_security_event(
+                                db, "totp_failure", "medium",
+                                admin_id=admin_row.id, ip_address=ip,
+                                reason="Invalid TOTP code (WebSocket)",
+                            )
+                            await websocket.send_json({"event": "error", "code": "invalid_code"})
+                            continue
+                        await consume_challenge(db, challenge.id)
+                        exchange_code = create_exchange_code(str(admin_row.id))
+                        await websocket.send_json({
+                            "event": "auth_success",
+                            "exchange_code": exchange_code,
+                            "admin": {
+                                "id": str(admin_row.id),
+                                "username": admin_row.username,
+                                "role": admin_row.role,
+                            },
+                        })
+                        await websocket.close()
+                        break
+
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
 
 
 @router.post("/password/forgot-verify")

@@ -3,22 +3,42 @@ import { ROUTES } from "@/lib/routes";
 export interface ApiFetchOptions extends RequestInit {
   /** Set false for auth-probing calls where 401 must not redirect. */
   redirectOn401?: boolean;
+  /** Set true to skip the automatic token-refresh-and-retry on 401. */
+  skipAutoRefresh?: boolean;
 }
 
-const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+let accessToken: string | null = null;
+let refreshing: Promise<boolean> | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
 
 function readCsrfToken(): string | null {
   const value = /(?:^|;\s*)vks_csrf=([^;]*)/.exec(document.cookie)?.[1];
   return value ? decodeURIComponent(value) : null;
 }
 
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 function buildHeaders(init: RequestInit): Headers {
   const headers = new Headers(init.headers);
   const method = (init.method ?? "GET").toUpperCase();
-  // Backend rejects non-JSON content types on writes, even with empty bodies.
-  if (UNSAFE_METHODS.has(method) && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+  if (!headers.has("Content-Type")) {
+    if (init.body && method !== "GET") {
+      headers.set("Content-Type", "application/json");
+    }
   }
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+  // CSRF double-submit is retained as defense-in-depth: the backend still
+  // requires X-CSRF-Token to match the vks_csrf cookie for unsafe methods,
+  // even when a Bearer token is present.
   if (UNSAFE_METHODS.has(method)) {
     const token = readCsrfToken();
     if (token) headers.set("X-CSRF-Token", token);
@@ -34,28 +54,54 @@ async function doFetch(url: string, init: RequestInit): Promise<Response> {
   });
 }
 
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    try {
+      const res = await fetch(ROUTES.ADMINAPIAUTHREFRESH, {
+        method: "POST",
+        credentials: "include", // sends the httpOnly refresh_token cookie
+      });
+      if (!res.ok) {
+        accessToken = null;
+        return false;
+      }
+      const data = await res.json();
+      accessToken = data.access_token;
+      return true;
+    } catch {
+      accessToken = null;
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
 /**
- * Single API client for every admin request: cookies included, CSRF
- * double-submit header attached to state-changing methods, JSON content-type
- * defaulted, and automatic redirect to login on session expiry.
+ * Single API client for every admin request. Attaches the in-memory access
+ * token as a Bearer header, and on 401 automatically attempts a silent
+ * refresh using the httpOnly refresh_token cookie, then retries once.
  */
 export async function apiFetch(
   url: string,
   options: ApiFetchOptions = {}
 ): Promise<Response> {
-  const { redirectOn401 = true, ...init } = options;
+  const { redirectOn401 = true, skipAutoRefresh = false, ...init } = options;
 
   let response = await doFetch(url, init);
 
-  // CSRF cookie missing (expired or first visit after deploy): the backend
-  // issues one on any authenticated GET — grab it via /me and retry once.
   if (
-    response.status === 403 &&
-    !readCsrfToken() &&
-    url !== ROUTES.ADMINAPIAUTHME
+    !skipAutoRefresh &&
+    response.status === 401 &&
+    url !== ROUTES.ADMINAPIAUTHLOGIN &&
+    url !== ROUTES.ADMINAPIAUTHREFRESH
   ) {
-    await fetch(ROUTES.ADMINAPIAUTHME, { credentials: "include" });
-    response = await doFetch(url, init);
+    const ok = await refreshAccessToken();
+    if (ok) {
+      response = await doFetch(url, init);
+    }
   }
 
   if (response.status === 401 && redirectOn401) {

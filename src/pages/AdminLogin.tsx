@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { RateLimitError } from "../contexts/AuthContext";
 import OtpDigitInput from "../components/OtpDigitInput";
+import { AuthWebSocket } from "../lib/wsAuth";
 import {
   ArrowRight, Loader2, Shield, MessageSquare, KeyRound,
   Clock, AlertTriangle, Lock,
@@ -74,7 +75,7 @@ function CooldownTimer({
 }
 
 export default function AdminLogin() {
-  const { login, loginOtpSend, loginOtpVerify, loginTotp, isAuthenticated, isLoading } = useAuth();
+  const { login, exchangeForTokens, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -86,7 +87,6 @@ export default function AdminLogin() {
   const [transitioning, setTransitioning] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [challengeId, setChallengeId] = useState("");
 
   const [otpCode, setOtpCode] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -94,15 +94,9 @@ export default function AdminLogin() {
   const [totpError, setTotpError] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearResendTimer = useCallback(() => {
-    if (resendIntervalRef.current) {
-      clearInterval(resendIntervalRef.current);
-      resendIntervalRef.current = null;
-    }
-  }, []);
+  const [otpSent, setOtpSent] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef<AuthWebSocket | null>(null);
 
   // Rate limit cooldown state
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -118,8 +112,12 @@ export default function AdminLogin() {
   }, []);
 
   useEffect(() => {
-    return () => { clearCooldownTimer(); clearResendTimer(); };
-  }, [clearCooldownTimer, clearResendTimer]);
+    return () => {
+      clearCooldownTimer();
+      wsRef.current?.disconnect();
+      wsRef.current = null;
+    };
+  }, [clearCooldownTimer]);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) {
@@ -161,13 +159,50 @@ export default function AdminLogin() {
     setError("");
     try {
       const result = await login(username, password);
-      setChallengeId(result.challenge_id);
+      setOtpSent(false);
+      setWsConnected(false);
+
+      const ws = new AuthWebSocket({
+        onConnected: () => setWsConnected(true),
+        onOtpStatus: (status) => {
+          if (status === "sent") setOtpSent(true);
+        },
+        onState: (state) => {
+          if (state === "awaiting_totp") {
+            transitionTo("totp");
+          }
+        },
+        onAuthSuccess: async ({ exchange_code }) => {
+          try {
+            await exchangeForTokens(exchange_code);
+            navigate(from, { replace: true });
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Login failed");
+            transitionTo("credentials");
+          }
+        },
+        onError: (code, retryAfter) => {
+          if (code === "rate_limited" && retryAfter) {
+            setCooldownSeconds(retryAfter);
+            setCooldownMax(retryAfter);
+            setCooldownType("rate_limited");
+          } else if (code === "invalid_code") {
+            setOtpError(true);
+          } else if (code === "connection_error") {
+            setError("Connection lost. Please try again.");
+          } else {
+            setError("Verification failed. Please try again.");
+          }
+        },
+        onClosed: () => setWsConnected(false),
+      });
+      wsRef.current = ws;
+      ws.connect(result.ws_ticket);
 
       if (result.methods.includes("totp") && !result.methods.includes("telegram_otp")) {
         transitionTo("totp");
       } else if (result.methods.includes("telegram_otp")) {
         transitionTo("otp");
-        startResendCooldown();
       } else {
         setError("No second-factor method configured for this account");
       }
@@ -182,79 +217,21 @@ export default function AdminLogin() {
     }
   }
 
-  function startResendCooldown(seconds: number = 60) {
-    clearResendTimer();
-    setResendCooldown(seconds);
-    resendIntervalRef.current = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) {
-          clearResendTimer();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }
-
-  async function handleResendOtp() {
-    if (resendCooldown > 0) return;
-    setError("");
-    try {
-      const result = await loginOtpSend(challengeId);
-      startResendCooldown(result.cooldown_seconds);
-    } catch (err) {
-      if (err instanceof RateLimitError) {
-        handleCooldownError(err);
-        startResendCooldown(err.retryAfter);
-      } else {
-        setError(err instanceof Error ? err.message : "Failed to resend code");
-      }
-    }
-  }
-
-  async function handleOtpVerify(e: React.FormEvent) {
+  function handleOtpVerify(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError("");
     setOtpError(false);
-    try {
-      const result = await loginOtpVerify(challengeId, otpCode);
-      if (result.totpRequired && result.challenge_id) {
-        setChallengeId(result.challenge_id);
-        setTotpCode("");
-        transitionTo("totp");
-      } else {
-        navigate(from, { replace: true });
-      }
-    } catch (err) {
-      setOtpError(true);
-      if (err instanceof RateLimitError) {
-        handleCooldownError(err);
-      } else {
-        setError(err instanceof Error ? err.message : "Invalid code");
-      }
-    } finally {
-      setLoading(false);
+    if (otpCode.length === 6 && wsRef.current) {
+      wsRef.current.verify("telegram_otp", otpCode);
     }
   }
 
-  async function handleTotpVerify(e: React.FormEvent) {
+  function handleTotpVerify(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError("");
     setTotpError(false);
-    try {
-      await loginTotp(challengeId, totpCode);
-      navigate(from, { replace: true });
-    } catch (err) {
-      setTotpError(true);
-      if (err instanceof RateLimitError) {
-        handleCooldownError(err);
-      } else {
-        setError(err instanceof Error ? err.message : "Invalid code");
-      }
-    } finally {
-      setLoading(false);
+    if (totpCode.length === 6 && wsRef.current) {
+      wsRef.current.verify("totp", totpCode);
     }
   }
 
@@ -355,7 +332,13 @@ export default function AdminLogin() {
                 <form onSubmit={handleOtpVerify} className="space-y-4">
                   <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
                     <MessageSquare className="w-4 h-4 shrink-0" />
-                    <span>Enter the 6-digit code sent to your Telegram</span>
+                    <span>
+                      {wsConnected && otpSent
+                        ? "Code sent to your Telegram"
+                        : wsConnected
+                        ? "Enter the 6-digit code sent to your Telegram"
+                        : "Establishing secure connection…"}
+                    </span>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-center">OTP Code</label>
@@ -366,13 +349,13 @@ export default function AdminLogin() {
                         setOtpError(false);
                       }}
                       autoFocus
-                      disabled={isLocked}
+                      disabled={isLocked || !wsConnected}
                       error={otpError}
                     />
                   </div>
                   <button
                     type="submit"
-                    disabled={loading || otpCode.length !== 6 || isLocked}
+                    disabled={loading || otpCode.length !== 6 || isLocked || !wsConnected}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -380,17 +363,7 @@ export default function AdminLogin() {
                   </button>
                   <button
                     type="button"
-                    onClick={handleResendOtp}
-                    disabled={resendCooldown > 0 || isLocked}
-                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors disabled:opacity-50"
-                  >
-                    {resendCooldown > 0
-                      ? `Resend code in ${resendCooldown}s`
-                      : "Resend code"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
+                    onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); wsRef.current?.disconnect(); wsRef.current = null; }}
                     className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login
@@ -415,13 +388,13 @@ export default function AdminLogin() {
                         setTotpError(false);
                       }}
                       autoFocus
-                      disabled={isLocked}
+                      disabled={isLocked || !wsConnected}
                       error={totpError}
                     />
                   </div>
                   <button
                     type="submit"
-                    disabled={loading || totpCode.length !== 6 || isLocked}
+                    disabled={loading || totpCode.length !== 6 || isLocked || !wsConnected}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -429,7 +402,7 @@ export default function AdminLogin() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
+                    onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); wsRef.current?.disconnect(); wsRef.current = null; }}
                     className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login

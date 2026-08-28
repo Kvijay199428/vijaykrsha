@@ -11,14 +11,15 @@ from app.models import (
 )
 from app.models_rbac import AdminRole, AdminRolePermission, AdminPermission, Permission
 from app.security.sessions import get_session, touch_session
+from app.security.tokens import (
+    verify_access_token, is_access_token_blocked,
+    TokenError,
+)
 
 settings = get_settings()
 
 
-def _extract_token(request: Request) -> str | None:
-    cookie = request.cookies.get("vks_session")
-    if cookie:
-        return cookie
+def _extract_bearer_token(request: Request) -> str | None:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:]
@@ -29,50 +30,85 @@ def _extract_device_token(request: Request) -> str | None:
     return request.cookies.get(settings.device_cookie_name)
 
 
+async def _resolve_admin_from_jwt(request: Request, db: AsyncSession) -> AdminUser | None:
+    token = _extract_bearer_token(request)
+    if not token:
+        return None
+    try:
+        claims = verify_access_token(token)
+    except TokenError:
+        return None
+    if await is_access_token_blocked(claims["jti"]):
+        return None
+    stmt = select(AdminUser).where(AdminUser.id == claims["sub"])
+    result = await db.execute(stmt)
+    admin = result.scalar_one_or_none()
+    if not admin or admin.status != AdminStatus.active:
+        return None
+    return admin
+
+
+async def _resolve_admin_from_session(request: Request, db: AsyncSession) -> AdminUser | None:
+    token = request.cookies.get("vks_session")
+    if not token:
+        return None
+    session = await get_session(db, token)
+    if not session:
+        return None
+    stmt = select(AdminUser).where(AdminUser.id == session.admin_id)
+    result = await db.execute(stmt)
+    admin = result.scalar_one_or_none()
+    if not admin or admin.status != AdminStatus.active:
+        return None
+    await touch_session(db, session)
+    return admin
+
+
 async def get_current_admin(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> AdminUser:
-    token = _extract_token(request)
+    admin = await _resolve_admin_from_jwt(request, db)
+    if admin is None:
+        admin = await _resolve_admin_from_session(request, db)
+    if admin is None:
+        raise HTTPException(status_code=401, detail="not_authenticated")
+    return admin
+
+
+async def get_current_admin_session_row(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AdminSession:
+    token = request.cookies.get("vks_session")
     if not token:
         raise HTTPException(status_code=401, detail="not_authenticated")
-
     session = await get_session(db, token)
     if not session:
         raise HTTPException(status_code=401, detail="session_expired")
-
-    stmt = select(AdminUser).where(AdminUser.id == session.admin_id)
-    result = await db.execute(stmt)
-    admin = result.scalar_one_or_none()
-    if not admin:
-        raise HTTPException(status_code=401, detail="admin_not_found")
-    if admin.status != AdminStatus.active:
-        raise HTTPException(status_code=403, detail="admin_disabled")
-
-    await touch_session(db, session)
-    return admin
+    return session
 
 
 async def get_current_admin_with_session(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> tuple[AdminUser, AdminSession]:
-    token = _extract_token(request)
-    if not token:
-        raise HTTPException(status_code=401, detail="not_authenticated")
+    token = request.cookies.get("vks_session")
+    session = None
+    if token:
+        session = await get_session(db, token)
 
-    session = await get_session(db, token)
-    if not session:
-        raise HTTPException(status_code=401, detail="session_expired")
+    if session is None:
+        admin = await _resolve_admin_from_jwt(request, db)
+        if admin is None:
+            raise HTTPException(status_code=401, detail="not_authenticated")
+        return admin, None
 
     stmt = select(AdminUser).where(AdminUser.id == session.admin_id)
     result = await db.execute(stmt)
     admin = result.scalar_one_or_none()
-    if not admin:
+    if not admin or admin.status != AdminStatus.active:
         raise HTTPException(status_code=401, detail="admin_not_found")
-    if admin.status != AdminStatus.active:
-        raise HTTPException(status_code=403, detail="admin_disabled")
-
     await touch_session(db, session)
     return admin, session
 

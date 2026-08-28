@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # Request validation
     MAX_JSON_BODY_KB: int = 64
 
+    # JWT / token rotation
+    JWT_SIGNING_PRIVATE_KEY: str = ""
+    JWT_SIGNING_PUBLIC_KEY: str = ""
+    JWT_ACCESS_TTL_MINUTES: int = 15
+    JWT_REFRESH_TTL_DAYS: int = 7
+
     # Sessions
     MAX_CONCURRENT_SESSIONS: int = 5
 
@@ -105,6 +111,8 @@ class Settings(BaseSettings):
             insecure.append("OTP_PEPPER (too short, need >= 24 chars)")
         if self.S3_ACCESS_KEY == "minioadmin" or self.S3_SECRET_KEY == "minioadmin":
             insecure.append("S3_ACCESS_KEY/S3_SECRET_KEY (minioadmin default)")
+        if not self.JWT_SIGNING_PRIVATE_KEY or not self.JWT_SIGNING_PUBLIC_KEY:
+            insecure.append("JWT_SIGNING_PRIVATE_KEY/JWT_SIGNING_PUBLIC_KEY (required)")
         if insecure:
             raise RuntimeError(
                 "Refusing to start in production with insecure defaults: "

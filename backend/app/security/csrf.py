@@ -22,6 +22,9 @@ _CSRF_EXEMPT_PATHS = frozenset({
     "/admin/api/auth/setup-create",
     "/admin/api/auth/password/forgot-verify",
     "/admin/api/auth/password/forgot-reset",
+    "/admin/api/auth/public-key",
+    "/admin/api/auth/exchange",
+    "/admin/api/auth/refresh",
 })
 
 

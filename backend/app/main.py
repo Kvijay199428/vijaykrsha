@@ -54,6 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(auth.ws_router)
 app.include_router(public_contact.router)
 app.include_router(admin_messages.router)
 app.include_router(admin_settings.router)
