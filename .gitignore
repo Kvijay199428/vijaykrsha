@@ -12,3 +12,4 @@ wrangler.toml
 env/.env.dev
 env/.env.prod
 cloudflared/*.json
+backend/app/jws_keys/

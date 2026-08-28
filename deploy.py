@@ -53,6 +53,7 @@ EXCLUDE_DIRS = {
     "node_modules",
     "dist",
     ".opencode",
+    "jws_keys",
 }
 
 EXCLUDE_FILES = {

@@ -12,6 +12,13 @@ _INSECURE_DEFAULTS = frozenset({
     "totp_encryption_key",
 })
 
+import os
+from pathlib import Path
+
+_JWS_KEYS_DIR = Path(__file__).resolve().parent / "jws_keys"
+_JWS_PRIVATE_FILE = _JWS_KEYS_DIR / "jws_private.pem"
+_JWS_PUBLIC_FILE = _JWS_KEYS_DIR / "jws_public.pem"
+
 
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
@@ -111,8 +118,26 @@ class Settings(BaseSettings):
             insecure.append("OTP_PEPPER (too short, need >= 24 chars)")
         if self.S3_ACCESS_KEY == "minioadmin" or self.S3_SECRET_KEY == "minioadmin":
             insecure.append("S3_ACCESS_KEY/S3_SECRET_KEY (minioadmin default)")
-        if not self.JWT_SIGNING_PRIVATE_KEY or not self.JWT_SIGNING_PUBLIC_KEY:
-            insecure.append("JWT_SIGNING_PRIVATE_KEY/JWT_SIGNING_PUBLIC_KEY (required)")
+        if not self.JWT_SIGNING_PRIVATE_KEY and not self.JWT_SIGNING_PUBLIC_KEY:
+            if not (_JWS_PRIVATE_FILE.exists() and _JWS_PUBLIC_FILE.exists()):
+                try:
+                    _JWS_KEYS_DIR.mkdir(parents=True, exist_ok=True)
+                    writable = os.access(_JWS_KEYS_DIR, os.W_OK)
+                except Exception:
+                    writable = False
+                if not writable:
+                    insecure.append(
+                        "JWT_SIGNING_PRIVATE_KEY/JWT_SIGNING_PUBLIC_KEY (neither set, "
+                        "no persisted key files, and jws_keys/ not writable)"
+                    )
+        elif (
+            not self.JWT_SIGNING_PRIVATE_KEY.startswith("-----BEGIN")
+            or not self.JWT_SIGNING_PUBLIC_KEY.startswith("-----BEGIN")
+        ):
+            insecure.append(
+                "JWT_SIGNING_PRIVATE_KEY/JWT_SIGNING_PUBLIC_KEY (set but not valid PEM; "
+                "generate real keys, not placeholders)"
+            )
         if insecure:
             raise RuntimeError(
                 "Refusing to start in production with insecure defaults: "
