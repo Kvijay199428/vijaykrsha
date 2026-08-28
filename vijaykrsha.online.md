@@ -97,6 +97,8 @@ services:
       - "26001:8000"
     env_file:
       - ./env/.env.dev
+    volumes:
+      - vijaykrshaonline_jwskeys_dev:/app/app/jws_keys
     networks:
       - dev-network
 
@@ -116,6 +118,7 @@ services:
 volumes:
   postgres_dev_data:
   minio_dev_data:
+  vijaykrshaonline_jwskeys_dev:
 
 networks:
   dev-network:
@@ -188,6 +191,8 @@ services:
       - ./env/.env.prod
     environment:
       PRODUCTION: "true"
+    volumes:
+      - vijaykrshaonline_jwskeys:/app/app/jws_keys
     networks:
       - prod-network
 
@@ -196,6 +201,7 @@ volumes:
     external: true
   vijaykrshaonline_miniodata:
     external: true
+  vijaykrshaonline_jwskeys:
 
 networks:
   prod-network:
@@ -416,7 +422,24 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto http;
         proxy_set_header X-Forwarded-By pages-proxy;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
         client_max_body_size 160m;
+    }
+
+    location /ws/ {
+        proxy_pass http://backend-dev:8000/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Forwarded-By pages-proxy;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 86400;
+        proxy_send_timeout 86400;
     }
 
     location / {
@@ -2378,12 +2401,15 @@ import {
   type ReactNode,
 } from "react";
 import { ROUTES } from "@/lib/routes";
-import { apiFetch } from "@/lib/adminApi";
+import { apiFetch, setAccessToken } from "@/lib/adminApi";
+import { fetchPublicKey, encryptPassword } from "@/lib/crypto";
 
-interface SecondFactorResult {
+interface LoginResult {
   status: "second_factor_required";
   challenge_id: string;
   methods: string[];
+  ws_ticket: string;
+  remember_me: boolean;
 }
 
 export interface RateLimitDetail {
@@ -2402,16 +2428,10 @@ export class RateLimitError extends Error {
   }
 }
 
-export class OtpCooldownError extends RateLimitError {
-  constructor(cooldownSeconds: number) {
-    super("Please wait before requesting a new code.", cooldownSeconds, "resend_cooldown");
-  }
-}
-
-interface AdminIdentity {
+export interface AdminIdentity {
   id: string;
   username: string;
-  display_name: string;
+  display_name?: string;
   role: string;
   role_level?: number | null;
 }
@@ -2426,16 +2446,10 @@ interface AuthContextType {
     username: string,
     password: string,
     rememberMe?: boolean
-  ) => Promise<SecondFactorResult>;
-  loginOtpSend: (challengeId: string) => Promise<{ cooldown_seconds: number }>;
-  loginOtpVerify: (
-    challengeId: string,
-    code: string
-  ) => Promise<{ totpRequired: boolean; challenge_id?: string }>;
-  loginTotp: (
-    challengeId: string,
-    code: string
-  ) => Promise<void>;
+  ) => Promise<LoginResult>;
+  exchangeForTokens: (
+    exchangeCode: string
+  ) => Promise<{ access_token: string; admin: AdminIdentity }>;
   logout: () => Promise<void>;
 }
 
@@ -2448,7 +2462,26 @@ function friendlyAuthError(msg: string): string {
   if (msg === "account_disabled") {
     return "This account has been disabled. Please contact an administrator.";
   }
+  if (msg === "encryption_key_expired") {
+    return "The encryption key expired. Please try again.";
+  }
   return msg;
+}
+
+function parseAuthError(response: Response, data: unknown, fallback: string): Error {
+  const msg = friendlyAuthError(
+    (data as { detail?: unknown })?.detail &&
+      typeof (data as { detail?: unknown }).detail === "string"
+      ? ((data as { detail: string }).detail as string)
+      : fallback
+  );
+  if (response.status === 429 || response.status === 423) {
+    const rd = (data as { retry_after?: number; type?: RateLimitDetail["type"] }) ?? {};
+    if (rd.retry_after) {
+      return new RateLimitError(msg, rd.retry_after, rd.type || "rate_limited");
+    }
+  }
+  return new Error(msg);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -2466,7 +2499,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!response.ok) throw new Error("not authenticated");
       const data = await response.json();
       setIsAuthenticated(true);
-      setAdmin(data);
+      setAdmin({
+        id: data.id,
+        username: data.username,
+        display_name: data.display_name,
+        role: data.role,
+        role_level: data.role_level,
+      });
       setSessionExpiresAt(data.session?.expires_at ?? null);
       return true;
     } catch {
@@ -2486,127 +2525,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username: string,
       password: string,
       rememberMe = false
-    ): Promise<SecondFactorResult> => {
+    ): Promise<LoginResult> => {
+      const { key_id, public_key } = await fetchPublicKey();
+      const password_cipher = await encryptPassword(password, public_key);
+
       const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGIN, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password, remember_me: rememberMe }),
+        body: JSON.stringify({
+          username,
+          password_cipher,
+          key_id,
+          remember_me: rememberMe,
+        }),
         redirectOn401: false,
       });
 
+      const data = await response.json().catch(() => ({ detail: "Login failed" }));
+
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "Login failed" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "Login failed"
-        );
-        if (response.status === 429 || response.status === 423) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "rate_limited");
-          }
-        }
-        throw new Error(msg);
+        throw parseAuthError(response, data, "Login failed");
       }
 
-      return await response.json();
+      return data as LoginResult;
     },
     []
   );
 
-  const loginOtpSend = useCallback(
-    async (challengeId: string): Promise<{ cooldown_seconds: number }> => {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPSEND, {
+  const exchangeForTokens = useCallback(
+    async (exchangeCode: string) => {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHEXCHANGE, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: challengeId }),
+        body: JSON.stringify({ exchange_code: exchangeCode }),
         redirectOn401: false,
       });
 
+      const data = await response.json().catch(() => ({ detail: "Token exchange failed" }));
+
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "Failed to send code" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "Failed to send code"
-        );
-        if (response.status === 429) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new OtpCooldownError(data.retry_after);
-          }
-        }
-        throw new Error(msg);
+        throw parseAuthError(response, data, "Token exchange failed");
       }
 
-      return await response.json();
+      setAccessToken(data.access_token);
+      setIsAuthenticated(true);
+      setAdmin(data.admin);
+      return { access_token: data.access_token, admin: data.admin };
     },
     []
-  );
-
-  const loginOtpVerify = useCallback(
-    async (challengeId: string, code: string) => {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINOTPVERIFY, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: challengeId, code }),
-        redirectOn401: false,
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "OTP verification failed" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "OTP verification failed"
-        );
-        if (response.status === 429) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
-          }
-        }
-        throw new Error(msg);
-      }
-
-      const data = await response.json();
-      if (data.status === "totp_required") {
-        return { totpRequired: true, challenge_id: data.challenge_id };
-      }
-
-      const authOk = await refreshAuth();
-      if (!authOk) throw new Error("Session could not be established. Please try again.");
-      return { totpRequired: false };
-    },
-    [refreshAuth]
-  );
-
-  const loginTotp = useCallback(
-    async (challengeId: string, code: string) => {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHLOGINTOTP, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ challenge_id: challengeId, code }),
-        redirectOn401: false,
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ detail: "TOTP verification failed" }));
-        const msg = friendlyAuthError(
-          typeof err.detail === "string" ? err.detail : "TOTP verification failed"
-        );
-        if (response.status === 429) {
-          const data = err as RateLimitDetail;
-          if (data.retry_after) {
-            throw new RateLimitError(data.detail || msg, data.retry_after, data.type || "verify_cooldown");
-          }
-        }
-        throw new Error(msg);
-      }
-
-      const authOk = await refreshAuth();
-      if (!authOk) throw new Error("Session could not be established. Please try again.");
-    },
-    [refreshAuth]
   );
 
   const logout = useCallback(async () => {
@@ -2614,6 +2582,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: "POST",
       credentials: "include",
     });
+    setAccessToken(null);
     setIsAuthenticated(false);
     setAdmin(null);
     setSessionExpiresAt(null);
@@ -2629,9 +2598,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionExpiresAt,
         refreshAuth,
         login,
-        loginOtpSend,
-        loginOtpVerify,
-        loginTotp,
+        exchangeForTokens,
         logout,
       }}
     >
@@ -3374,22 +3341,42 @@ import { ROUTES } from "@/lib/routes";
 export interface ApiFetchOptions extends RequestInit {
   /** Set false for auth-probing calls where 401 must not redirect. */
   redirectOn401?: boolean;
+  /** Set true to skip the automatic token-refresh-and-retry on 401. */
+  skipAutoRefresh?: boolean;
 }
 
-const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+let accessToken: string | null = null;
+let refreshing: Promise<boolean> | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
 
 function readCsrfToken(): string | null {
   const value = /(?:^|;\s*)vks_csrf=([^;]*)/.exec(document.cookie)?.[1];
   return value ? decodeURIComponent(value) : null;
 }
 
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 function buildHeaders(init: RequestInit): Headers {
   const headers = new Headers(init.headers);
   const method = (init.method ?? "GET").toUpperCase();
-  // Backend rejects non-JSON content types on writes, even with empty bodies.
-  if (UNSAFE_METHODS.has(method) && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+  if (!headers.has("Content-Type")) {
+    if (init.body && method !== "GET") {
+      headers.set("Content-Type", "application/json");
+    }
   }
+  if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+  // CSRF double-submit is retained as defense-in-depth: the backend still
+  // requires X-CSRF-Token to match the vks_csrf cookie for unsafe methods,
+  // even when a Bearer token is present.
   if (UNSAFE_METHODS.has(method)) {
     const token = readCsrfToken();
     if (token) headers.set("X-CSRF-Token", token);
@@ -3405,28 +3392,54 @@ async function doFetch(url: string, init: RequestInit): Promise<Response> {
   });
 }
 
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    try {
+      const res = await fetch(ROUTES.ADMINAPIAUTHREFRESH, {
+        method: "POST",
+        credentials: "include", // sends the httpOnly refresh_token cookie
+      });
+      if (!res.ok) {
+        accessToken = null;
+        return false;
+      }
+      const data = await res.json();
+      accessToken = data.access_token;
+      return true;
+    } catch {
+      accessToken = null;
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
+}
+
 /**
- * Single API client for every admin request: cookies included, CSRF
- * double-submit header attached to state-changing methods, JSON content-type
- * defaulted, and automatic redirect to login on session expiry.
+ * Single API client for every admin request. Attaches the in-memory access
+ * token as a Bearer header, and on 401 automatically attempts a silent
+ * refresh using the httpOnly refresh_token cookie, then retries once.
  */
 export async function apiFetch(
   url: string,
   options: ApiFetchOptions = {}
 ): Promise<Response> {
-  const { redirectOn401 = true, ...init } = options;
+  const { redirectOn401 = true, skipAutoRefresh = false, ...init } = options;
 
   let response = await doFetch(url, init);
 
-  // CSRF cookie missing (expired or first visit after deploy): the backend
-  // issues one on any authenticated GET — grab it via /me and retry once.
   if (
-    response.status === 403 &&
-    !readCsrfToken() &&
-    url !== ROUTES.ADMINAPIAUTHME
+    !skipAutoRefresh &&
+    response.status === 401 &&
+    url !== ROUTES.ADMINAPIAUTHLOGIN &&
+    url !== ROUTES.ADMINAPIAUTHREFRESH
   ) {
-    await fetch(ROUTES.ADMINAPIAUTHME, { credentials: "include" });
-    response = await doFetch(url, init);
+    const ok = await refreshAccessToken();
+    if (ok) {
+      response = await doFetch(url, init);
+    }
   }
 
   if (response.status === 401 && redirectOn401) {
@@ -3470,6 +3483,64 @@ export function getApiErrorMessage(data: unknown, fallback = "Something went wro
   }
 
   return fallback;
+}
+```
+
+```typescript
+// File: src\lib\crypto.ts
+import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
+
+export interface PublicKeyResponse {
+  key_id: string;
+  public_key: string;
+}
+
+export async function fetchPublicKey(): Promise<PublicKeyResponse> {
+  const res = await apiFetch(ROUTES.ADMINAPIAUTHPUBLICKEY, {
+    credentials: "include",
+    redirectOn401: false,
+  });
+  if (!res.ok) throw new Error("Could not load encryption key");
+  return res.json();
+}
+
+function pemToArrayBuffer(pem: string): ArrayBuffer {
+  const b64 = pem
+    .replace(/-----BEGIN PUBLIC KEY-----/, "")
+    .replace(/-----END PUBLIC KEY-----/, "")
+    .replace(/\s+/g, "");
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+export async function encryptPassword(
+  password: string,
+  publicKeyPem: string
+): Promise<string> {
+  const keyData = pemToArrayBuffer(publicKeyPem);
+  const key = await crypto.subtle.importKey(
+    "spki",
+    keyData,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    false,
+    ["encrypt"]
+  );
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "RSA-OAEP" },
+    key,
+    new TextEncoder().encode(password)
+  );
+  const bytes = new Uint8Array(ciphertext);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i] ?? 0);
+  }
+  return btoa(binary);
 }
 ```
 
@@ -3518,6 +3589,9 @@ export const ROUTES = {
   ADMINAPIAUTHLOGINOTPVERIFY: `${API}/admin/api/auth/login-otp-verify`,
   ADMINAPIAUTHLOGOUT: `${API}/admin/api/auth/logout`,
   ADMINAPIAUTHME: `${API}/admin/api/auth/me`,
+  ADMINAPIAUTHREFRESH: `${API}/admin/api/auth/refresh`,
+  ADMINAPIAUTHEXCHANGE: `${API}/admin/api/auth/exchange`,
+  ADMINAPIAUTHPUBLICKEY: `${API}/admin/api/auth/public-key`,
   ADMINAPISETUPREQUIRED: `${API}/admin/api/auth/setup-required`,
   ADMINAPISETUPCREATE: `${API}/admin/api/auth/setup-create`,
   ADMINAPIPASSWORDFORGOTVERIFY: `${API}/admin/api/auth/password/forgot-verify`,
@@ -3573,6 +3647,115 @@ export const ROUTES = {
   ADMINAPITRASHBULKDELETE: `${API}/admin/api/trash/bulk/delete`,
   ADMINAPITRASHEMPTY: `${API}/admin/api/trash/empty`,
 } as const;
+```
+
+```typescript
+// File: src\lib\wsAuth.ts
+import { site } from "@/config/site";
+
+export type WsServerEvent =
+  | { event: "connected"; challenge_id: string; methods?: string[] }
+  | { event: "state"; state: "awaiting_otp" | "awaiting_totp" }
+  | { event: "otp_status"; status: "sent" | "delivered" | "expired"; method: string }
+  | {
+      event: "auth_success";
+      exchange_code: string;
+      admin: { id: string; username: string; role: string };
+    }
+  | {
+      event: "error";
+      code: string;
+      retry_after?: number;
+    };
+
+type ClientMsg =
+  | { action: "verify"; method: "telegram_otp" | "totp"; code: string };
+
+export interface AuthWsCallbacks {
+  onConnected?: () => void;
+  onState?: (state: "awaiting_otp" | "awaiting_totp") => void;
+  onOtpStatus?: (status: "sent" | "delivered" | "expired") => void;
+  onAuthSuccess: (result: {
+    exchange_code: string;
+    admin: { id: string; username: string; role: string };
+  }) => void;
+  onError?: (code: string, retryAfter?: number) => void;
+  onClosed?: () => void;
+}
+
+const WS_BASE = site.api.baseUrl.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+
+export class AuthWebSocket {
+  private ws: WebSocket | null = null;
+  private callbacks: AuthWsCallbacks;
+
+  constructor(callbacks: AuthWsCallbacks) {
+    this.callbacks = callbacks;
+  }
+
+  connect(ticket: string) {
+    const url = `${WS_BASE}/ws/auth?ticket=${encodeURIComponent(ticket)}`;
+    this.ws = new WebSocket(url);
+
+    this.ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data) as WsServerEvent;
+        this.handleMessage(msg);
+      } catch {
+        // ignore malformed messages
+      }
+    };
+
+    this.ws.onclose = () => {
+      this.ws = null;
+      this.callbacks.onClosed?.();
+    };
+
+    this.ws.onerror = () => {
+      this.callbacks.onError?.("connection_error");
+    };
+  }
+
+  verify(method: "telegram_otp" | "totp", code: string) {
+    this.send({ action: "verify", method, code });
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  private send(msg: ClientMsg) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(msg));
+    }
+  }
+
+  private handleMessage(msg: WsServerEvent) {
+    switch (msg.event) {
+      case "connected":
+        this.callbacks.onConnected?.();
+        break;
+      case "state":
+        this.callbacks.onState?.(msg.state);
+        break;
+      case "otp_status":
+        this.callbacks.onOtpStatus?.(msg.status);
+        break;
+      case "auth_success":
+        this.callbacks.onAuthSuccess({
+          exchange_code: msg.exchange_code,
+          admin: msg.admin,
+        });
+        break;
+      case "error":
+        this.callbacks.onError?.(msg.code, msg.retry_after);
+        break;
+    }
+  }
+}
 ```
 
 ```tsx
@@ -7840,6 +8023,7 @@ import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { RateLimitError } from "../contexts/AuthContext";
 import OtpDigitInput from "../components/OtpDigitInput";
+import { AuthWebSocket } from "../lib/wsAuth";
 import {
   ArrowRight, Loader2, Shield, MessageSquare, KeyRound,
   Clock, AlertTriangle, Lock,
@@ -7911,7 +8095,7 @@ function CooldownTimer({
 }
 
 export default function AdminLogin() {
-  const { login, loginOtpSend, loginOtpVerify, loginTotp, isAuthenticated, isLoading } = useAuth();
+  const { login, exchangeForTokens, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -7923,7 +8107,6 @@ export default function AdminLogin() {
   const [transitioning, setTransitioning] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [challengeId, setChallengeId] = useState("");
 
   const [otpCode, setOtpCode] = useState("");
   const [totpCode, setTotpCode] = useState("");
@@ -7931,15 +8114,9 @@ export default function AdminLogin() {
   const [totpError, setTotpError] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const resendIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearResendTimer = useCallback(() => {
-    if (resendIntervalRef.current) {
-      clearInterval(resendIntervalRef.current);
-      resendIntervalRef.current = null;
-    }
-  }, []);
+  const [otpSent, setOtpSent] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef<AuthWebSocket | null>(null);
 
   // Rate limit cooldown state
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -7955,8 +8132,12 @@ export default function AdminLogin() {
   }, []);
 
   useEffect(() => {
-    return () => { clearCooldownTimer(); clearResendTimer(); };
-  }, [clearCooldownTimer, clearResendTimer]);
+    return () => {
+      clearCooldownTimer();
+      wsRef.current?.disconnect();
+      wsRef.current = null;
+    };
+  }, [clearCooldownTimer]);
 
   useEffect(() => {
     if (cooldownSeconds <= 0) {
@@ -7998,13 +8179,50 @@ export default function AdminLogin() {
     setError("");
     try {
       const result = await login(username, password);
-      setChallengeId(result.challenge_id);
+      setOtpSent(false);
+      setWsConnected(false);
+
+      const ws = new AuthWebSocket({
+        onConnected: () => setWsConnected(true),
+        onOtpStatus: (status) => {
+          if (status === "sent") setOtpSent(true);
+        },
+        onState: (state) => {
+          if (state === "awaiting_totp") {
+            transitionTo("totp");
+          }
+        },
+        onAuthSuccess: async ({ exchange_code }) => {
+          try {
+            await exchangeForTokens(exchange_code);
+            navigate(from, { replace: true });
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Login failed");
+            transitionTo("credentials");
+          }
+        },
+        onError: (code, retryAfter) => {
+          if (code === "rate_limited" && retryAfter) {
+            setCooldownSeconds(retryAfter);
+            setCooldownMax(retryAfter);
+            setCooldownType("rate_limited");
+          } else if (code === "invalid_code") {
+            setOtpError(true);
+          } else if (code === "connection_error") {
+            setError("Connection lost. Please try again.");
+          } else {
+            setError("Verification failed. Please try again.");
+          }
+        },
+        onClosed: () => setWsConnected(false),
+      });
+      wsRef.current = ws;
+      ws.connect(result.ws_ticket);
 
       if (result.methods.includes("totp") && !result.methods.includes("telegram_otp")) {
         transitionTo("totp");
       } else if (result.methods.includes("telegram_otp")) {
         transitionTo("otp");
-        startResendCooldown();
       } else {
         setError("No second-factor method configured for this account");
       }
@@ -8019,79 +8237,21 @@ export default function AdminLogin() {
     }
   }
 
-  function startResendCooldown(seconds: number = 60) {
-    clearResendTimer();
-    setResendCooldown(seconds);
-    resendIntervalRef.current = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) {
-          clearResendTimer();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }
-
-  async function handleResendOtp() {
-    if (resendCooldown > 0) return;
-    setError("");
-    try {
-      const result = await loginOtpSend(challengeId);
-      startResendCooldown(result.cooldown_seconds);
-    } catch (err) {
-      if (err instanceof RateLimitError) {
-        handleCooldownError(err);
-        startResendCooldown(err.retryAfter);
-      } else {
-        setError(err instanceof Error ? err.message : "Failed to resend code");
-      }
-    }
-  }
-
-  async function handleOtpVerify(e: React.FormEvent) {
+  function handleOtpVerify(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError("");
     setOtpError(false);
-    try {
-      const result = await loginOtpVerify(challengeId, otpCode);
-      if (result.totpRequired && result.challenge_id) {
-        setChallengeId(result.challenge_id);
-        setTotpCode("");
-        transitionTo("totp");
-      } else {
-        navigate(from, { replace: true });
-      }
-    } catch (err) {
-      setOtpError(true);
-      if (err instanceof RateLimitError) {
-        handleCooldownError(err);
-      } else {
-        setError(err instanceof Error ? err.message : "Invalid code");
-      }
-    } finally {
-      setLoading(false);
+    if (otpCode.length === 6 && wsRef.current) {
+      wsRef.current.verify("telegram_otp", otpCode);
     }
   }
 
-  async function handleTotpVerify(e: React.FormEvent) {
+  function handleTotpVerify(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
     setError("");
     setTotpError(false);
-    try {
-      await loginTotp(challengeId, totpCode);
-      navigate(from, { replace: true });
-    } catch (err) {
-      setTotpError(true);
-      if (err instanceof RateLimitError) {
-        handleCooldownError(err);
-      } else {
-        setError(err instanceof Error ? err.message : "Invalid code");
-      }
-    } finally {
-      setLoading(false);
+    if (totpCode.length === 6 && wsRef.current) {
+      wsRef.current.verify("totp", totpCode);
     }
   }
 
@@ -8192,7 +8352,13 @@ export default function AdminLogin() {
                 <form onSubmit={handleOtpVerify} className="space-y-4">
                   <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
                     <MessageSquare className="w-4 h-4 shrink-0" />
-                    <span>Enter the 6-digit code sent to your Telegram</span>
+                    <span>
+                      {wsConnected && otpSent
+                        ? "Code sent to your Telegram"
+                        : wsConnected
+                        ? "Enter the 6-digit code sent to your Telegram"
+                        : "Establishing secure connection…"}
+                    </span>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-center">OTP Code</label>
@@ -8203,13 +8369,13 @@ export default function AdminLogin() {
                         setOtpError(false);
                       }}
                       autoFocus
-                      disabled={isLocked}
+                      disabled={isLocked || !wsConnected}
                       error={otpError}
                     />
                   </div>
                   <button
                     type="submit"
-                    disabled={loading || otpCode.length !== 6 || isLocked}
+                    disabled={loading || otpCode.length !== 6 || isLocked || !wsConnected}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -8217,17 +8383,7 @@ export default function AdminLogin() {
                   </button>
                   <button
                     type="button"
-                    onClick={handleResendOtp}
-                    disabled={resendCooldown > 0 || isLocked}
-                    className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors disabled:opacity-50"
-                  >
-                    {resendCooldown > 0
-                      ? `Resend code in ${resendCooldown}s`
-                      : "Resend code"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); }}
+                    onClick={() => { transitionTo("credentials"); setOtpCode(""); setError(""); setCooldownSeconds(0); wsRef.current?.disconnect(); wsRef.current = null; }}
                     className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login
@@ -8252,13 +8408,13 @@ export default function AdminLogin() {
                         setTotpError(false);
                       }}
                       autoFocus
-                      disabled={isLocked}
+                      disabled={isLocked || !wsConnected}
                       error={totpError}
                     />
                   </div>
                   <button
                     type="submit"
-                    disabled={loading || totpCode.length !== 6 || isLocked}
+                    disabled={loading || totpCode.length !== 6 || isLocked || !wsConnected}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -8266,7 +8422,7 @@ export default function AdminLogin() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); }}
+                    onClick={() => { transitionTo("credentials"); setTotpCode(""); setError(""); setCooldownSeconds(0); wsRef.current?.disconnect(); wsRef.current = null; }}
                     className="w-full py-2 rounded-xl neu-concave text-sm font-medium text-muted-foreground hover:text-glow-600 dark:hover:text-glow-400 transition-colors"
                   >
                     Back to login
