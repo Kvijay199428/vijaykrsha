@@ -63,7 +63,7 @@ services:
     environment:
       PRODUCTION: "true"
     volumes:
-      - vijaykrshaonline_jwskeys:/app/jws_keys
+      - vijaykrshaonline_jwskeys:/app/app/jws_keys
     networks:
       - prod-network
 

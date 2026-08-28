@@ -67,7 +67,7 @@ services:
     env_file:
       - ./env/.env.dev
     volumes:
-      - vijaykrshaonline_jwskeys_dev:/app/jws_keys
+      - vijaykrshaonline_jwskeys_dev:/app/app/jws_keys
     networks:
       - dev-network
 
