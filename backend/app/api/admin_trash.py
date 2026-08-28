@@ -188,6 +188,31 @@ async def get_trashed_message(
     }
 
 
+# ── Bulk restore ─────────────────────────────────────────────────
+@router.post("/bulk/restore")
+async def bulk_restore(
+    body: BulkRequest,
+    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_RESTORE)),
+    db: AsyncSession = Depends(get_db),
+):
+    restored = 0
+    for mid in body.message_ids:
+        msg = (await db.execute(
+            select(ContactMessage).where(ContactMessage.id == mid)
+        )).scalar_one_or_none()
+        if msg and msg.deleted_at:
+            msg.deleted_at = None
+            msg.trash_expires_at = None
+            msg.deleted_by = None
+            msg.updated_at = datetime.now(timezone.utc)
+            restored += 1
+
+    if restored:
+        _audit(db, AuditEvent.message_restored, admin.id, None, {"count": restored})
+    await db.commit()
+    return {"status": "ok", "restored": restored}
+
+
 # ── Restore ──────────────────────────────────────────────────────
 @router.post("/{message_id}/restore")
 async def restore_message(
@@ -228,31 +253,6 @@ async def permanent_delete(
     _audit(db, AuditEvent.message_permanently_deleted, admin.id, message_id)
     await db.commit()
     return {"status": "ok"}
-
-
-# ── Bulk restore ─────────────────────────────────────────────────
-@router.post("/bulk/restore")
-async def bulk_restore(
-    body: BulkRequest,
-    admin: AdminUser = Depends(require_permission(Permission.MESSAGES_RESTORE)),
-    db: AsyncSession = Depends(get_db),
-):
-    restored = 0
-    for mid in body.message_ids:
-        msg = (await db.execute(
-            select(ContactMessage).where(ContactMessage.id == mid)
-        )).scalar_one_or_none()
-        if msg and msg.deleted_at:
-            msg.deleted_at = None
-            msg.trash_expires_at = None
-            msg.deleted_by = None
-            msg.updated_at = datetime.now(timezone.utc)
-            restored += 1
-
-    if restored:
-        _audit(db, AuditEvent.message_restored, admin.id, None, {"count": restored})
-    await db.commit()
-    return {"status": "ok", "restored": restored}
 
 
 # ── Bulk permanent delete ────────────────────────────────────────

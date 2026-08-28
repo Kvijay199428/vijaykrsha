@@ -7836,7 +7836,7 @@ function NeuInput({ label, type = "text", value, onChange, placeholder }: {
 ```tsx
 // File: src\pages\AdminLogin.tsx
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { RateLimitError } from "../contexts/AuthContext";
 import OtpDigitInput from "../components/OtpDigitInput";
@@ -7911,7 +7911,7 @@ function CooldownTimer({
 }
 
 export default function AdminLogin() {
-  const { login, loginOtpSend, loginOtpVerify, loginTotp } = useAuth();
+  const { login, loginOtpSend, loginOtpVerify, loginTotp, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -8096,6 +8096,19 @@ export default function AdminLogin() {
   }
 
   const isLocked = cooldownSeconds > 0;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[var(--color-cream)] via-[var(--color-cream)] to-[var(--color-pink-muted)] p-4">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground mt-3">Checking session…</p>
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/vega/admin/dashboard" replace />;
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[var(--color-cream)] via-[var(--color-cream)] to-[var(--color-pink-muted)] p-4">
