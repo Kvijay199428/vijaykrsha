@@ -28,6 +28,17 @@ _DEFAULT_BODY_LIMIT = settings.MAX_JSON_BODY_KB * 1024
 _NULL_BYTE_RE = re.compile(r"[\x00]")
 
 
+def _content_length(value: str | None) -> int:
+    """Parse a Content-Length header, returning 0 for absent/invalid values."""
+    if not value:
+        return 0
+    try:
+        size = int(value.strip())
+    except (TypeError, ValueError):
+        return 0
+    return size if size > 0 else 0
+
+
 class RequestValidationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -47,10 +58,18 @@ class RequestValidationMiddleware(BaseHTTPMiddleware):
                 limit = multipart_limit
             else:
                 if not content_type.startswith("application/json"):
-                    return JSONResponse(
-                        {"detail": "Content-Type must be application/json"},
-                        status_code=415,
+                    # A request with no body (e.g. POST /admin/api/auth/refresh,
+                    # which authenticates via a cookie) carries no Content-Type
+                    # and must not be forced to claim a JSON payload.
+                    has_body = (
+                        bool(request.headers.get("transfer-encoding", "").strip())
+                        or _content_length(request.headers.get("content-length")) > 0
                     )
+                    if has_body:
+                        return JSONResponse(
+                            {"detail": "Content-Type must be application/json"},
+                            status_code=415,
+                        )
                 limit = _BODY_LIMITS.get(path, _DEFAULT_BODY_LIMIT)
 
             content_length = request.headers.get("content-length")
