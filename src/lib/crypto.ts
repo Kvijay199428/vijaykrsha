@@ -47,10 +47,24 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+export function assertWebCryptoAvailable(): void {
+  if (
+    typeof window === "undefined" ||
+    !window.isSecureContext ||
+    !window.crypto?.subtle
+  ) {
+    throw new Error(
+      "Secure browser context required for login encryption. Please open the site using HTTPS."
+    );
+  }
+}
+
 export async function encryptPassword(
   password: string,
   publicKeyPem: string
 ): Promise<string> {
+  assertWebCryptoAvailable();
+
   const keyData = pemToArrayBuffer(publicKeyPem);
   const key = await crypto.subtle.importKey(
     "spki",
