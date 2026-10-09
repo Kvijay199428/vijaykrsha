@@ -87,7 +87,7 @@ services:
     restart: unless-stopped
     ports:
       - "26002:80"
-      - "26003:443"
+      - "26006:443"
     volumes:
       # Dev-only HTTPS (no cloudflared): nginx.ssl.conf is glob-included by the
       # base nginx conf.d/*.conf, so this mount is what turns the 443 listener
