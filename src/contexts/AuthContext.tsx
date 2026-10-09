@@ -2,7 +2,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useState,
   type ReactNode,
 } from "react";
@@ -44,14 +43,14 @@ export interface AdminIdentity {
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  isLoading: boolean;
   admin: AdminIdentity | null;
   sessionExpiresAt: string | null;
   refreshAuth: () => Promise<boolean>;
   login: (
     username: string,
     password: string,
-    rememberMe?: boolean
+    rememberMe?: boolean,
+    turnstileToken?: string
   ) => Promise<LoginResult>;
   exchangeForTokens: (
     exchangeCode: string
@@ -92,13 +91,12 @@ function parseAuthError(response: Response, data: unknown, fallback: string): Er
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [admin, setAdmin] = useState<AdminIdentity | null>(null);
   const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
 
   const refreshAuth = useCallback(async (): Promise<boolean> => {
     try {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHME, {
+      const response = await apiFetch(ROUTES.ADMINAPIAUTHSESSION, {
         credentials: "include",
         redirectOn401: false,
       });
@@ -122,15 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => {
-    refreshAuth().finally(() => setIsLoading(false));
-  }, [refreshAuth]);
-
   const login = useCallback(
     async (
       username: string,
       password: string,
-      rememberMe = false
+      rememberMe = false,
+      turnstileToken?: string
     ): Promise<LoginResult> => {
       const { key_id, public_key } = await fetchPublicKey();
       const password_cipher = await encryptPassword(password, public_key);
@@ -144,6 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           password_cipher,
           key_id,
           remember_me: rememberMe,
+          turnstile_token: turnstileToken ?? null,
         }),
         redirectOn401: false,
       });
@@ -199,7 +195,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         isAuthenticated,
-        isLoading,
         admin,
         sessionExpiresAt,
         refreshAuth,

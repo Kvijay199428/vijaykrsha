@@ -12,14 +12,33 @@ export async function fetchPublicKey(): Promise<PublicKeyResponse> {
     redirectOn401: false,
   });
   if (!res.ok) throw new Error("Could not load encryption key");
-  return res.json();
+  const data = await res.json().catch(() => null);
+  // Tolerate a camelCase shape ({keyId, publicKey}) but require the
+  // contract fields; a missing public_key used to crash as
+  // "Cannot read properties of undefined (reading 'replace')".
+  const key_id = data?.key_id ?? data?.keyId;
+  const public_key = data?.public_key ?? data?.publicKey;
+  if (
+    typeof key_id !== "string" ||
+    typeof public_key !== "string" ||
+    !public_key.includes("-----BEGIN PUBLIC KEY-----")
+  ) {
+    throw new Error("Invalid public encryption key response");
+  }
+  return { key_id, public_key };
 }
 
 function pemToArrayBuffer(pem: string): ArrayBuffer {
+  if (typeof pem !== "string" || pem.trim() === "") {
+    throw new Error("Public encryption key is missing");
+  }
   const b64 = pem
     .replace(/-----BEGIN PUBLIC KEY-----/, "")
     .replace(/-----END PUBLIC KEY-----/, "")
     .replace(/\s+/g, "");
+  if (!b64) {
+    throw new Error("Public encryption key is empty");
+  }
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {

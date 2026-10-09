@@ -54,12 +54,21 @@ EXCLUDE_DIRS = {
     "dist",
     ".opencode",
     "jws_keys",
+    ".keys",             # local PEM pair — never clobber the VPS's prod key
 }
 
 EXCLUDE_FILES = {
     "env/.env.prod",
     "env/.env.dev",
 }
+
+# Files inside .keys/ that MAY be uploaded. .keys/ itself is excluded above
+# so the remote host's JWS PEMs can never be clobbered — but turnstile.json
+# is configuration (widget site key + secret registry), not a signing key,
+# and both dev and prod backend containers bind-mount .keys/ as KEYS_DIR.
+# Without it the registry fallback resolves nothing and every
+# CAPTCHA-protected endpoint fails closed after a fresh deploy.
+KEYS_ALLOWLIST = (".keys/turnstile.json", ".keys/README.md")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -117,6 +126,11 @@ def create_zip():
                 if arcname in EXCLUDE_FILES:
                     continue
                 zipf.write(local_path, arcname=arcname)
+        # Re-add the non-PEM .keys/ files that the excludes above dropped.
+        for rel in KEYS_ALLOWLIST:
+            local = os.path.join(LOCAL_DIR, *rel.split("/"))
+            if os.path.isfile(local):
+                zipf.write(local, arcname=rel)
     print(f"ZIP created ({os.path.getsize(ZIP_FILE) // 1024} KB).")
 
 
@@ -157,7 +171,12 @@ def deploy_docker(host, env, clean=False):
 
     compose_file = "docker-compose.dev.yml" if env == "dev" else "docker-compose.prod.yml"
     env_file = "env/.env.dev" if env == "dev" else "env/.env.prod"
-    service = "backend-dev frontend-dev" if env == "dev" else "backend-prod"
+    # Prod MUST name api-gateway-prod explicitly. It has no dependents, so
+    # `up -d backend-prod` leaves it stopped, and because a stopped container
+    # is flagged manually-stopped, `restart: unless-stopped` never revives it.
+    # The result is a silently dead origin: Cloudflare answers 502 for every
+    # API request while the deploy reports success.
+    service = "backend-dev frontend-dev" if env == "dev" else "backend-prod api-gateway-prod"
     backend_service = "backend-dev" if env == "dev" else "backend-prod"
     # Dev serves the built SPA from nginx, so its image must be rebuilt when
     # frontend sources change. Prod frontend ships via Cloudflare Pages.
@@ -174,7 +193,7 @@ def deploy_docker(host, env, clean=False):
         all_services = (
             "backend-dev frontend-dev database-dev storage-dev redis-dev"
             if env == "dev"
-            else "backend-prod database-prod storage-prod redis-prod"
+            else "backend-prod api-gateway-prod database-prod storage-prod redis-prod"
         )
         wipe = "--rmi all -v " if env == "prod" else ""
         print("\n[CLEAN] Removing existing containers...")
@@ -198,10 +217,48 @@ def deploy_docker(host, env, clean=False):
             ssh.close()
             sys.exit(1)
 
+    # These must FAIL the deploy. The previous version probed prod on port
+    # 26011 (nothing listens there; backend-prod publishes 26021) and then
+    # discarded the result, so a broken prod stack still printed "completed".
+    # `tr -d '\r'` strips the CR that a pty-attached command appends, which
+    # would otherwise defeat `grep -x`.
     if env == "dev":
-        ssh_run(ssh, "for i in $(seq 1 10); do curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26001/admin/api/health && break; sleep 3; done", "Verifying backend-dev health")
+        checks = [
+            (
+                "for i in $(seq 1 20); do "
+                "curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26001/admin/api/health >/dev/null && break; "
+                "sleep 3; done; "
+                "curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26001/admin/api/health >/dev/null",
+                "Verifying backend-dev health",
+            ),
+        ]
     else:
-        ssh_run(ssh, "for i in $(seq 1 10); do curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26011/admin/api/health && break; sleep 3; done", "Verifying backend-prod health")
+        checks = [
+            (
+                "for i in $(seq 1 20); do "
+                "curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26021/admin/api/health >/dev/null && break; "
+                "sleep 3; done; "
+                "curl -sf -H 'X-Forwarded-By: pages-proxy' http://localhost:26021/admin/api/health >/dev/null",
+                "Verifying backend-prod health",
+            ),
+            # A healthy backend behind a dead gateway is still a total outage
+            # (Cloudflare answers 502 for every /api/* request), so assert the
+            # gateway is running AND serving the /vega/api mount — and still
+            # refusing to serve anything else.
+            (
+                "docker inspect -f '{{.State.Running}}' vijaykrsha-online-api-gateway-prod | tr -d '\\r' | grep -qx true && "
+                "curl -sf -o /dev/null -w '%{http_code}' http://localhost:26025/vega/api/admin/api/auth/public-key | tr -d '\\r' | grep -qx 200 && "
+                "curl -s -o /dev/null -w '%{http_code}' http://localhost:26025/not-an-api-path | tr -d '\\r' | grep -qx 404",
+                "Verifying api-gateway-prod",
+            ),
+        ]
+
+    for cmd, label in checks:
+        if not ssh_run(ssh, cmd, label):
+            ssh.close()
+            cleanup_zip()
+            print(f"\n{env.upper()} deployment FAILED verification at: {label}")
+            sys.exit(1)
 
     ssh.close()
     cleanup_zip()

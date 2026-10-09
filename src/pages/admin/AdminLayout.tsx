@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import AnimatedLogo from "../../components/AnimatedLogo";
+import BrandLogo from "../../components/BrandLogo";
 import SessionExpiryWarning from "../../components/SessionExpiryWarning";
 import {
   LayoutDashboard,
@@ -30,7 +31,6 @@ const MOBILE_BREAKPOINT = 768;
 
 export default function AdminLayout() {
   const { admin, logout } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(() => {
     const saved = localStorage.getItem("admin-sidebar-collapsed");
@@ -79,7 +79,6 @@ export default function AdminLayout() {
 
   function handleLogout() {
     logout();
-    navigate("/vega/admin/login");
   }
 
   return (
@@ -99,7 +98,7 @@ export default function AdminLayout() {
         >
           <AnimatedLogo size={collapsed ? 32 : 28} />
           {!collapsed && (
-            <span className="font-semibold text-sm truncate typing-text text-primary uppercase">VIJAYKRSHA.ONLINE</span>
+            <BrandLogo fontSize={14} duration={2} className="font-semibold text-primary" />
           )}
           {!collapsed && (
             <button

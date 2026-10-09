@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { Skeleton } from "../ui/skeleton";
@@ -117,10 +118,24 @@ function AdminFrameSkeleton() {
 }
 
 export default function ProtectedRoute() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, refreshAuth } = useAuth();
   const location = useLocation();
+  const [checking, setChecking] = useState(true);
 
-  if (isLoading) {
+  // Session bootstrap lives here — the only mount point for every protected
+  // admin page — instead of inside AuthProvider, so public routes and the
+  // admin login page never probe the session endpoint.
+  useEffect(() => {
+    let cancelled = false;
+    refreshAuth().finally(() => {
+      if (!cancelled) setChecking(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshAuth]);
+
+  if (checking) {
     return (
       <div role="status" aria-label="Checking session">
         <AdminFrameSkeleton />

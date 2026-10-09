@@ -30,7 +30,7 @@ export interface AuthWsCallbacks {
   onClosed?: () => void;
 }
 
-const WS_BASE = site.api.baseUrl.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+const WS_BASE = site.api.wsBaseUrl;
 
 export class AuthWebSocket {
   private ws: WebSocket | null = null;

@@ -280,30 +280,18 @@ body {
   background: linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(124, 58, 237, 0.08));
 }
 
-/* ── Typing Animation ─────────────────────────────── */
+/* ── Brand Logo (BrandLoader / typewriter) ──────────────── */
 
-@keyframes typing-loop {
-  0% { width: 0 }
-  35% { width: 100% }
-  60% { width: 100% }
-  95% { width: 0 }
-  100% { width: 0 }
-}
-
-@keyframes typing-glow {
-  0% { text-shadow: 0 0 0 transparent; }
-  15% { text-shadow: 0 0 8px rgba(124, 92, 240, 0.4); }
-  35% { text-shadow: 0 0 12px rgba(124, 92, 240, 0.3); }
-  60% { text-shadow: 0 0 8px rgba(124, 92, 240, 0.2); }
-  95% { text-shadow: 0 0 0 transparent; }
-  100% { text-shadow: 0 0 0 transparent; }
-}
-
-.typing-text {
-  display: inline-block;
-  overflow: hidden;
-  white-space: nowrap;
-  animation: typing-loop 4s ease-in-out infinite, typing-glow 4s ease-in-out infinite;
+/* The vendored `animations.css` hardcodes a stagger divisor of 14, which
+   assumes a brand of ~15 characters or fewer. Our brand is 17 characters,
+   so the last letter's delay (16/14 ≈ 1.14 cycles) overflows the animation
+   cycle and the loop drifts and desyncs on every repeat. A divisor of 20
+   places the last letter's reveal at 0.8T — right about where the first
+   letter starts wiping (0.85T) — so the sequence reads as one continuous
+   typing loop. Higher specificity than the vendored rule, so this wins
+   regardless of stylesheet order. */
+.brand-logo.brand-loader--typewriter .brand-loader__letter {
+  animation-delay: calc(var(--i, 0) * var(--brand-loader-duration) / 20);
 }
 
 /* ── Card & Button Interactions (Public) ──────────── */
@@ -402,6 +390,128 @@ body {
   @apply mt-0.5 h-4 w-4 text-glow-500 shrink-0;
 }
 
+/* ── Contact Form State Transitions ────────────── */
+
+/* Both panels occupy the same grid cell so the card height is set by the
+   tallest of the two — no layout jump when switching between form and the
+   success state. */
+.contact-form-stage {
+  display: grid;
+}
+
+.contact-form-panel,
+.contact-success-panel {
+  grid-area: 1 / 1;
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 0.45s;
+}
+
+.contact-form-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+}
+
+.contact-success-panel {
+  opacity: 0;
+  transform: translateY(18px) scale(0.985);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.contact-form-stage.is-sent .contact-form-panel {
+  opacity: 0;
+  transform: translateY(-18px) scale(0.985);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.contact-form-stage.is-sent .contact-success-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0.12s;
+}
+
+.contact-success-icon {
+  animation: contact-success-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.contact-success-check {
+  stroke-dasharray: 32;
+  stroke-dashoffset: 32;
+  animation: contact-success-draw 0.55s 0.18s ease-out forwards;
+}
+
+@keyframes contact-success-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes contact-success-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.contact-submit-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: contact-spin 0.7s linear infinite;
+}
+
+@keyframes contact-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.contact-message {
+  animation: contact-message-in 0.25s ease-out both;
+}
+
+@keyframes contact-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.contact-file-row {
+  animation: contact-file-in 0.3s ease-out both;
+}
+
+@keyframes contact-file-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ── Footer ───────────────────────────────────────── */
 
 .footer-heading {
@@ -485,10 +595,12 @@ body {
 /* ── Accessibility ────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
-  .typing-text {
-    animation: none;
-    width: 100%;
-    border-right: none;
+  /* BrandLoader's own reduced-motion block neutralises the animation on
+     `.brand-loader__text`, but the per-letter spans carry the typewriter
+     opacity keyframes directly — without this the logo would render blank. */
+  .brand-logo .brand-loader__letter {
+    opacity: 1 !important;
+    animation: none !important;
   }
   .reveal {
     opacity: 1;
@@ -528,6 +640,20 @@ body {
     opacity: 1;
     transform: none;
     transition: none;
+  }
+  .contact-form-panel,
+  .contact-success-panel {
+    transition: none;
+  }
+  .contact-success-icon,
+  .contact-success-check,
+  .contact-submit-spinner,
+  .contact-message,
+  .contact-file-row {
+    animation: none;
+  }
+  .contact-success-check {
+    stroke-dashoffset: 0;
   }
 }
 

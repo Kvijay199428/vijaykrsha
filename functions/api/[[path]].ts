@@ -2,6 +2,12 @@ export interface Env {
   API_ORIGIN: string;
 }
 
+// Public API host serves the backend only, mounted under this prefix.
+// The prod gateway (nginx.api-gateway.prod.conf) strips /vega/api/ and
+// forwards the remainder, so /vega/api/admin/api/auth/login reaches the
+// backend's /admin/api/auth route.
+const API_MOUNT = "/vega/api";
+
 const ALLOWED_ORIGINS = [
   "https://vijaykrsha.online",
   "https://vijaykrsha-website.pages.dev",
@@ -34,7 +40,14 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\//, "/");
 
-  const backendUrl = new URL(path, context.env.API_ORIGIN || "https://api.vijaykrsha.online");
+  // Build the upstream by concatenation, not URL(path, base): `path` always
+  // begins with "/", so the URL constructor would resolve it as an absolute
+  // path and silently discard the /vega/api mount prefix.
+  const apiOrigin = (context.env.API_ORIGIN || "https://api.vijaykrsha.online").replace(
+    /\/+$/,
+    ""
+  );
+  const backendUrl = new URL(`${apiOrigin}${API_MOUNT}${path}`);
   backendUrl.search = url.search;
 
   const proxyRequest = new Request(backendUrl.toString(), {

@@ -1,13 +1,19 @@
+import argparse
+import signal
 import paramiko
 import sys
 import re
-import time
 
 HOST = "192.168.1.50"
+PORT = 24
 USER = "vega"
 PASSWORD = "1010"
 REMOTE_DIR = "/home/vega/vijaykrsha.online"
 LOG_FILE = "vijaykrsha.log"
+
+DEV_FILES = "-f docker-compose.dev.yml"
+PROD_FILES = "-f docker-compose.prod.yml"
+ALL_FILES = "-f docker-compose.dev.yml -f docker-compose.prod.yml"
 
 COLORS = [
     '\033[96m',
@@ -35,86 +41,75 @@ def colorize_line(line):
         return f"{color}{container_name} |{RESET} {log_content}\n"
     return line
 
-print(f"Connecting to {USER}@{HOST}...")
+parser = argparse.ArgumentParser(description="Tail live logs from the vijaykrsha containers.")
+group = parser.add_mutually_exclusive_group()
+group.add_argument("--dev", action="store_true", help="Only dev containers.")
+group.add_argument("--prod", action="store_true", help="Only prod containers.")
+args = parser.parse_args()
+
+compose_files = ALL_FILES
+scope_label = "all (dev + prod)"
+if args.dev:
+    compose_files = DEV_FILES
+    scope_label = "dev only"
+elif args.prod:
+    compose_files = PROD_FILES
+    scope_label = "prod only"
+
+print(f"Connecting to {USER}@{HOST}:{PORT}...")
 
 ssh = paramiko.SSHClient()
 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-channel = None
+stdin = stdout = stderr = None
+_stopping = False
+
+def _handle_sigint(sig, frame):
+    """Close the SSH channel on CTRL+C so readline() unblocks immediately."""
+    global _stopping
+    _stopping = True
+    print("\nStopping log stream...")
+    try:
+        if stdout is not None:
+            stdout.channel.close()
+    except Exception:
+        pass
+
+signal.signal(signal.SIGINT, _handle_sigint)
 
 try:
-    ssh.connect(HOST, username=USER, password=PASSWORD)
+    ssh.connect(HOST, port=PORT, username=USER, password=PASSWORD)
     transport = ssh.get_transport()
     transport.set_keepalive(10)
 
-    print(f"\n--- Live Docker logs for {REMOTE_DIR} ---")
+    print(f"\n--- Live Docker logs for {REMOTE_DIR} ({scope_label}) ---")
     print(f"--- Saving logs to {LOG_FILE} ---")
     print("--- Press CTRL + C to stop ---\n")
 
     cmd = (
         f"cd {REMOTE_DIR} && "
         f"if command -v docker-compose >/dev/null 2>&1; "
-        f"then docker-compose logs -f --tail 50 --no-color; "
-        f"else docker compose logs -f --tail 50 --no-color; fi"
+        f"then docker-compose {compose_files} logs -f --tail 50 --no-color 2>/dev/null; "
+        f"else docker compose {compose_files} logs -f --tail 50 --no-color 2>/dev/null; fi"
     )
 
-    channel = ssh.get_transport().open_session()
-    channel.get_pty()
-    channel.exec_command(cmd)
-
-    buffer = ""
+    # exec_command gives proper file-like handles that block on readline(),
+    # ensuring live output is streamed continuously without premature exit.
+    stdin, stdout, stderr = ssh.exec_command(cmd, get_pty=True)
 
     with open(LOG_FILE, "a", encoding="utf-8") as log_f:
-        while True:
-            if channel.recv_ready():
-                data = channel.recv(4096).decode("utf-8", errors="replace")
-                if not data:
-                    break
-
-                buffer += data
-
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    raw_line = line + "\n"
-
-                    log_f.write(raw_line)
-                    log_f.flush()
-
-                    sys.stdout.write(colorize_line(raw_line))
-                    sys.stdout.flush()
-
-            elif channel.recv_stderr_ready():
-                data = channel.recv_stderr(4096).decode("utf-8", errors="replace")
-                if data:
-                    for line in data.splitlines(True):
-                        log_f.write(line)
-                        log_f.flush()
-                        sys.stdout.write(line)
-                        sys.stdout.flush()
-
-            elif channel.exit_status_ready():
-                if buffer:
-                    log_f.write(buffer)
-                    log_f.flush()
-                    sys.stdout.write(colorize_line(buffer))
-                    sys.stdout.flush()
-                    buffer = ""
+        for raw_line in iter(stdout.readline, ""):
+            if _stopping:
                 break
-            else:
-                time.sleep(0.1)
+            log_f.write(raw_line)
+            log_f.flush()
 
-except KeyboardInterrupt:
-    print("\nStopping log stream...")
-    try:
-        if channel is not None:
-            channel.send("\x03")
-            time.sleep(0.5)
-            channel.close()
-    except Exception:
-        pass
+            sys.stdout.write(colorize_line(raw_line))
+            sys.stdout.flush()
 
 except Exception as e:
-    print(f"Error: {e}")
+    if not _stopping:
+        print(f"Error: {e}")
 
 finally:
     try:
@@ -122,3 +117,4 @@ finally:
     except Exception:
         pass
     print("Done.")
+    sys.exit(0)

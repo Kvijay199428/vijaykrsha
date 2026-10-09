@@ -2,6 +2,8 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pydantic import model_validator
 
+import json
+
 
 _INSECURE_DEFAULTS = frozenset({
     "",
@@ -12,12 +14,16 @@ _INSECURE_DEFAULTS = frozenset({
     "totp_encryption_key",
 })
 
-import os
 from pathlib import Path
 
-_JWS_KEYS_DIR = Path(__file__).resolve().parent / "jws_keys"
-_JWS_PRIVATE_FILE = _JWS_KEYS_DIR / "jws_private.pem"
-_JWS_PUBLIC_FILE = _JWS_KEYS_DIR / "jws_public.pem"
+_JWS_PRIVATE_FILENAME = "jws_private.pem"
+_JWS_PUBLIC_FILENAME = "jws_public.pem"
+_TURNSTILE_KEYS_FILENAME = "turnstile.json"
+
+
+def _default_keys_dir() -> Path:
+    # backend/app/config.py -> repo root -> .keys/
+    return Path(__file__).resolve().parent.parent.parent / ".keys"
 
 
 class Settings(BaseSettings):
@@ -57,6 +63,28 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://redis-prod:6379/0"
 
+    # Cloudflare Turnstile (admin login CAPTCHA)
+    TURNSTILE_ENABLED: bool = True
+    TURNSTILE_SITE_KEY: str = ""
+    TURNSTILE_SECRET_KEY: str = ""
+    TURNSTILE_EXPECTED_ACTION: str = "admin_login"
+    TURNSTILE_EXPECTED_HOSTNAMES: str = "vijaykrsha.online,www.vijaykrsha.online"
+    # Public contact form CAPTCHA. Kept separate from TURNSTILE_ENABLED so the
+    # lead form and admin login can be enforced independently. Uses its own
+    # widget/action (see TURNSTILE_CONTACT_ACTION) so a token minted for one
+    # form cannot be replayed against the other.
+    #
+    # Each Turnstile widget has its OWN secret, and siteverify rejects a token
+    # verified with the wrong one — so these two secrets must never be set to
+    # the same value.
+    TURNSTILE_CONTACT_REQUIRED: bool = True
+    TURNSTILE_CONTACT_ACTION: str = "contact_form"
+    # Env override for the contact widget secret. When empty (the default)
+    # the secret comes from .keys/turnstile.json instead — see
+    # turnstile_secret_for(). Same env-first-then-.keys/ precedence as
+    # JWT_SIGNING_PRIVATE_KEY -> .keys/jws_private.pem.
+    TURNSTILE_CONTACT_SECRET_KEY: str = ""
+
     # Rate limiting
     RATE_LIMIT_LOGIN_IP: int = 10
     RATE_LIMIT_LOGIN_IP_WINDOW: int = 60
@@ -89,6 +117,9 @@ class Settings(BaseSettings):
     JWT_SIGNING_PUBLIC_KEY: str = ""
     JWT_ACCESS_TTL_MINUTES: int = 15
     JWT_REFRESH_TTL_DAYS: int = 7
+    # Directory holding jws_private.pem/jws_public.pem. Empty → repo-root/.keys/.
+    # In docker set KEYS_DIR=/app/.keys and bind-mount ./.keys there.
+    KEYS_DIR: str = ""
 
     # Sessions
     MAX_CONCURRENT_SESSIONS: int = 5
@@ -119,17 +150,15 @@ class Settings(BaseSettings):
         if self.S3_ACCESS_KEY == "minioadmin" or self.S3_SECRET_KEY == "minioadmin":
             insecure.append("S3_ACCESS_KEY/S3_SECRET_KEY (minioadmin default)")
         if not self.JWT_SIGNING_PRIVATE_KEY and not self.JWT_SIGNING_PUBLIC_KEY:
-            if not (_JWS_PRIVATE_FILE.exists() and _JWS_PUBLIC_FILE.exists()):
-                try:
-                    _JWS_KEYS_DIR.mkdir(parents=True, exist_ok=True)
-                    writable = os.access(_JWS_KEYS_DIR, os.W_OK)
-                except Exception:
-                    writable = False
-                if not writable:
-                    insecure.append(
-                        "JWT_SIGNING_PRIVATE_KEY/JWT_SIGNING_PUBLIC_KEY (neither set, "
-                        "no persisted key files, and jws_keys/ not writable)"
-                    )
+            keys_dir = self.keys_dir_path
+            if not (
+                (keys_dir / _JWS_PRIVATE_FILENAME).exists()
+                and (keys_dir / _JWS_PUBLIC_FILENAME).exists()
+            ):
+                insecure.append(
+                    "JWT_SIGNING_PRIVATE_KEY/JWT_SIGNING_PUBLIC_KEY (neither set, "
+                    f"and no persisted PEM pair under {keys_dir})"
+                )
         elif (
             not self.JWT_SIGNING_PRIVATE_KEY.startswith("-----BEGIN")
             or not self.JWT_SIGNING_PUBLIC_KEY.startswith("-----BEGIN")
@@ -138,6 +167,28 @@ class Settings(BaseSettings):
                 "JWT_SIGNING_PRIVATE_KEY/JWT_SIGNING_PUBLIC_KEY (set but not valid PEM; "
                 "generate real keys, not placeholders)"
             )
+        # Cloudflare Turnstile verification is fail-closed: an empty secret
+        # does not degrade, it makes every login and contact submission
+        # return 403. Refuse to boot so this surfaces as a startup error
+        # instead of "the container looks healthy but nobody can log in".
+        registry = self.keys_dir_path / _TURNSTILE_KEYS_FILENAME
+        for label, required, action in (
+            (
+                "TURNSTILE_SECRET_KEY",
+                self.TURNSTILE_ENABLED,
+                self.TURNSTILE_EXPECTED_ACTION,
+            ),
+            (
+                "TURNSTILE_CONTACT_SECRET_KEY",
+                self.TURNSTILE_CONTACT_REQUIRED,
+                self.TURNSTILE_CONTACT_ACTION,
+            ),
+        ):
+            if required and not self.turnstile_secret_for(action):
+                insecure.append(
+                    f"{label}: no secret resolves for action '{action}' "
+                    f"(set {label} in the environment or add the entry to {registry})"
+                )
         if insecure:
             raise RuntimeError(
                 "Refusing to start in production with insecure defaults: "
@@ -149,6 +200,51 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def keys_dir_path(self) -> Path:
+        if self.KEYS_DIR:
+            return Path(self.KEYS_DIR)
+        return _default_keys_dir()
+
+    def _turnstile_registry(self) -> dict:
+        """Read .keys/turnstile.json. Missing, unreadable or malformed yields
+        {} — every caller already treats an empty secret as fail-closed, and
+        the production guard below surfaces it as a startup error rather than
+        a silently-broken 403 later."""
+        try:
+            raw = (
+                self.keys_dir_path / _TURNSTILE_KEYS_FILENAME
+            ).read_text(encoding="utf-8")
+        except OSError:
+            return {}
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def turnstile_secret_for(self, action: str) -> str:
+        """Resolve the Cloudflare Turnstile secret for one widget action.
+
+        Env vars win (explicit overrides), then .keys/turnstile.json — the
+        same precedence as JWT_SIGNING_PRIVATE_KEY -> .keys/jws_private.pem.
+
+        Two widgets means two distinct secrets: siteverify returns
+        success=false when the secret does not match the widget that minted
+        the token, so resolving this correctly is load-bearing — getting it
+        wrong rejects every submission on that form.
+        """
+        if action == self.TURNSTILE_EXPECTED_ACTION and self.TURNSTILE_SECRET_KEY:
+            return self.TURNSTILE_SECRET_KEY
+        if action == self.TURNSTILE_CONTACT_ACTION and self.TURNSTILE_CONTACT_SECRET_KEY:
+            return self.TURNSTILE_CONTACT_SECRET_KEY
+        entry = self._turnstile_registry().get(action)
+        if isinstance(entry, dict):
+            secret = entry.get("secret_key")
+            if isinstance(secret, str):
+                return secret.strip()
+        return ""
 
     @property
     def cookie_secure(self) -> bool:

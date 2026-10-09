@@ -1,3 +1,23 @@
+const PROD_WS_ORIGIN = "wss://vega-api.vijaykrsha.online";
+
+// The OTP WebSocket cannot ride the Pages function the way /api/* does —
+// public/_redirects rewrites /* to /index.html, so it is dialled directly
+// against the API host. NOTE: api.vijaykrsha.online belongs to Propaura.
+function resolveWsBaseUrl(): string {
+  if (typeof window === "undefined") return PROD_WS_ORIGIN;
+  const { protocol, host, hostname } = window.location;
+  // *.pages.dev is included so preview deployments reach the real backend
+  // (there is no preview API host).
+  const isProd =
+    hostname === "vijaykrsha.online" ||
+    hostname === "www.vijaykrsha.online" ||
+    hostname.endsWith(".pages.dev");
+  if (isProd) return PROD_WS_ORIGIN;
+  // dev: localhost, LAN IP, and ngrok all stay same-origin, so a single
+  // build works for all of them.
+  return `${protocol === "https:" ? "wss:" : "ws:"}//${host}`;
+}
+
 export const site = {
   name: "Vijay Kumar Sharma",
   tagline: "Legal Research, Drafting & Digital Legal Solutions",
@@ -15,7 +35,7 @@ export const site = {
   },
 
   api: {
-    baseUrl: import.meta.env.VITE_API_URL || "https://api.vijaykrsha.online",
+    wsBaseUrl: resolveWsBaseUrl(),
     contactPath: "/vks/api/contact",
   },
 

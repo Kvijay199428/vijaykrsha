@@ -16,6 +16,7 @@ from app.models import (
     MessagePriority, MessageAttachment,
 )
 from app.security.rate_limit import contact_limiter
+from app.security.turnstile import captcha_accepted, verify_turnstile
 from app.services.storage_service import StorageError, get_storage
 
 logger = structlog.get_logger()
@@ -50,6 +51,7 @@ async def submit_contact(
     priority: Optional[str] = Form(None),
     message: str = Form(...),
     honeypot: Optional[str] = Form(None),
+    turnstile_token: Optional[str] = Form(None),
     documents: List[UploadFile] = File(default=[]),
     db: AsyncSession = Depends(get_db),
 ):
@@ -61,6 +63,30 @@ async def submit_contact(
     allowed, wait = await contact_limiter.check_and_record(f"contact:{ip}")
     if not allowed:
         raise HTTPException(429, "rate_limited")
+
+    # ── Turnstile CAPTCHA ────────────────────────────────────────────
+    # Ordered after the honeypot and rate limit (both free) but before any
+    # attachment read, storage call or DB work, so a bot is rejected while the
+    # request is still cheap. Fail-closed: a missing or invalid token is a hard
+    # 403, never a soft pass — same posture as the admin login.
+    if settings.TURNSTILE_CONTACT_REQUIRED:
+        ts_result = await verify_turnstile(
+            turnstile_token or "",
+            ip,
+            action=settings.TURNSTILE_CONTACT_ACTION,
+        )
+        if not captcha_accepted(
+            ts_result, ip, expected_action=settings.TURNSTILE_CONTACT_ACTION
+        ):
+            logger.warning(
+                "contact_turnstile_rejected",
+                ip_address=ip,
+                error_codes=ts_result.get("error-codes", "unknown"),
+            )
+            raise HTTPException(
+                403,
+                "Security check failed. Please tick the verification box and try again.",
+            )
 
     # ── validate attachments before touching the database ──────────
     allowed_ext = settings.allowed_attachment_extensions

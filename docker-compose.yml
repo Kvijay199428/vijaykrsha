@@ -56,6 +56,12 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      # Same mount as docker-compose.prod.yml — the backend reads the
+      # Turnstile secret registry (turnstile.json) and the JWS PEMs from
+      # KEYS_DIR, so without this the dev container cannot see .keys/ and
+      # every CAPTCHA-protected endpoint fails closed.
+      - ./.keys:/app/.keys
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/vijaykrsha
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
@@ -67,11 +73,25 @@ services:
       S3_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       S3_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,https://vijaykrsha.online}
+      KEYS_DIR: /app/.keys
+      # Cloudflare Turnstile. Both secrets default to .keys/turnstile.json, so
+      # these are optional overrides (a bare `docker compose up` must still
+      # work) rather than required — the production guard in app/config.py
+      # refuses to boot if a required widget ends up with no secret at all.
+      TURNSTILE_ENABLED: ${TURNSTILE_ENABLED:-true}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      TURNSTILE_CONTACT_SECRET_KEY: ${TURNSTILE_CONTACT_SECRET_KEY:-}
+      TURNSTILE_CONTACT_REQUIRED: ${TURNSTILE_CONTACT_REQUIRED:-true}
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Vite inlines VITE_* at build time, so the public Turnstile site
+        # keys must be passed here rather than as runtime environment vars.
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+        VITE_TURNSTILE_CONTACT_SITE_KEY: ${VITE_TURNSTILE_CONTACT_SITE_KEY:-}
     restart: unless-stopped
     ports:
       - "3000:80"

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 from app.security.csrf import issue_csrf_cookie
+from app.security.turnstile import verify_turnstile, captcha_accepted
 from app.db import get_db
 from app.models import (
     AdminUser, AdminStatus, AuthChallenge, OtpPurpose, OtpDelivery,
@@ -24,7 +25,8 @@ from app.security.encryption import new_encryption_keypair, decrypt_password
 from app.security.tokens import (
     create_access_token, create_refresh_token, rotate_refresh_token,
     revoke_refresh_token, block_access_token_jti, create_ws_ticket,
-    verify_ws_ticket, create_exchange_code, verify_exchange_code,
+    verify_access_token, verify_ws_ticket,
+    create_exchange_code, verify_exchange_code,
     consume_exchange_code, TokenError, TokenReuseDetected,
 )
 from app.security.rate_limit import (
@@ -69,6 +71,7 @@ class LoginRequest(BaseModel):
     key_id: str | None = None
     remember_me: bool = False
     legacy_plaintext: bool = False
+    turnstile_token: str | None = None
 
     @field_validator("username")
     @classmethod
@@ -293,6 +296,26 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             "type": "rate_limited",
             "retry_after": int(retry_user),
         })
+
+    # Turnstile CAPTCHA: verify before any DB/RSA work so bots are cheaply
+    # rejected. Fail-closed — unlike the rate limiters, an invalid or missing
+    # token is a hard 403, never a soft pass.
+    if settings.TURNSTILE_ENABLED:
+        ts_result = await verify_turnstile(
+            body.turnstile_token or "", ip, action=settings.TURNSTILE_EXPECTED_ACTION
+        )
+        if not captcha_accepted(
+            ts_result, ip, expected_action=settings.TURNSTILE_EXPECTED_ACTION
+        ):
+            await log_security_event(
+                db, "login_failure", "medium",
+                ip_address=ip, user_agent=ua, path=path, method="POST",
+                reason=f"Turnstile rejected: {ts_result.get('error-codes', 'unknown')}",
+            )
+            raise HTTPException(403, detail={
+                "detail": "Security verification failed. Please refresh and try again.",
+                "type": "captcha_failed",
+            })
 
     stmt = select(AdminUser).where(AdminUser.username == body.username)
     result = await db.execute(stmt)
@@ -636,8 +659,8 @@ async def trust_device_endpoint(
         return resp
 
 
-@router.get("/me")
-async def get_me(
+@router.get("/session")
+async def get_session(
     deps: tuple = Depends(get_current_admin_with_session),
     db: AsyncSession = Depends(get_db),
 ):
@@ -700,7 +723,9 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
 
     resp = JSONResponse(content={"status": "ok"})
     resp.delete_cookie("vks_session")
-    resp.delete_cookie("refresh_token")
+    # Clear both the new widened path and the legacy path, so a browser that
+    # still holds a cookie issued under the old path is cleaned up too.
+    resp.delete_cookie("refresh_token", path="/api/admin/api/auth")
     resp.delete_cookie("refresh_token", path="/api/admin/api/auth/refresh")
     resp.delete_cookie(settings.trusted_device_cookie_name, path="/")
     return resp
@@ -754,7 +779,7 @@ async def exchange(body: ExchangeRequest, request: Request, db: AsyncSession = D
         "refresh_token", refresh_token,
         httponly=True, secure=settings.cookie_secure, samesite="strict",
         max_age=settings.JWT_REFRESH_TTL_DAYS * 24 * 3600,
-        path="/api/admin/api/auth/refresh",
+        path="/api/admin/api/auth",
     )
     return resp
 
@@ -793,7 +818,7 @@ async def refresh(request: Request):
         "refresh_token", new_refresh_token,
         httponly=True, secure=settings.cookie_secure, samesite="strict",
         max_age=settings.JWT_REFRESH_TTL_DAYS * 24 * 3600,
-        path="/api/admin/api/auth/refresh",
+        path="/api/admin/api/auth",
     )
     return resp
 

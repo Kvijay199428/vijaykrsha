@@ -9,6 +9,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - vijaykrshaonline_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:26022:5432"
     networks:
       - prod-network
     healthcheck:
@@ -27,6 +29,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_PROD_SECRET_KEY}
     volumes:
       - vijaykrshaonline_miniodata:/data
+    ports:
+      - "127.0.0.1:26024:9000"
     networks:
       - prod-network
 
@@ -35,6 +39,8 @@ services:
     container_name: vijaykrsha-online-redis-prod
     restart: unless-stopped
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "127.0.0.1:26023:6379"
     networks:
       - prod-network
     healthcheck:
@@ -57,13 +63,53 @@ services:
       redis-prod:
         condition: service_healthy
     ports:
-      - "26011:8000"
+      - "26021:8000"
     env_file:
       - ./env/.env.prod
     environment:
       PRODUCTION: "true"
+      KEYS_DIR: "/app/.keys"
+    # Cloudflare Turnstile secrets are deliberately NOT listed here — they come
+    # from the gitignored registry at .keys/turnstile.json, already visible via
+    # the KEYS_DIR bind mount above. Adding them under `environment:` with a
+    # shell-interpolated default would resolve to an empty string when the
+    # shell var is unset and silently OVERRIDE the file, which fails Turnstile
+    # verification closed and rejects every login and contact submission.
+    # To override per-environment instead, set (both required for their
+    # respective form to work in production):
+    #   TURNSTILE_ENABLED=true
+    #   TURNSTILE_SECRET_KEY=<admin-login secret>
+    #   TURNSTILE_CONTACT_SECRET_KEY=<contact-form secret>
+    #   TURNSTILE_CONTACT_REQUIRED=true
     volumes:
-      - vijaykrshaonline_jwskeys:/app/app/jws_keys
+      - ./.keys:/app/.keys
+    networks:
+      - prod-network
+
+  # Public API edge for api.vijaykrsha.online. The Cloudflare tunnel
+  # terminates TLS on Cloudflare's edge and forwards to this container's
+  # published loopback port. Serves API routes under /vega/api/* only;
+  # every other path returns a plain nginx 404, never a frontend document.
+  api-gateway-prod:
+    image: nginx:1.27-alpine
+    container_name: vijaykrsha-online-api-gateway-prod
+    restart: unless-stopped
+    depends_on:
+      - backend-prod
+    ports:
+      - "127.0.0.1:26025:80"
+    volumes:
+      - ./nginx.api-gateway.prod.conf:/etc/nginx/conf.d/default.conf:ro
+    # Proves nginx is really serving the /vega/api mount. Without this, a
+    # stopped gateway is invisible: `restart: unless-stopped` will not revive a
+    # manually-stopped container, and Cloudflare answers 502 for every API
+    # request while the backend itself is perfectly healthy.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/vega/api/admin/api/auth/public-key || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - prod-network
 
@@ -72,7 +118,6 @@ volumes:
     external: true
   vijaykrshaonline_miniodata:
     external: true
-  vijaykrshaonline_jwskeys:
 
 networks:
   prod-network:

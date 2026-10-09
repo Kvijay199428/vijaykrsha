@@ -24,9 +24,21 @@ EXCHANGE_CODE_TTL = timedelta(seconds=30)
 
 ACCESS_ALGORITHM = "RS256"
 
-_JWS_KEYS_DIR = Path(__file__).resolve().parent.parent / "jws_keys"
-_PRIVATE_KEY_FILE = _JWS_KEYS_DIR / "jws_private.pem"
-_PUBLIC_KEY_FILE = _JWS_KEYS_DIR / "jws_public.pem"
+def _keys_dir() -> Path:
+    # Same resolution as Settings.keys_dir_path; read lazily so tests / env
+    # tweaks after import are respected.
+    if settings.KEYS_DIR:
+        return Path(settings.KEYS_DIR)
+    return Path(__file__).resolve().parent.parent.parent.parent / ".keys"
+
+
+def _private_key_file() -> Path:
+    return _keys_dir() / "jws_private.pem"
+
+
+def _public_key_file() -> Path:
+    return _keys_dir() / "jws_public.pem"
+
 
 _signing_key: Optional[str] = None
 _verify_key: Optional[str] = None
@@ -64,12 +76,22 @@ def _ensure_keys() -> None:
         _verify_key = env_pub
         return
 
-    if _PRIVATE_KEY_FILE.exists() and _PUBLIC_KEY_FILE.exists():
-        _signing_key = _PRIVATE_KEY_FILE.read_text()
-        _verify_key = _PUBLIC_KEY_FILE.read_text()
+    if _private_key_file().exists() and _public_key_file().exists():
+        _signing_key = _private_key_file().read_text()
+        _verify_key = _public_key_file().read_text()
         return
 
-    _JWS_KEYS_DIR.mkdir(parents=True, exist_ok=True)
+    if settings.PRODUCTION:
+        # Fail fast rather than minting a fresh keypair in prod — that would
+        # silently invalidate every live token/session/WS ticket. check_insecure_defaults()
+        # should have refused boot already; this is the runtime backstop.
+        raise RuntimeError(
+            f"No RS256 PEM pair found under {_keys_dir()} in production. "
+            "Populate .keys/ or set JWT_SIGNING_PRIVATE_KEY/PUBLIC_KEY."
+        )
+
+    keys_dir = _keys_dir()
+    keys_dir.mkdir(parents=True, exist_ok=True)
     private_key = rsa.generate_private_key(
         public_exponent=65537,
         key_size=2048,
@@ -85,10 +107,10 @@ def _ensure_keys() -> None:
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     ).decode()
 
-    _PRIVATE_KEY_FILE.write_text(private_pem)
-    _PUBLIC_KEY_FILE.write_text(public_pem)
+    _private_key_file().write_text(private_pem)
+    _public_key_file().write_text(public_pem)
     try:
-        os.chmod(_PRIVATE_KEY_FILE, 0o600)
+        os.chmod(_private_key_file(), 0o600)
     except Exception:
         pass
 

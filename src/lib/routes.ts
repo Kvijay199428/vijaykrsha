@@ -8,7 +8,7 @@ export const ROUTES = {
   ADMINAPIAUTHLOGINOTPSEND: `${API}/admin/api/auth/login-otp-send`,
   ADMINAPIAUTHLOGINOTPVERIFY: `${API}/admin/api/auth/login-otp-verify`,
   ADMINAPIAUTHLOGOUT: `${API}/admin/api/auth/logout`,
-  ADMINAPIAUTHME: `${API}/admin/api/auth/me`,
+  ADMINAPIAUTHSESSION: `${API}/admin/api/auth/session`,
   ADMINAPIAUTHREFRESH: `${API}/admin/api/auth/refresh`,
   ADMINAPIAUTHEXCHANGE: `${API}/admin/api/auth/exchange`,
   ADMINAPIAUTHPUBLICKEY: `${API}/admin/api/auth/public-key`,

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useLocation, Navigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { RateLimitError } from "../contexts/AuthContext";
 import OtpDigitInput from "../components/OtpDigitInput";
 import { AuthWebSocket } from "../lib/wsAuth";
+import { loadTurnstile, renderTurnstile, resetTurnstile } from "../lib/turnstile";
 import {
   ArrowRight, Loader2, Shield, MessageSquare, KeyRound,
   Clock, AlertTriangle, Lock,
@@ -75,7 +76,7 @@ function CooldownTimer({
 }
 
 export default function AdminLogin() {
-  const { login, exchangeForTokens, isAuthenticated, isLoading } = useAuth();
+  const { login, exchangeForTokens } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -97,6 +98,12 @@ export default function AdminLogin() {
   const [otpSent, setOtpSent] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<AuthWebSocket | null>(null);
+
+  // Turnstile CAPTCHA (initial credential submission only — not on each OTP step)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState(false);
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetId = useRef<string | null>(null);
 
   // Rate limit cooldown state
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -136,6 +143,70 @@ export default function AdminLogin() {
     return () => clearCooldownTimer();
   }, [cooldownMax, clearCooldownTimer]);
 
+  // Render the Turnstile widget when the credentials step is visible. Re-entering
+  // this step mounts a fresh div, so the old widget handle must be removed and
+  // the widget re-rendered into the new node.
+  useEffect(() => {
+    if (step !== "credentials") return;
+    let cancelled = false;
+    setCaptchaToken(null);
+    setTurnstileError(false);
+
+    const renderWidget = () => {
+      const container = turnstileRef.current;
+      if (cancelled || !container) return;
+      try {
+        if (turnstileWidgetId.current) {
+          window.turnstile?.remove(turnstileWidgetId.current);
+          turnstileWidgetId.current = null;
+        }
+        container.replaceChildren();
+        const widgetId = window.turnstile
+          ? renderTurnstile(
+              container,
+              (token) => setCaptchaToken(token),
+              () => setCaptchaToken(null),
+              () => setTurnstileError(true)
+            )
+          : null;
+        if (!widgetId) {
+          setTurnstileError(true);
+          return;
+        }
+        turnstileWidgetId.current = widgetId;
+      } catch (err) {
+        console.error("[Turnstile] render failed:", err);
+        setTurnstileError(true);
+      }
+    };
+
+    // If the API is already available (e.g. navigated here in-app, or on a
+    // re-render after session restore), render synchronously; otherwise rely
+    // on the bounded loader and render once. That removes the failure mode
+    // where loadTurnstile() was awaited while the container was still
+    // gated behind the session check (hasDiv false) and never rendered.
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      loadTurnstile()
+        .then(() => {
+          if (!cancelled) renderWidget();
+        })
+        .catch((error) => {
+          console.error("[Turnstile] init failed:", error);
+          if (!cancelled) setTurnstileError(true);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+      if (turnstileWidgetId.current) {
+        window.turnstile?.remove(turnstileWidgetId.current);
+        turnstileWidgetId.current = null;
+      }
+    };
+  }, [step]);
+
   function transitionTo(nextStep: Step) {
     setTransitioning(true);
     setTimeout(() => {
@@ -158,7 +229,7 @@ export default function AdminLogin() {
     setLoading(true);
     setError("");
     try {
-      const result = await login(username, password);
+      const result = await login(username, password, false, captchaToken ?? undefined);
       setOtpSent(false);
       setWsConnected(false);
 
@@ -214,6 +285,9 @@ export default function AdminLogin() {
       }
     } finally {
       setLoading(false);
+      // Turnstile tokens are single-use — reset and require a fresh token.
+      resetTurnstile(turnstileWidgetId.current);
+      setCaptchaToken(null);
     }
   }
 
@@ -236,19 +310,6 @@ export default function AdminLogin() {
   }
 
   const isLocked = cooldownSeconds > 0;
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[var(--color-cream)] via-[var(--color-cream)] to-[var(--color-pink-muted)] p-4">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground mt-3">Checking session…</p>
-      </div>
-    );
-  }
-
-  if (isAuthenticated) {
-    return <Navigate to="/vega/admin/dashboard" replace />;
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[var(--color-cream)] via-[var(--color-cream)] to-[var(--color-pink-muted)] p-4">
@@ -315,9 +376,19 @@ export default function AdminLogin() {
                       spellCheck={false}
                     />
                   </div>
+                  <div className="flex justify-center">
+                    <div ref={turnstileRef} />
+                  </div>
+
+                  {turnstileError && (
+                    <p className="text-xs text-red-600 dark:text-red-400 text-center">
+                      Security verification failed to load. Please refresh the page.
+                    </p>
+                  )}
+
                   <button
                     type="submit"
-                    disabled={loading || isLocked}
+                    disabled={loading || isLocked || !captchaToken || turnstileError}
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-[0.99] transition-all disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}

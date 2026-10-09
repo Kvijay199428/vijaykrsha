@@ -1,3 +1,8 @@
+# Documents and assets share these cache rules; the CSP below applies to every
+# route via the catch-all.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://challenges.cloudflare.com wss://vega-api.vijaykrsha.online; frame-src 'self' https://challenges.cloudflare.com; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+
 /
   Cache-Control: no-store
 /index.html

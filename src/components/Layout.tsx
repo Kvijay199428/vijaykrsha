@@ -3,6 +3,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { site } from "@/config/site";
 import { useState, useEffect, useRef } from "react";
 import AnimatedLogo from "./AnimatedLogo";
+import BrandLogo from "./BrandLogo";
 
 function SunIcon() {
   return (
@@ -83,8 +84,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-50 bg-cream-50/80 dark:bg-night-900/80 backdrop-blur-md border-b border-cream-200 dark:border-night-700">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="font-bold text-lg text-glow-600 dark:text-glow-400">
-            <span className="typing-text">vijaykrsha.online</span>
+          <Link to="/" className="font-bold text-glow-600 dark:text-glow-400">
+            <BrandLogo />
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
@@ -157,8 +158,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="max-w-6xl mx-auto px-4 pt-12 pb-4">
           {/* Centered Tagline + WhatsApp */}
           <div className="flex flex-col items-center mb-10">
-            <p className="font-bold text-lg text-glow-600 dark:text-glow-400 mb-1">
-              vijaykrsha.online
+            <p className="font-bold text-glow-600 dark:text-glow-400 mb-1">
+              <BrandLogo duration={3} />
             </p>
             <p className="text-sm text-night-800/50 dark:text-cream-100/50 mb-3">
               Legal Research &bull; Contract Drafting &bull; Legal Technology
