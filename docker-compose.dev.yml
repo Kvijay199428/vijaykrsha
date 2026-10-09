@@ -86,12 +86,16 @@ services:
     container_name: vijaykrsha-online-frontend-dev
     restart: unless-stopped
     ports:
-      - "26002:80"
-      - "26006:443"
+      # Dev HTTPS-only on host :26002 (mkcert TLS, no cloudflared). The host
+      # port maps straight to the container's 443 listener from
+      # nginx.ssl.conf; there is deliberately no plain-HTTP host mapping
+      # anymore. The Dockerfile still bakes the :80 vhost (nginx.conf) so the
+      # standalone `docker compose up` frontend keeps working over HTTP.
+      - "26002:443"
     volumes:
-      # Dev-only HTTPS (no cloudflared): nginx.ssl.conf is glob-included by the
-      # base nginx conf.d/*.conf, so this mount is what turns the 443 listener
-      # on. ./dev-tls holds the mkcert-generated cert/key (gitignored).
+      # nginx.ssl.conf is glob-included by the base nginx conf.d/*.conf, so
+      # this mount is what turns the 443 listener on. ./dev-tls holds the
+      # mkcert-generated cert/key (gitignored).
       - ./nginx.ssl.conf:/etc/nginx/conf.d/ssl.conf:ro
       - ./dev-tls:/etc/nginx/dev-tls:ro
     depends_on:
