@@ -8179,7 +8179,18 @@ services:
     container_name: vijaykrsha-online-frontend-dev
     restart: unless-stopped
     ports:
-      - "26002:80"
+      # Dev HTTPS-only on host :26002 (mkcert TLS, no cloudflared). The host
+      # port maps straight to the container's 443 listener from
+      # nginx.ssl.conf; there is deliberately no plain-HTTP host mapping
+      # anymore. The Dockerfile still bakes the :80 vhost (nginx.conf) so the
+      # standalone `docker compose up` frontend keeps working over HTTP.
+      - "26002:443"
+    volumes:
+      # nginx.ssl.conf is glob-included by the base nginx conf.d/*.conf, so
+      # this mount is what turns the 443 listener on. ./dev-tls holds the
+      # mkcert-generated cert/key (gitignored).
+      - ./nginx.ssl.conf:/etc/nginx/conf.d/ssl.conf:ro
+      - ./dev-tls:/etc/nginx/dev-tls:ro
     depends_on:
       - backend-dev
     networks:
@@ -8204,7 +8215,7 @@ services:
     environment:
       POSTGRES_DB: vijaykrsha
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PROD_PASSWORD:?POSTGRES_PROD_PASSWORD must be set}
     volumes:
       - vijaykrshaonline_pgdata:/var/lib/postgresql/data
     ports:
@@ -14439,6 +14450,128 @@ body {
   @apply mt-0.5 h-4 w-4 text-glow-500 shrink-0;
 }
 
+/* ── Contact Form State Transitions ────────────── */
+
+/* Both panels occupy the same grid cell so the card height is set by the
+   tallest of the two — no layout jump when switching between form and the
+   success state. */
+.contact-form-stage {
+  display: grid;
+}
+
+.contact-form-panel,
+.contact-success-panel {
+  grid-area: 1 / 1;
+  transition:
+    opacity 0.45s ease,
+    transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0s linear 0.45s;
+}
+
+.contact-form-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+}
+
+.contact-success-panel {
+  opacity: 0;
+  transform: translateY(18px) scale(0.985);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.contact-form-stage.is-sent .contact-form-panel {
+  opacity: 0;
+  transform: translateY(-18px) scale(0.985);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.contact-form-stage.is-sent .contact-success-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0.12s;
+}
+
+.contact-success-icon {
+  animation: contact-success-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.contact-success-check {
+  stroke-dasharray: 32;
+  stroke-dashoffset: 32;
+  animation: contact-success-draw 0.55s 0.18s ease-out forwards;
+}
+
+@keyframes contact-success-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes contact-success-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.contact-submit-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 9999px;
+  animation: contact-spin 0.7s linear infinite;
+}
+
+@keyframes contact-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.contact-message {
+  animation: contact-message-in 0.25s ease-out both;
+}
+
+@keyframes contact-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.contact-file-row {
+  animation: contact-file-in 0.3s ease-out both;
+}
+
+@keyframes contact-file-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ── Footer ───────────────────────────────────────── */
 
 .footer-heading {
@@ -14567,6 +14700,20 @@ body {
     opacity: 1;
     transform: none;
     transition: none;
+  }
+  .contact-form-panel,
+  .contact-success-panel {
+    transition: none;
+  }
+  .contact-success-icon,
+  .contact-success-check,
+  .contact-submit-spinner,
+  .contact-message,
+  .contact-file-row {
+    animation: none;
+  }
+  .contact-success-check {
+    stroke-dashoffset: 0;
   }
 }
 
@@ -14793,10 +14940,24 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+export function assertWebCryptoAvailable(): void {
+  if (
+    typeof window === "undefined" ||
+    !window.isSecureContext ||
+    !window.crypto?.subtle
+  ) {
+    throw new Error(
+      "Secure browser context required for login encryption. Please open the site using HTTPS."
+    );
+  }
+}
+
 export async function encryptPassword(
   password: string,
   publicKeyPem: string
 ): Promise<string> {
+  assertWebCryptoAvailable();
+
   const keyData = pemToArrayBuffer(publicKeyPem);
   const key = await crypto.subtle.importKey(
     "spki",
@@ -20226,6 +20387,27 @@ function CheckIcon() {
   );
 }
 
+function SuccessIcon() {
+  return (
+    <div
+      className="contact-success-icon mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-sage-500/25 bg-sage-500/10"
+      aria-hidden="true"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        className="h-10 w-10 text-sage-500"
+        stroke="currentColor"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path className="contact-success-check" d="M5 12.5l4.25 4.25L19 7" />
+      </svg>
+    </div>
+  );
+}
+
 const ALLOWED_EXTENSIONS = [
   "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt",
   "png", "jpg", "jpeg", "gif", "webp",
@@ -20257,6 +20439,10 @@ export default function Contact() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [fileWarnings, setFileWarnings] = useState<string[]>([]);
+  // How many attached files the backend rejected on the last successful
+  // submit — used to report delivered attachments accurately on the success
+  // panel (a selected file is not proof the server stored it).
+  const [lastSkipped, setLastSkipped] = useState(0);
 
   // ── Cloudflare Turnstile ──────────────────────────────────────────
   // The user must actively pass the challenge: the submit button stays
@@ -20400,20 +20586,13 @@ export default function Contact() {
       }
       const skipped = Array.isArray(data?.skipped) ? data.skipped : [];
       setSent(true);
+      setLastSkipped(skipped.length);
       // Turnstile tokens are single-use — burn the widget and demand a fresh
-      // one before the form can be submitted again.
+      // one before the form can be submitted again. Form values, files and the
+      // file input are intentionally kept populated so the success panel can
+      // reference them; handleNewMessage clears everything instead.
       setCaptchaToken(null);
       resetTurnstile(turnstileWidgetId.current);
-      setForm({
-        name: "",
-        email: "",
-        phone: "",
-        projectType: "Legal Research",
-        priority: "standard",
-        message: "",
-        honeypot: "",
-      });
-      setFiles([]);
       setFileWarnings(skipped.length > 0 ? skipped.map((s: { filename?: string; reason?: string }) => {
         const reasons: Record<string, string> = {
           too_large: "exceeds the 25MB limit",
@@ -20425,13 +20604,39 @@ export default function Contact() {
         const reason = reasons[s.reason ?? ""] ?? "was rejected";
         return `${s.filename ?? "A file"} was not delivered (${reason}).`;
       }) : []);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send your message.");
     } finally {
       setSubmitting(false);
     }
   };
+
+  /** Reset everything and start a fresh submission (used by the success
+   *  panel's "Send another message"). Form values, files and the Turnstile
+   *  token are all single-use per submission. */
+  const handleNewMessage = () => {
+    setSent(false);
+    setError("");
+    setFileWarnings([]);
+    setLastSkipped(0);
+    setForm({
+      name: "",
+      email: "",
+      phone: "",
+      projectType: "Legal Research",
+      priority: "standard",
+      message: "",
+      honeypot: "",
+    });
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setCaptchaToken(null);
+    resetTurnstile(turnstileWidgetId.current);
+  };
+
+  // Attachments the server actually stored on the last submit — a selected
+  // file that the backend rejected must not be reported as delivered.
+  const submittedAttachmentCount = Math.max(0, files.length - lastSkipped);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-20">
@@ -20513,210 +20718,378 @@ export default function Contact() {
           </div>
 
           {/* Contact Form */}
-          <div className="reveal p-6 rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700">
-            <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50 mb-4">
-              Send a Message
-            </h2>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="grid sm:grid-cols-2 gap-4">
+          <div
+            className={`reveal overflow-hidden rounded-2xl bg-cream-100 dark:bg-night-800 border border-cream-200 dark:border-night-700 contact-form-stage ${
+              sent ? "is-sent" : ""
+            }`}
+          >
+            {/* ── Form panel ─────────────────────────────── */}
+            <div className="contact-form-panel p-6 md:p-7">
+              <div className="mb-6 flex items-start justify-between gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={form.name}
-                    onChange={(e) => setField("name", e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
-                    placeholder="Your name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={form.email}
-                    onChange={(e) => setField("email", e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
-                    placeholder="you@example.com"
-                  />
-                </div>
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                    Mobile
-                  </label>
-                  <input
-                    type="tel"
-                    value={form.phone}
-                    onChange={(e) => setField("phone", e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
-                    placeholder="Your mobile number"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                    Project Type
-                  </label>
-                  <select
-                    value={form.projectType}
-                    onChange={(e) => setField("projectType", e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors"
-                  >
-                    <option>Legal Research</option>
-                    <option>Contract Drafting</option>
-                    <option>Data Analysis</option>
-                    <option>Legal-Tech Integration</option>
-                    <option>Other</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                  Priority
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="priority"
-                      value="standard"
-                      checked={form.priority === "standard"}
-                      onChange={() => setField("priority", "standard")}
-                      className="accent-glow-500"
-                    />
-                    Standard
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-night-800 dark:text-cream-100 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="priority"
-                      value="urgent"
-                      checked={form.priority === "urgent"}
-                      onChange={() => setField("priority", "urgent")}
-                      className="accent-glow-500"
-                    />
-                    Urgent
-                  </label>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                  Documents <span className="opacity-60">(optional)</span>
-                </label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  onChange={(e) => {
-                    if (e.target.files) addFiles(Array.from(e.target.files));
-                    e.target.value = "";
-                  }}
-                  className="w-full text-sm text-night-800/70 dark:text-cream-100/70 file:mr-3 file:rounded-xl file:border-0 file:bg-glow-500 file:px-4 file:py-2 file:text-xs file:font-medium file:text-white hover:file:bg-glow-600"
-                />
-                <p className="text-xs text-night-800/40 dark:text-cream-100/40 mt-1">
-                  PDF, DOC, XLS, or images — up to 25MB each, max {MAX_FILES} files. You can add files in multiple steps.
-                </p>
-                {fileWarnings.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {fileWarnings.map((w) => (
-                      <li key={w} className="text-xs text-red-600 dark:text-red-400">
-                        {w}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {files.length > 0 && (
-                  <ul className="mt-2 space-y-1.5">
-                    {files.map((file, i) => (
-                      <li
-                        key={`${file.name}-${file.size}-${i}`}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-xs"
-                      >
-                        <span className="text-night-800 dark:text-cream-100 truncate flex-1">{file.name}</span>
-                        <span className="text-night-800/40 dark:text-cream-100/40">{fmtBytes(file.size)}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeFile(i)}
-                          aria-label={`Remove ${file.name}`}
-                          className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                  Message
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  value={form.message}
-                  onChange={(e) => setField("message", e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:border-glow-500 transition-colors resize-none"
-                  placeholder="Tell me about your project..."
-                />
-              </div>
-
-              {/* Honeypot — hidden from humans, bots fill it. */}
-              <input
-                type="text"
-                value={form.honeypot}
-                onChange={(e) => setField("honeypot", e.target.value)}
-                className="hidden"
-                tabIndex={-1}
-                autoComplete="off"
-                aria-hidden="true"
-              />
-
-              {/* Human verification — must be passed before submitting. Not a <label>:
-                Turnstile renders inside a cross-origin iframe that carries its
-                own accessible name, so there is no control here to label. */}
-              <div>
-                <p className="text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
-                  Verify you are human
-                </p>
-                <div ref={turnstileRef} />
-                {captchaError && (
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-1.5">
-                    Could not load the security check. Please refresh the page and
-                    try again.
+                  <h2 className="text-lg font-semibold text-night-800 dark:text-cream-50">
+                    Send a Message
+                  </h2>
+                  <p className="mt-1 text-sm text-night-800/55 dark:text-cream-100/55">
+                    Tell me what you need help with and I'll get back to you.
                   </p>
-                )}
+                </div>
+                <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-glow-500/10 text-glow-500 sm:flex">
+                  <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={1.7}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75l-9.75 6-9.75-6" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 6.75v10.5A2.25 2.25 0 005.25 19.5h13.5A2.25 2.25 0 0021 17.25V6.75" />
+                  </svg>
+                </div>
               </div>
 
-              {sent && (
-                <p className="text-sm text-sage-500">
-                  Thank you — your message has been sent. I'll get back to you within 24 hours.
-                </p>
-              )}
-              {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+              <form className="space-y-5" onSubmit={handleSubmit}>
+                {/* Name + Email */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                      Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={form.name}
+                      onChange={(e) => setField("name", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 placeholder:text-night-800/35 dark:placeholder:text-cream-100/35 focus:outline-none focus:ring-2 focus:ring-glow-500/15 focus:border-glow-500 transition-all duration-200"
+                      placeholder="Your name"
+                      autoComplete="name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={form.email}
+                      onChange={(e) => setField("email", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 placeholder:text-night-800/35 dark:placeholder:text-cream-100/35 focus:outline-none focus:ring-2 focus:ring-glow-500/15 focus:border-glow-500 transition-all duration-200"
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                    />
+                  </div>
+                </div>
 
-              <button
-                type="submit"
-                disabled={submitting || !captchaToken || captchaError}
-                className="btn-primary px-6 py-2.5 rounded-xl bg-glow-500 text-white font-medium text-sm hover:bg-glow-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting
-                  ? "Sending…"
-                  : !captchaToken && !captchaError
-                    ? "Verify you are human to send"
-                    : "Send Message"}
-              </button>
-            </form>
+                {/* Mobile + Project */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                      Mobile
+                    </label>
+                    <input
+                      type="tel"
+                      value={form.phone}
+                      onChange={(e) => setField("phone", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 placeholder:text-night-800/35 dark:placeholder:text-cream-100/35 focus:outline-none focus:ring-2 focus:ring-glow-500/15 focus:border-glow-500 transition-all duration-200"
+                      placeholder="Your mobile number"
+                      autoComplete="tel"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                      Project Type
+                    </label>
+                    <select
+                      value={form.projectType}
+                      onChange={(e) => setField("projectType", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 focus:outline-none focus:ring-2 focus:ring-glow-500/15 focus:border-glow-500 transition-all duration-200"
+                    >
+                      <option>Legal Research</option>
+                      <option>Contract Drafting</option>
+                      <option>Data Analysis</option>
+                      <option>Legal-Tech Integration</option>
+                      <option>Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Priority */}
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-2">
+                    Priority
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(
+                      [
+                        ["standard", "Standard", "Normal response"],
+                        ["urgent", "Urgent", "Needs faster attention"],
+                      ] as Array<[string, string, string]>
+                    ).map(([value, title, description]) => (
+                      <label
+                        key={value}
+                        className={`cursor-pointer rounded-xl border px-4 py-3 transition-all duration-200 ${
+                          form.priority === value
+                            ? "border-glow-500 bg-glow-500/8 shadow-sm"
+                            : "border-cream-200 dark:border-night-600 hover:border-glow-500/50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="priority"
+                          value={value}
+                          checked={form.priority === value}
+                          onChange={() => setField("priority", value)}
+                          className="sr-only"
+                        />
+                        <span className="flex items-start gap-3">
+                          <span
+                            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                              form.priority === value
+                                ? "border-glow-500"
+                                : "border-night-800/25 dark:border-cream-100/25"
+                            }`}
+                          >
+                            {form.priority === value && (
+                              <span className="h-2 w-2 rounded-full bg-glow-500" />
+                            )}
+                          </span>
+                          <span>
+                            <span className="block text-sm font-medium text-night-800 dark:text-cream-100">
+                              {title}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-night-800/45 dark:text-cream-100/45">
+                              {description}
+                            </span>
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Documents */}
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Documents <span className="opacity-60">(optional)</span>
+                  </label>
+                  <label
+                    htmlFor="contact-documents"
+                    className="group flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-cream-300 dark:border-night-600 bg-cream-50/70 dark:bg-night-900/60 px-5 py-6 text-center transition-all duration-200 hover:border-glow-500/60 hover:bg-glow-500/5"
+                  >
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-glow-500/10 text-glow-500 transition-transform duration-200 group-hover:scale-105">
+                      <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={1.7}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V3.75m0 0L7.5 8.25M12 3.75l4.5 4.5" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 13.5v4.125A2.625 2.625 0 007.875 20.25h8.25a2.625 2.625 0 002.625-2.625V13.5" />
+                      </svg>
+                    </span>
+                    <span className="mt-3 text-sm font-medium text-night-800 dark:text-cream-100">
+                      Add documents
+                    </span>
+                    <span className="mt-1 text-xs text-night-800/45 dark:text-cream-100/45">
+                      PDF, DOC, XLS, TXT or images · up to 25MB each, max {MAX_FILES} files
+                    </span>
+                    <input
+                      id="contact-documents"
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      onChange={(e) => {
+                        if (e.target.files) addFiles(Array.from(e.target.files));
+                        e.target.value = "";
+                      }}
+                      className="sr-only"
+                    />
+                  </label>
+                  {fileWarnings.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {fileWarnings.map((warning) => (
+                        <li
+                          key={warning}
+                          className="contact-message text-xs text-red-600 dark:text-red-400"
+                        >
+                          {warning}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {files.length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {files.map((file, i) => (
+                        <li
+                          key={`${file.name}-${file.size}-${i}`}
+                          className="contact-file-row flex items-center gap-3 px-3 py-2.5 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-xs"
+                          style={{ animationDelay: `${i * 45}ms` }}
+                        >
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-glow-500/10 text-glow-500">
+                            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth={1.7}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.25 2.25H6.75A2.25 2.25 0 004.5 4.5v15A2.25 2.25 0 006.75 21.75h10.5a2.25 2.25 0 002.25-2.25V7.5l-5.25-5.25z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.25 2.25V7.5h5.25" />
+                            </svg>
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-night-800 dark:text-cream-100">
+                              {file.name}
+                            </span>
+                            <span className="mt-0.5 block text-night-800/40 dark:text-cream-100/40">
+                              {fmtBytes(file.size)}
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeFile(i)}
+                            aria-label={`Remove ${file.name}`}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-night-800/40 dark:text-cream-100/40 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Message */}
+                <div>
+                  <label className="block text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Message
+                  </label>
+                  <textarea
+                    rows={5}
+                    required
+                    value={form.message}
+                    onChange={(e) => setField("message", e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-cream-50 dark:bg-night-900 border border-cream-200 dark:border-night-600 text-sm text-night-800 dark:text-cream-100 placeholder:text-night-800/35 dark:placeholder:text-cream-100/35 focus:outline-none focus:ring-2 focus:ring-glow-500/15 focus:border-glow-500 transition-all duration-200 resize-none"
+                    placeholder="Tell me about your project..."
+                  />
+                </div>
+
+                {/* Honeypot — hidden from humans, bots fill it. */}
+                <input
+                  type="text"
+                  value={form.honeypot}
+                  onChange={(e) => setField("honeypot", e.target.value)}
+                  className="hidden"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  aria-hidden="true"
+                />
+
+                {/* Human verification — must be passed before submitting. Not a <label>:
+                  Turnstile renders inside a cross-origin iframe that carries its
+                  own accessible name, so there is no control here to label. */}
+                <div>
+                  <p className="text-xs font-medium text-night-800/60 dark:text-cream-100/60 mb-1.5">
+                    Verify you are human
+                  </p>
+                  <div ref={turnstileRef} />
+                  {captchaError && (
+                    <p className="contact-message text-xs text-red-600 dark:text-red-400 mt-1.5">
+                      Could not load the security check. Please refresh the page and
+                      try again.
+                    </p>
+                  )}
+                </div>
+
+                {error && (
+                  <div
+                    role="alert"
+                    className="contact-message rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-600 dark:text-red-400"
+                  >
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={submitting || !captchaToken || captchaError}
+                  className="btn-primary flex w-full items-center justify-center gap-2 rounded-xl bg-glow-500 px-6 py-3 text-sm font-medium text-white hover:bg-glow-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {submitting ? (
+                    <>
+                      <span className="contact-submit-spinner" aria-hidden="true" />
+                      <span>Sending message…</span>
+                    </>
+                  ) : !captchaToken && !captchaError ? (
+                    "Verify you are human to send"
+                  ) : (
+                    <>
+                      <span>Send Message</span>
+                      <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth={1.8}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 3.75L10.5 14.25" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 3.75l-4.5 16.5-6.75-6-6-6.75 17.25-3.75z" />
+                      </svg>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* ── Success panel ────────────────────────────── */}
+            <div
+              className="contact-success-panel flex items-center justify-center p-6 md:p-10"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="w-full max-w-md text-center">
+                <SuccessIcon />
+
+                <div className="mt-7">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sage-500">
+                    Message sent
+                  </p>
+                  <h2 className="mt-2 text-2xl md:text-3xl font-bold text-night-800 dark:text-cream-50">
+                    Thank you{form.name ? `, ${form.name}` : ""}.
+                  </h2>
+                  <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-night-800/60 dark:text-cream-100/60">
+                    Your message has been received successfully. I'll review your request
+                    and get back to you within 24 hours.
+                  </p>
+                </div>
+
+                <div className="mx-auto mt-8 max-w-sm overflow-hidden rounded-2xl border border-cream-200 dark:border-night-600 bg-cream-50/70 dark:bg-night-900/60 text-left">
+                  <div className="border-b border-cream-200 dark:border-night-600 px-5 py-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-night-800/40 dark:text-cream-100/40">
+                      Submission received
+                    </p>
+                  </div>
+                  <div className="space-y-3 px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sage-500/10 text-sage-500">
+                        ✓
+                      </span>
+                      <span className="text-sm text-night-800 dark:text-cream-100">
+                        Your details were submitted
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sage-500/10 text-sage-500">
+                        ✓
+                      </span>
+                      <span className="text-sm text-night-800 dark:text-cream-100">
+                        {submittedAttachmentCount > 0
+                          ? `${submittedAttachmentCount} attachment${submittedAttachmentCount === 1 ? "" : "s"} received`
+                          : "No attachments were included"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sage-500/10 text-sage-500">
+                        ✓
+                      </span>
+                      <span className="text-sm text-night-800 dark:text-cream-100">
+                        You'll receive a response within 24 hours
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleNewMessage}
+                  className="btn-outline mt-8 inline-flex items-center justify-center gap-2 rounded-xl border border-cream-300 dark:border-night-600 px-5 py-2.5 text-sm font-medium text-night-800 dark:text-cream-100 hover:bg-cream-200 dark:hover:bg-night-700"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12a7.5 7.5 0 101.98-5.1" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 4.5v5h5" />
+                  </svg>
+                  Send another message
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

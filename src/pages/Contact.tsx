@@ -116,7 +116,13 @@ export default function Contact() {
     honeypot: "", // bots fill this; humans never see it
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Nesting: dragenter/dragleave fire again for every child the pointer
+  // crosses (icon, text, the hidden input). A plain boolean flickers as the
+  // highlight drops and re-adds on each boundary, so we count entries and
+  // only clear the visual state once the pointer has left the zone entirely.
+  const dragDepthRef = useRef(0);
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -198,6 +204,20 @@ export default function Contact() {
     };
   }, []);
 
+  // A file dropped anywhere except the dropzone otherwise makes the browser
+  // navigate to (open) that file, which looks like the page broke. Swallow the
+  // default drag/drop behaviour document-wide; the dropzone runs its own
+  // handler and stops propagation before this matters.
+  useEffect(() => {
+    const blockDrag = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", blockDrag);
+    window.addEventListener("drop", blockDrag);
+    return () => {
+      window.removeEventListener("dragover", blockDrag);
+      window.removeEventListener("drop", blockDrag);
+    };
+  }, []);
+
   const setField = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
@@ -232,6 +252,43 @@ export default function Contact() {
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
     setFileWarnings([]);
+  };
+
+  // Only react to actual file drags — dragging selected text or a link over
+  // the zone should not arm the drop highlight.
+  const dragHasFiles = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    // preventDefault here is what marks the zone as a valid drop target; drop
+    // never fires without it.
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    // Route dropped files through the same validator the file picker uses, so
+    // type/size/dedupe/max-file rules and their warning messages stay identical.
+    const dropped = Array.from(e.dataTransfer?.files ?? []);
+    if (dropped.length > 0) addFiles(dropped);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -311,6 +368,8 @@ export default function Contact() {
       honeypot: "",
     });
     setFiles([]);
+    dragDepthRef.current = 0;
+    setIsDragging(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setCaptchaToken(null);
     resetTurnstile(turnstileWidgetId.current);
@@ -551,7 +610,15 @@ export default function Contact() {
                   </label>
                   <label
                     htmlFor="contact-documents"
-                    className="group flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-cream-300 dark:border-night-600 bg-cream-50/70 dark:bg-night-900/60 px-5 py-6 text-center transition-all duration-200 hover:border-glow-500/60 hover:bg-glow-500/5"
+                    onDragEnter={handleDragEnter}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`group flex cursor-pointer flex-col items-center justify-center rounded-xl border px-5 py-6 text-center transition-all duration-200 ${
+                      isDragging
+                        ? "border-glow-500 bg-glow-500/10 ring-2 ring-glow-500/20"
+                        : "border-dashed border-cream-300 dark:border-night-600 bg-cream-50/70 dark:bg-night-900/60 hover:border-glow-500/60 hover:bg-glow-500/5"
+                    }`}
                   >
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-glow-500/10 text-glow-500 transition-transform duration-200 group-hover:scale-105">
                       <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={1.7}>
@@ -560,10 +627,12 @@ export default function Contact() {
                       </svg>
                     </span>
                     <span className="mt-3 text-sm font-medium text-night-800 dark:text-cream-100">
-                      Add documents
+                      {isDragging ? "Drop files here" : "Add documents"}
                     </span>
                     <span className="mt-1 text-xs text-night-800/45 dark:text-cream-100/45">
-                      PDF, DOC, XLS, TXT or images · up to 25MB each, max {MAX_FILES} files
+                      {isDragging
+                        ? `Release to attach · up to 25MB each, max ${MAX_FILES} files`
+                        : `PDF, DOC, XLS, TXT or images · drag & drop or click · up to 25MB each, max ${MAX_FILES} files`}
                     </span>
                     <input
                       id="contact-documents"
