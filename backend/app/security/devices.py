@@ -10,6 +10,7 @@ from app.models import (
     AdminUser, SecurityEvent, SecurityEventType, SecuritySeverity,
 )
 from app.config import get_settings
+from app.security.session_events import publish_session_event
 
 settings = get_settings()
 
@@ -181,6 +182,19 @@ async def get_device_by_token(
 
 
 async def revoke_device(db: AsyncSession, device_id: UUID) -> None:
+    # Capture the admins whose live sessions will be torn down so we can notify
+    # their sockets after the rows are revoked.
+    affected_admins = (
+        await db.execute(
+            select(AdminSession.admin_id)
+            .where(
+                AdminSession.device_id == device_id,
+                AdminSession.revoked_at.is_(None),
+            )
+            .distinct()
+        )
+    ).scalars().all()
+
     stmt = update(Device).where(Device.id == device_id).values(
         state=DeviceState.revoked,
         updated_at=datetime.now(timezone.utc),
@@ -201,6 +215,11 @@ async def revoke_device(db: AsyncSession, device_id: UUID) -> None:
         ).values(revoked_at=datetime.now(timezone.utc))
     )
     await db.commit()
+
+    for admin_id in affected_admins:
+        await publish_session_event(
+            "session_revoked", admin_id=str(admin_id), reason="device_revoked",
+        )
 
 
 async def block_device(db: AsyncSession, device_id: UUID) -> None:

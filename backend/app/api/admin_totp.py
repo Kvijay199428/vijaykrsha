@@ -9,6 +9,7 @@ from app.db import get_db
 from app.models import AdminUser, AdminSession, AuditEvent, AuditLog
 from app.models_rbac import Permission
 from app.api.deps import require_permission, assert_can_manage
+from app.security.session_events import publish_session_event
 from app.services.totp_service import (
     generate_secret, encrypt_secret, verify_totp,
     get_provisioning_uri, store_pending_secret, get_pending_secret,
@@ -132,6 +133,9 @@ async def totp_disable(
            meta={"target_username": user.username})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked", admin_id=str(user.id), reason="totp_disabled",
+    )
     return {"status": "totp_disabled"}
 
 
@@ -169,4 +173,7 @@ async def totp_reset(
            meta={"target_username": user.username, "action": "totp_reset"})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked", admin_id=str(user.id), reason="totp_reset",
+    )
     return {"status": "totp_reset"}

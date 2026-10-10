@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models import AdminUser, AdminStatus, AuditEvent, AuditLog
 from app.models_rbac import AdminRole as AdminRoleModel, Permission
 from app.models_rbac import AdminPermission, AdminRolePermission
+from app.security.session_events import publish_session_event
 from app.api.deps import (
     get_current_admin,
     require_permission,
@@ -397,6 +398,11 @@ async def disable_user(
            meta={"target_username": user.username})
 
     await db.commit()
+    await publish_session_event(
+        "account_disabled",
+        admin_id=str(user.id),
+        reason="administrative_disable",
+    )
     return {"status": "disabled"}
 
 
@@ -496,6 +502,11 @@ async def revoke_sessions(
            meta={"target_username": user.username, "action": "sessions_revoked"})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked",
+        admin_id=str(user.id),
+        reason="administrative_revocation",
+    )
     return {"status": "sessions_revoked"}
 
 
@@ -531,6 +542,11 @@ async def reset_password(
            meta={"target_username": user.username})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked",
+        admin_id=str(user.id),
+        reason="password_reset",
+    )
     return {"status": "password_reset"}
 
 

@@ -187,6 +187,7 @@ async def create_refresh_token(
     admin_id: str,
     remember_me: bool = False,
     family: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> tuple[str, str]:
     r = await get_redis()
     token = secrets.token_urlsafe(48)
@@ -197,14 +198,20 @@ async def create_refresh_token(
     now = datetime.now(timezone.utc)
     expires_at = now + ttl
 
-    pipe = r.pipeline()
-    pipe.hset(f"refresh:{token_hash}", mapping={
+    mapping = {
         "user_id": str(admin_id),
         "family": family,
         "used": "0",
         "issued_at": int(now.timestamp()),
         "expires_at": int(expires_at.timestamp()),
-    })
+    }
+    if session_id:
+        # Bind the refresh family to its server-side session so refresh can
+        # never revive a revoked or expired session.
+        mapping["session_id"] = str(session_id)
+
+    pipe = r.pipeline()
+    pipe.hset(f"refresh:{token_hash}", mapping=mapping)
     pipe.expire(f"refresh:{token_hash}", int(ttl.total_seconds()))
     pipe.sadd(f"refresh_family:{family}", token_hash)
     pipe.expire(f"refresh_family:{family}", int(ttl.total_seconds()))
@@ -213,7 +220,7 @@ async def create_refresh_token(
     return token, family
 
 
-async def rotate_refresh_token(refresh_token: str) -> tuple[str, str]:
+async def rotate_refresh_token(refresh_token: str) -> tuple[str, str, Optional[str]]:
     r = await get_redis()
     token_hash = _hash_refresh_token(refresh_token)
     data = await r.hgetall(f"refresh:{token_hash}")
@@ -232,6 +239,7 @@ async def rotate_refresh_token(refresh_token: str) -> tuple[str, str]:
 
     user_id = data["user_id"]
     family = data["family"]
+    session_id = data.get("session_id") or None
     remember_me = (expires_at - datetime.fromtimestamp(int(data["issued_at"]), tz=timezone.utc)) > timedelta(hours=6)
 
     pipe = r.pipeline()
@@ -239,8 +247,10 @@ async def rotate_refresh_token(refresh_token: str) -> tuple[str, str]:
     pipe.expire(f"refresh:{token_hash}", 60)
     await pipe.execute()
 
-    new_token, _ = await create_refresh_token(user_id, remember_me=remember_me, family=family)
-    return new_token, user_id
+    new_token, _ = await create_refresh_token(
+        user_id, remember_me=remember_me, family=family, session_id=session_id,
+    )
+    return new_token, user_id, session_id
 
 
 async def _revoke_family(r, family: str) -> None:

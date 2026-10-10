@@ -10,7 +10,7 @@ from app.models import (
     AdminStatus, Device,
 )
 from app.models_rbac import AdminRole, AdminRolePermission, AdminPermission, Permission
-from app.security.sessions import get_session, touch_session
+from app.security.sessions import get_session, get_session_by_id, touch_session
 from app.security.tokens import (
     verify_access_token, is_access_token_blocked,
     TokenError,
@@ -45,6 +45,16 @@ async def _resolve_admin_from_jwt(request: Request, db: AsyncSession) -> AdminUs
     admin = result.scalar_one_or_none()
     if not admin or admin.status != AdminStatus.active:
         return None
+    # A token issued by the WebSocket login flow carries its server-side
+    # session id. Validate it so revocation/expiry is enforced independently
+    # of the JWT's own `exp` — an unexpired token with a revoked session must
+    # not be accepted.
+    sid = claims.get("sid")
+    if sid:
+        session = await get_session_by_id(db, sid)
+        if not session or str(session.admin_id) != str(admin.id):
+            return None
+        await touch_session(db, session)
     return admin
 
 
@@ -102,7 +112,18 @@ async def get_current_admin_with_session(
         admin = await _resolve_admin_from_jwt(request, db)
         if admin is None:
             raise HTTPException(status_code=401, detail="not_authenticated")
-        return admin, None
+        # Resolve the server-side session referenced by the bearer token so
+        # /session can report authoritative idle/absolute expiry metadata.
+        bearer = _extract_bearer_token(request)
+        if bearer:
+            try:
+                claims = verify_access_token(bearer)
+                sid = claims.get("sid")
+                if sid:
+                    session = await get_session_by_id(db, sid)
+            except TokenError:
+                session = None
+        return admin, session
 
     stmt = select(AdminUser).where(AdminUser.id == session.admin_id)
     result = await db.execute(stmt)

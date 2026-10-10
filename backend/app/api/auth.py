@@ -1,3 +1,4 @@
+import asyncio
 import structlog
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -20,7 +21,9 @@ from app.security.passwords import hash_password, verify_password
 from app.security.password_policy import (
     PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, validate_password_strength,
 )
-from app.security.sessions import create_session, revoke_session
+from app.security.sessions import (
+    create_session, revoke_session, revoke_session_by_id, get_session_by_id,
+)
 from app.security.encryption import new_encryption_keypair, decrypt_password
 from app.security.tokens import (
     create_access_token, create_refresh_token, rotate_refresh_token,
@@ -28,6 +31,10 @@ from app.security.tokens import (
     verify_access_token, verify_ws_ticket,
     create_exchange_code, verify_exchange_code,
     consume_exchange_code, TokenError, TokenReuseDetected,
+)
+from app.security.session_events import (
+    issue_session_ws_ticket, consume_session_ws_ticket,
+    register_connection, unregister_connection,
 )
 from app.security.rate_limit import (
     login_ip_limiter, login_user_limiter, otp_send_limiter,
@@ -60,6 +67,10 @@ router = APIRouter(prefix="/admin/api/auth", tags=["auth"])
 # caught by DirectAccessGuard (which requires X-Forwarded-By: pages-proxy —
 # a header browsers cannot set on a WebSocket handshake).
 ws_router = APIRouter(tags=["auth-ws"])
+
+# How often a live session socket revalidates against the database when no
+# event has arrived (and doubles as a keepalive for intermediaries).
+SESSION_WS_REVALIDATE_SECONDS = 45
 
 _DUMMY_PASSWORD_HASH = hash_password("::timing-equalizer::")
 
@@ -237,7 +248,7 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
         ip, request.headers.get("user-agent"),
     )
 
-    token = await create_session(
+    token, _session = await create_session(
         db, admin.id, ip,
         request.headers.get("user-agent"),
         device_id=device.id,
@@ -508,7 +519,7 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
         return {"status": "totp_required", "challenge_id": str(challenge.id)}
 
     await consume_challenge(db, challenge.id)
-    token = await create_session(
+    token, _session = await create_session(
         db, admin.id, ip, ua, body.remember_me, device_id=device.id,
     )
     _audit(db, AuditEvent.otp_verified, admin_id=admin.id, ip=ip)
@@ -580,7 +591,7 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
     )
 
     await consume_challenge(db, challenge.id)
-    token = await create_session(
+    token, _session = await create_session(
         db, admin.id, ip, ua, body.remember_me, device_id=device.id,
     )
     _audit(db, AuditEvent.totp_verified, admin_id=admin.id, ip=ip)
@@ -712,6 +723,12 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
         try:
             claims = verify_access_token(auth_header[7:])
             await block_access_token_jti(claims["jti"])
+            sid = claims.get("sid")
+            if sid:
+                # Revoke the server-side session the bearer token is bound to.
+                # The WS login flow does not carry a vks_session cookie, so
+                # this is the only handle on its session row.
+                await revoke_session_by_id(db, sid)
         except TokenError:
             pass
 
@@ -737,6 +754,45 @@ async def public_key():
     return PublicKeyResponse(key_id=key_id, public_key=public_pem)
 
 
+@router.post("/ws-ticket")
+async def ws_ticket(
+    request: Request,
+    deps: tuple = Depends(get_current_admin_with_session),
+    db: AsyncSession = Depends(get_db),
+):
+    """Issue a short-lived, single-use ticket for the session WebSocket.
+
+    Requires an authenticated admin with a live server-side session. The raw
+    ticket is returned exactly once and only its hash is stored server-side.
+    The browser cannot set an Authorization header on a native WebSocket, so
+    this avoids ever putting a bearer/refresh token in a URL.
+    """
+    admin, session = deps
+    if session is None:
+        # A bearer token issued before session anchoring (a legacy refresh
+        # token has no `sid`). Anchor it now so the socket has an authoritative
+        # session anchor and revocation still works by admin id.
+        ip = request.client.host if request.client else "unknown"
+        ua = request.headers.get("user-agent", "")
+        _st, session = await create_session(
+            db, admin.id, ip, ua or None, remember_me=True,
+        )
+
+    jti = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            claims = verify_access_token(auth_header[7:])
+            jti = claims.get("jti")
+        except TokenError:
+            pass
+
+    ticket = await issue_session_ws_ticket(str(admin.id), str(session.id), jti)
+    resp = JSONResponse(content={"ticket": ticket, "expires_in": 45})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @router.post("/exchange")
 async def exchange(body: ExchangeRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
@@ -756,11 +812,21 @@ async def exchange(body: ExchangeRequest, request: Request, db: AsyncSession = D
 
     role_level = await get_admin_role_level(db, admin)
 
+    # Establish the authoritative server-side session for the WS login flow.
+    # The random session token is not handed to the browser; the session row
+    # is the anchor for revocation and idle/absolute expiry, and its id is
+    # embedded in the access token as `sid`.
+    _session_token, session = await create_session(
+        db, admin.id, ip, ua or None, remember_me=True,
+    )
+    session_id = str(session.id)
+
     access_token = create_access_token(
         str(admin.id), admin.username, admin.role, role_level,
+        session_id=session_id,
     )
     refresh_token, _ = await create_refresh_token(
-        str(admin.id), remember_me=True,
+        str(admin.id), remember_me=True, session_id=session_id,
     )
 
     await log_security_event(
@@ -791,7 +857,7 @@ async def refresh(request: Request):
         raise HTTPException(401, "refresh_token_required")
 
     try:
-        new_refresh_token, user_id = await rotate_refresh_token(refresh_token)
+        new_refresh_token, user_id, session_id = await rotate_refresh_token(refresh_token)
     except TokenReuseDetected:
         raise HTTPException(401, "refresh_token_reused")
     except TokenError:
@@ -804,9 +870,17 @@ async def refresh(request: Request):
         if not admin or admin.status != AdminStatus.active:
             raise HTTPException(401, "admin_disabled")
 
+        # Refreshing must never revive a revoked or expired server-side
+        # session, and cannot extend past its absolute expiry.
+        if session_id:
+            session = await get_session_by_id(db, session_id)
+            if not session or str(session.admin_id) != str(admin.id):
+                raise HTTPException(401, "session_revoked")
+
         role_level = await get_admin_role_level(db, admin)
         access_token = create_access_token(
             str(admin.id), admin.username, admin.role, role_level,
+            session_id=session_id,
         )
 
     resp = JSONResponse(content={
@@ -1012,3 +1086,119 @@ async def forgot_reset(body: ForgotResetRequest, request: Request, db: AsyncSess
     await revoke_all_sessions(db, admin.id)
 
     return {"status": "ok"}
+
+
+@ws_router.websocket("/ws/admin-session")
+async def websocket_admin_session(websocket: WebSocket):
+    """Server-push session channel.
+
+    The socket is authorised by a single-use ticket (never a bearer/refresh
+    token in the URL), then revalidates the authoritative server-side session
+    before accepting. The socket carries notifications only; it never replaces
+    the HTTPS session/refresh endpoints and a dropped socket is not a logout.
+    """
+    ticket = websocket.query_params.get("ticket")
+    if not ticket:
+        await websocket.close(code=4401)
+        return
+
+    # Atomically validate-and-consume. Replays and expired tickets fail here.
+    ticket_data = await consume_session_ws_ticket(ticket)
+    if not ticket_data:
+        await websocket.close(code=4403)
+        return
+
+    admin_id = ticket_data.get("admin_id") or ""
+    session_id = ticket_data.get("session_id") or ""
+    if not admin_id or not session_id:
+        await websocket.close(code=4403)
+        return
+
+    from app.db import async_session as session_factory
+    from app.models import AdminUser as AdminUserModel
+    from sqlalchemy import select as sselect
+
+    # Revalidate the authoritative session + account status before accepting.
+    async with session_factory() as db:
+        session = await get_session_by_id(db, session_id)
+        if not session or str(session.admin_id) != str(admin_id):
+            await websocket.close(code=4401)
+            return
+        admin_row = (await db.execute(
+            sselect(AdminUserModel).where(AdminUserModel.id == session.admin_id)
+        )).scalar_one_or_none()
+        if not admin_row or admin_row.status != AdminStatus.active:
+            await websocket.close(code=4401)
+            return
+        expires_at = session.expires_at.isoformat() if session.expires_at else None
+
+    await websocket.accept()
+    register_connection(session_id, admin_id, websocket)
+
+    now = datetime.now(timezone.utc)
+    try:
+        await websocket.send_json({
+            "v": 1,
+            "type": "session_validated",
+            "server_time": now.isoformat(),
+            **({"expires_at": expires_at} if expires_at else {}),
+        })
+    except Exception:
+        unregister_connection(session_id, admin_id, websocket)
+        return
+
+    stop = asyncio.Event()
+
+    async def _revalidate_loop():
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=SESSION_WS_REVALIDATE_SECONDS)
+                return
+            except asyncio.TimeoutError:
+                pass
+            try:
+                async with session_factory() as db:
+                    live = await get_session_by_id(db, session_id)
+                    alive = live is not None and str(live.admin_id) == str(admin_id)
+            except Exception:
+                alive = True  # transient DB blip: do not kill a valid socket
+            if not alive:
+                try:
+                    await websocket.send_json({
+                        "v": 1,
+                        "type": "session_revoked",
+                        "reason": "revalidation_failed",
+                        "server_time": datetime.now(timezone.utc).isoformat(),
+                    })
+                    await websocket.close(code=4401)
+                except Exception:
+                    pass
+                return
+            try:
+                await websocket.send_json({
+                    "v": 1,
+                    "type": "session_validated",
+                    "server_time": datetime.now(timezone.utc).isoformat(),
+                })
+            except Exception:
+                return
+
+    revalidate_task = asyncio.create_task(_revalidate_loop())
+    try:
+        while True:
+            raw = await websocket.receive()
+            if raw.get("type") == "websocket.disconnect":
+                break
+            # Client->server messages are ignored; this channel is server-push.
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        stop.set()
+        revalidate_task.cancel()
+        unregister_connection(session_id, admin_id, websocket)
+        try:
+            await websocket.close()
+        except Exception:
+            pass

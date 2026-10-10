@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+import asyncio
 from app.config import get_settings
 from app.api import (
     auth, public_contact, admin_messages, admin_settings, admin_trash,
@@ -10,8 +11,11 @@ from app.api import (
 from app.security.middleware import RequestValidationMiddleware
 from app.security.csrf import CSRFMiddleware
 from app.security.rate_limit import close_redis
+from app.security.session_events import run_session_event_subscriber
 
 settings = get_settings()
+
+_session_event_stop = asyncio.Event()
 
 app = FastAPI(
     title="vijaykrsha.online API",
@@ -131,10 +135,12 @@ async def _trash_cleanup_loop():
 
 
 @app.on_event("startup")
-async def start_trash_cleanup():
+async def start_background_tasks():
     asyncio.create_task(_trash_cleanup_loop())
+    asyncio.create_task(run_session_event_subscriber(_session_event_stop))
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    _session_event_stop.set()
     await close_redis()

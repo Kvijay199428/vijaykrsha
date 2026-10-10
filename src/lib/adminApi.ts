@@ -7,8 +7,23 @@ export interface ApiFetchOptions extends RequestInit {
   skipAutoRefresh?: boolean;
 }
 
+/**
+ * Outcome of an access-token renewal attempt.
+ *
+ * - `refreshed`       a new access token is now in memory.
+ * - `invalid_session` the server definitively rejected the refresh cookie
+ *                     (401/403 or a malformed body). The caller should treat
+ *                     the user as logged out.
+ * - `network_error`   the request could not reach the server, or the server
+ *                     returned a transient (5xx) failure. This is NOT a
+ *                     confirmed logout — the caller should surface a
+ *                     recoverable error instead of clearing auth state.
+ */
+export type RefreshResult = "refreshed" | "invalid_session" | "network_error";
+
 let accessToken: string | null = null;
-let refreshing: Promise<boolean> | null = null;
+let refreshing: Promise<RefreshResult> | null = null;
+let bootstrapping: Promise<boolean> | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
@@ -33,6 +48,8 @@ function buildHeaders(init: RequestInit): Headers {
       headers.set("Content-Type", "application/json");
     }
   }
+  // Always read the live token so a request that follows a refresh carries the
+  // fresh Authorization header instead of a stale, captured one.
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
@@ -54,29 +71,101 @@ async function doFetch(url: string, init: RequestInit): Promise<Response> {
   });
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+/**
+ * Renew the in-memory access token using the httpOnly refresh cookie.
+ *
+ * Single-flight: concurrent callers share one in-flight request so token
+ * rotation cannot race. The refresh endpoint is intentionally called with raw
+ * `fetch` (never `apiFetch`) so it can never recursively trigger another
+ * refresh.
+ */
+export async function refreshAccessToken(): Promise<RefreshResult> {
   if (refreshing) return refreshing;
-  refreshing = (async () => {
+
+  refreshing = (async (): Promise<RefreshResult> => {
+    let res: Response;
     try {
-      const res = await fetch(ROUTES.ADMINAPIAUTHREFRESH, {
+      res = await fetch(ROUTES.ADMINAPIAUTHREFRESH, {
         method: "POST",
         credentials: "include", // sends the httpOnly refresh_token cookie
+        cache: "no-store",
       });
-      if (!res.ok) {
-        accessToken = null;
-        return false;
-      }
-      const data = await res.json();
-      accessToken = data.access_token;
-      return true;
     } catch {
-      accessToken = null;
-      return false;
-    } finally {
-      refreshing = null;
+      // Offline / DNS / TLS failure: not proof of logout.
+      return "network_error";
     }
-  })();
+
+    if (res.status === 401 || res.status === 403) {
+      accessToken = null;
+      return "invalid_session";
+    }
+    if (!res.ok) {
+      // 5xx / gateway error: transient, keep the caller in a recoverable state.
+      return "network_error";
+    }
+
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      return "network_error";
+    }
+
+    if (
+      !data ||
+      typeof data !== "object" ||
+      typeof (data as { access_token?: unknown }).access_token !== "string" ||
+      ((data as { access_token: string }).access_token).length === 0
+    ) {
+      accessToken = null;
+      return "invalid_session";
+    }
+
+    accessToken = (data as { access_token: string }).access_token;
+    return "refreshed";
+  })().finally(() => {
+    refreshing = null;
+  });
+
   return refreshing;
+}
+
+/**
+ * Run the one-time authentication bootstrap. Multiple callers (React Strict
+ * Mode double-effects, several components mounting together) share a single
+ * execution so refresh-token rotation happens exactly once.
+ */
+export function bootstrapAuth(run: () => Promise<boolean>): Promise<boolean> {
+  if (bootstrapping) return bootstrapping;
+
+  const current = run().finally(() => {
+    if (bootstrapping === current) {
+      bootstrapping = null;
+    }
+  });
+
+  bootstrapping = current;
+  return current;
+}
+
+/**
+ * Fetch the authoritative admin session. Requires an access token: this must
+ * never be the first authenticated call on a cold load (that is what produced
+ * the avoidable 401 + refresh + retry sequence).
+ */
+export async function fetchAdminSession(): Promise<Response> {
+  if (!accessToken) {
+    throw new Error("ACCESS_TOKEN_MISSING");
+  }
+  return fetch(ROUTES.ADMINAPIAUTHSESSION, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+  });
 }
 
 /**
@@ -98,8 +187,8 @@ export async function apiFetch(
     url !== ROUTES.ADMINAPIAUTHLOGIN &&
     url !== ROUTES.ADMINAPIAUTHREFRESH
   ) {
-    const ok = await refreshAccessToken();
-    if (ok) {
+    const result = await refreshAccessToken();
+    if (result === "refreshed") {
       response = await doFetch(url, init);
     }
   }

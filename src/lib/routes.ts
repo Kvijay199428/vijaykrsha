@@ -11,6 +11,7 @@ export const ROUTES = {
   ADMINAPIAUTHSESSION: `${API}/admin/api/auth/session`,
   ADMINAPIAUTHREFRESH: `${API}/admin/api/auth/refresh`,
   ADMINAPIAUTHEXCHANGE: `${API}/admin/api/auth/exchange`,
+  ADMINAPIAUTHWSTICKET: `${API}/admin/api/auth/ws-ticket`,
   ADMINAPIAUTHPUBLICKEY: `${API}/admin/api/auth/public-key`,
   ADMINAPISETUPREQUIRED: `${API}/admin/api/auth/setup-required`,
   ADMINAPISETUPCREATE: `${API}/admin/api/auth/setup-create`,
