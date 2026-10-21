@@ -10,6 +10,10 @@ const API_MOUNT = "/vega/api";
 
 const ALLOWED_ORIGINS = [
   "https://vijaykrsha.online",
+  "https://www.vijaykrsha.online",
+  // The apps catalogue is served from its own subdomain, and the whole site
+  // is reachable there, so its pages must be allowed to call the API.
+  "https://apps.vijaykrsha.online",
   "https://vijaykrsha-website.pages.dev",
 ];
 

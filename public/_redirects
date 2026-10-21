@@ -1,6 +1,10 @@
-# The apps catalogue is canonical on its own subdomain. This rule must stay
-# ABOVE the SPA catch-all - Cloudflare Pages applies the first matching rule,
-# so a request for /apps is answered with a 301 to the subdomain instead of
-# being handed to the client-side router.
-/apps https://apps.vijaykrsha.online/apps 301
+# The apps catalogue is canonical on its own subdomain. The hop from
+# vijaykrsha.online/apps to apps.vijaykrsha.online/apps is host-aware and
+# therefore lives in the /apps Function route (functions/apps.ts): rules in
+# this file cannot match on hostname, so a rule here would also fire on the
+# apps host and redirect the page to itself.
+#
+# The SPA catch-all below must stay last.
+# Cloudflare Pages applies the first matching rule, so every other route is
+# handed to the client-side router.
 /* /index.html 200
