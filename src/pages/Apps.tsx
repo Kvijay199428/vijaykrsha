@@ -1,4 +1,5 @@
 import { site } from "@/config/site";
+import { Slideshow } from "@/components/ui/slideshow";
 
 const categoryColors: Record<string, string> = {
   Android: "bg-glow-500",
@@ -47,9 +48,28 @@ function BuildingIcon() {
   );
 }
 
+function ShieldIcon() {
+  return (
+    <svg
+      className="h-7 w-7 text-glow-500"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 8.25-5.592 8.25-11.623 0-1.31-.21-2.571-.598-3.751h.152c.97 0 1.888.21 2.716.588m-16.918.375A11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 8.25-5.592 8.25-11.623 0-1.31-.21-2.571-.598-3.751m0 0a11.99 11.99 0 00-3.766 1.518M15 12a3 3 0 11-6 0 3 3 0 016 0Z"
+      />
+    </svg>
+  );
+}
+
 const iconMap: Record<string, React.FC> = {
   share: ShareIcon,
   building: BuildingIcon,
+  shield: ShieldIcon,
 };
 
 export default function Apps() {
@@ -75,7 +95,7 @@ export default function Apps() {
             >
               {/* Header */}
               <div className="flex items-center gap-3 mb-3">
-                {"logo" in app && app.logo ? (
+                {app.logo ? (
                   <img src={app.logo} alt={`${app.title} logo`} className="h-7 w-7 rounded-lg object-contain" />
                 ) : (
                   <Icon />
@@ -100,16 +120,20 @@ export default function Apps() {
               </p>
 
               {/* Screenshots */}
-              {"screenshots" in app && app.screenshots && app.screenshots.length > 0 ? (
-                <div className={`grid ${app.screenshots.length > 1 ? "grid-cols-2" : "grid-cols-1"} gap-2 mb-4`}>
-                  {app.screenshots.map((src: string, idx: number) => (
-                    <img
-                      key={idx}
-                      src={src}
-                      alt={`${app.title} screenshot ${idx + 1}`}
-                      className="h-36 w-full rounded-xl object-cover border border-cream-300 dark:border-night-600"
-                    />
-                  ))}
+              {app.screenshots && app.screenshots.length > 0 ? (
+                <div className="mb-4">
+                  <Slideshow
+                    mode="AUTO"
+                    interval={5000}
+                    aspect={app.slideAspect ?? "video"}
+                    label={`${app.title} screenshots`}
+                    slides={app.screenshots.map((s) => ({
+                      src: s.src,
+                      alt: s.alt ?? `${app.title} screenshot`,
+                      caption: s.caption,
+                    }))}
+                    className="border border-cream-300 dark:border-night-600"
+                  />
                 </div>
               ) : (
                 <div className="h-36 rounded-xl bg-cream-200 dark:bg-night-700 flex items-center justify-center mb-4 border border-cream-300 dark:border-night-600">

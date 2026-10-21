@@ -45,6 +45,30 @@ function ArrowUpIcon() {
   );
 }
 
+const APPS_HOST = "apps.vijaykrsha.online";
+
+/** True when the page is being served from the apps subdomain. */
+function onAppsHost() {
+  return typeof window !== "undefined" && window.location.hostname === APPS_HOST;
+}
+
+/**
+ * Resolve a nav path to the URL it should point at.
+ *
+ * The apps catalogue is canonical on its own subdomain, and every other
+ * page is canonical on the main domain — so on the apps host the
+ * remaining links point back to vijaykrsha.online instead of creating a
+ * second copy of the same page under a second hostname.
+ */
+function navHref(path: string) {
+  if (path === "/apps") return site.appsUrl;
+  return onAppsHost() ? `${site.canonicalOrigin}${path}` : path;
+}
+
+function isExternal(href: string) {
+  return /^https?:\/\//i.test(href);
+}
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
   const location = useLocation();
@@ -80,28 +104,59 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
 
+  // Only the current page's own host is canonical: the apps route points
+  // at the apps subdomain, everything else at the main domain.
+  const isActive = (path: string) =>
+    onAppsHost()
+      ? path === "/apps" && location.pathname === "/apps"
+      : location.pathname === path;
+
+  useEffect(() => {
+    const canonical =
+      location.pathname === "/apps"
+        ? site.appsUrl
+        : `${site.canonicalOrigin}${location.pathname}`;
+    let link = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "canonical";
+      document.head.appendChild(link);
+    }
+    link.href = canonical;
+  }, [location.pathname]);
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-50 bg-cream-50/80 dark:bg-night-900/80 backdrop-blur-md border-b border-cream-200 dark:border-night-700">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="font-bold text-glow-600 dark:text-glow-400">
-            <BrandLogo />
-          </Link>
+          {onAppsHost() ? (
+            <a href={`${site.canonicalOrigin}/`} className="font-bold text-glow-600 dark:text-glow-400">
+              <BrandLogo />
+            </a>
+          ) : (
+            <Link to="/" className="font-bold text-glow-600 dark:text-glow-400">
+              <BrandLogo />
+            </Link>
+          )}
 
           <nav className="hidden md:flex items-center gap-1">
-            {site.nav.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`nav-link text-sm font-medium rounded-lg px-3 py-1.5 ${
-                  location.pathname === item.path
-                    ? "text-glow-600 dark:text-glow-400 bg-glow-500/10 dark:bg-glow-400/10"
-                    : "text-night-800/70 dark:text-cream-100/70 hover:text-night-800 dark:hover:text-cream-100 hover:bg-cream-200/50 dark:hover:bg-night-700/50"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {site.nav.map((item) => {
+              const href = navHref(item.path);
+              const cls = `nav-link text-sm font-medium rounded-lg px-3 py-1.5 ${
+                isActive(item.path)
+                  ? "text-glow-600 dark:text-glow-400 bg-glow-500/10 dark:bg-glow-400/10"
+                  : "text-night-800/70 dark:text-cream-100/70 hover:text-night-800 dark:hover:text-cream-100 hover:bg-cream-200/50 dark:hover:bg-night-700/50"
+              }`;
+              return isExternal(href) ? (
+                <a key={item.path} href={href} className={cls}>
+                  {item.label}
+                </a>
+              ) : (
+                <Link key={item.path} to={href} className={cls}>
+                  {item.label}
+                </Link>
+              );
+            })}
             <button
               onClick={toggle}
               className="p-2 rounded-lg hover:bg-cream-200 dark:hover:bg-night-700 transition-colors"
@@ -131,20 +186,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {mobileOpen && (
           <nav className="md:hidden border-t border-cream-200 dark:border-night-700 bg-cream-50 dark:bg-night-900 px-4 pb-4">
-            {site.nav.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setMobileOpen(false)}
-                className={`nav-link block py-3 text-sm font-medium rounded-lg px-3 ${
-                  location.pathname === item.path
-                    ? "text-glow-600 dark:text-glow-400 bg-glow-500/10 dark:bg-glow-400/10"
-                    : "text-night-800/70 dark:text-cream-100/70"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {site.nav.map((item) => {
+              const href = navHref(item.path);
+              const cls = `nav-link block py-3 text-sm font-medium rounded-lg px-3 ${
+                isActive(item.path)
+                  ? "text-glow-600 dark:text-glow-400 bg-glow-500/10 dark:bg-glow-400/10"
+                  : "text-night-800/70 dark:text-cream-100/70"
+              }`;
+              return isExternal(href) ? (
+                <a key={item.path} href={href} className={cls} onClick={() => setMobileOpen(false)}>
+                  {item.label}
+                </a>
+              ) : (
+                <Link key={item.path} to={href} className={cls} onClick={() => setMobileOpen(false)}>
+                  {item.label}
+                </Link>
+              );
+            })}
           </nav>
         )}
       </header>
@@ -183,16 +241,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div>
               <p className="footer-heading">Quick Links</p>
               <ul className="space-y-2">
-                {site.nav.map((item) => (
-                  <li key={item.path}>
-                    <Link
-                      to={item.path}
-                      className="text-sm text-night-800/60 dark:text-cream-100/60 hover:text-glow-500 dark:hover:text-glow-400 transition-colors"
-                    >
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
+                {site.nav.map((item) => {
+                  const href = navHref(item.path);
+                  const cls =
+                    "text-sm text-night-800/60 dark:text-cream-100/60 hover:text-glow-500 dark:hover:text-glow-400 transition-colors";
+                  return (
+                    <li key={item.path}>
+                      {isExternal(href) ? (
+                        <a href={href} className={cls}>
+                          {item.label}
+                        </a>
+                      ) : (
+                        <Link to={href} className={cls}>
+                          {item.label}
+                        </Link>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
 
@@ -200,16 +266,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div>
               <p className="footer-heading">Services</p>
               <ul className="space-y-2">
-                {site.services.map((s) => (
-                  <li key={s.title}>
-                    <Link
-                      to="/freelance"
-                      className="text-sm text-night-800/60 dark:text-cream-100/60 hover:text-glow-500 dark:hover:text-glow-400 transition-colors"
-                    >
-                      {s.title}
-                    </Link>
-                  </li>
-                ))}
+                {site.services.map((s) => {
+                  const href = navHref("/freelance");
+                  const cls =
+                    "text-sm text-night-800/60 dark:text-cream-100/60 hover:text-glow-500 dark:hover:text-glow-400 transition-colors";
+                  return (
+                    <li key={s.title}>
+                      {isExternal(href) ? (
+                        <a href={href} className={cls}>
+                          {s.title}
+                        </a>
+                      ) : (
+                        <Link to={href} className={cls}>
+                          {s.title}
+                        </Link>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
 
@@ -235,7 +309,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="border-t border-cream-200 dark:border-night-700 pt-4 flex items-center justify-center gap-3 text-sm text-night-800/50 dark:text-cream-100/50">
-            <AnimatedLogo size={100} />
+            <AnimatedLogo size={30} />
             <p>&copy; {new Date().getFullYear()} {site.name}. All rights reserved.</p>
           </div>
         </div>

@@ -675,3 +675,21 @@ body {
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
 }
+
+/* =========================================================
+   SLIDESHOW — components/ui/slideshow.tsx
+   The progress bar is driven by an inline `animation` shorthand
+   (duration comes from the component's `interval` prop), so the
+   keyframes live here rather than in a per-instance <style> tag.
+   ========================================================= */
+
+@keyframes slideshow-progress {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slide] {
+    transition: none !important;
+  }
+}

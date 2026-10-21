@@ -18,6 +18,36 @@ function resolveWsBaseUrl(): string {
   return `${protocol === "https:" ? "wss:" : "ws:"}//${host}`;
 }
 
+/**
+ * One screenshot in an app's slider. Mirrors the `SlideItem` shape the
+ * Slideshow component accepts, minus the plain-string form — the app
+ * config always carries a caption and an alt text.
+ */
+export type AppSlide = {
+  src: string;
+  alt?: string;
+  caption?: string;
+};
+
+/** Frame shape for an app's screenshot slider. */
+export type AppSlideAspect = "video" | "portrait" | "square";
+
+export type AppEntry = {
+  title: string;
+  category: string;
+  icon?: string;
+  status: "live" | "beta" | "coming-soon";
+  description: string;
+  features: readonly string[];
+  techStack: readonly string[];
+  logo?: string;
+  screenshots?: readonly AppSlide[];
+  /** Defaults to "video" when omitted. */
+  slideAspect?: AppSlideAspect;
+  link: { label: string; url: string };
+  tags: readonly string[];
+};
+
 export const site = {
   name: "Vijay Kumar Sharma",
   tagline: "Legal Research, Drafting & Digital Legal Solutions",
@@ -38,6 +68,13 @@ export const site = {
     wsBaseUrl: resolveWsBaseUrl(),
     contactPath: "/vks/api/contact",
   },
+
+  // The apps catalogue lives on its own subdomain. `canonicalOrigin` is
+  // where every other page of the site belongs — links on the apps
+  // subdomain point back here so the two hosts never compete for the
+  // same content.
+  appsUrl: "https://apps.vijaykrsha.online/apps",
+  canonicalOrigin: "https://vijaykrsha.online",
 
   nav: [
     { label: "Home", path: "/" },
@@ -307,7 +344,7 @@ export const site = {
       title: "Vega Share",
       category: "Android",
       icon: "share",
-      status: "live" as const,
+      status: "live",
       description:
         "WiFi-based file transfer app for Android. Share files from your phone to any device on the same network using just a browser — no app installation needed on the receiving end.",
       features: [
@@ -320,7 +357,19 @@ export const site = {
       ],
       techStack: ["Android", "Kotlin", "NanoHTTPD", "BouncyCastle", "React", "Vite"],
       logo: "/vega-share-icon.png",
-      screenshots: ["/vega-share-screenshot.png", "/vega-share-feature.png"],
+      screenshots: [
+        {
+          src: "/vega-share-screenshot.png",
+          alt: "Vega Share sending a file over WiFi",
+          caption: "Send a file to any browser on the same network",
+        },
+        {
+          src: "/vega-share-feature.png",
+          alt: "Vega Share browser preview",
+          caption: "Preview documents, images, video and audio in the browser",
+        },
+      ],
+      slideAspect: "video",
       link: { label: "Download APK", url: "https://github.com/Kvijay199428/VEGA-SHARE/releases/download/v1.0.1/vega-share-1.0.1.apk" },
       tags: ["Android", "WiFi", "File Transfer", "Browser", "HTTPS"],
     },
@@ -328,7 +377,7 @@ export const site = {
       title: "Rent App Management",
       category: "Web",
       icon: "building",
-      status: "live" as const,
+      status: "live",
       description:
         "Web app for landlords to manage tenant-landlord rent transactions. Track monthly rent status, view lifetime earnings, and get a clear financial overview at a glance.",
       features: [
@@ -341,5 +390,80 @@ export const site = {
       link: { label: "Visit App", url: "https://rent.vijaykrsha.online" },
       tags: ["Web App", "Rent", "Tenant Management", "Dashboard"],
     },
-  ],
+    {
+      title: "VEGA STING",
+      category: "Android",
+      icon: "shield",
+      status: "live",
+      description:
+        "Privacy-first audio and video recorder for Android. Capture with the front and rear cameras at once, keep every recording on your own device, and share it only when you decide to.",
+      features: [
+        "Dual-camera composite capture — front and rear recorded into one file",
+        "Foreground recording that keeps running with the screen off",
+        "Everything stays on the device — no account, no ads, no analytics",
+        "Signature, timestamp and watermark overlay on new recordings",
+        "Trash with 30-day retention, restore and permanent delete",
+        "Quick Settings tile, home-screen widget and app shortcuts to start recording fast",
+      ],
+      techStack: [
+        "Android",
+        "Kotlin",
+        "Jetpack Compose",
+        "Camera2",
+        "MediaRecorder",
+        "Room",
+        "DataStore",
+        "OpenGL",
+      ],
+      logo: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/.assets/dark/app-icons/android/playstore-icon.png",
+      screenshots: [
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/01-consent.png",
+          alt: "VEGA STING first-run consent screen",
+          caption: "Nothing records until you accept the terms",
+        },
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/02-home.png",
+          alt: "VEGA STING recording library",
+          caption: "Your library — every recording stored on the device",
+        },
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/03-recording.png",
+          alt: "VEGA STING recording in progress",
+          caption: "Live REC indicator with codec, resolution and file target",
+        },
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/09-dual-camera.png",
+          alt: "VEGA STING dual camera settings",
+          caption: "Dual camera — front and rear composited into one file",
+        },
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/11-overlay.png",
+          alt: "VEGA STING watermark overlay settings",
+          caption: "Timestamp, signature and watermark overlay",
+        },
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/07-settings.png",
+          alt: "VEGA STING settings screen",
+          caption: "Setup — hardware, storage, recording and safety options",
+        },
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/05-trash.png",
+          alt: "VEGA STING trash screen",
+          caption: "Trash with 30-day retention — restore or delete for good",
+        },
+        {
+          src: "https://raw.githubusercontent.com/Kvijay199428/vega-sting/main/docs/screenshots/10-about-developer.png",
+          alt: "VEGA STING about and developer screen",
+          caption: "About — version, build and developer",
+        },
+      ],
+      slideAspect: "portrait",
+      link: {
+        label: "Download APK",
+        url: "https://github.com/Kvijay199428/vega-sting/releases/download/v3.0.0/vega-sting-stable-3.0.0.apk",
+      },
+      tags: ["Android", "Recorder", "Dual Camera", "Privacy", "Offline"],
+    },
+  ] as readonly AppEntry[],
 } as const;

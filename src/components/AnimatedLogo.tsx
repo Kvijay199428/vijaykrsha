@@ -1,56 +1,34 @@
-import { useRef } from "react";
-import useSpriteAnimation from "@/hooks/useSpriteAnimation";
-import logoConfig from "../../public/logo/logo.json";
-
 interface AnimatedLogoProps {
   className?: string;
   alt?: string;
   size?: number;
 }
 
+/**
+ * Brand mark for the footer and admin sidebar.
+ *
+ * Renders the scalable triangle logo SVG, so the same file is crisp at every
+ * rendered size (28px in the collapsed sidebar, 100px in the footer) and
+ * inherits dark-mode behaviour from the asset itself.
+ *
+ * The name is kept for call-site stability: the component previously rendered
+ * a 15-frame sprite-sheet animation (public/logo/logo.png.gz) that was removed
+ * along with the old branding assets.
+ */
 export default function AnimatedLogo({
   className = "",
   alt = "Vijay Kumar Sharma",
-  size,
+  size = 100,
 }: AnimatedLogoProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const prefersReducedMotion =
-    typeof window !== "undefined"
-      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      : true;
-
-  const config = {
-    ...logoConfig,
-    blendMode: logoConfig.blendMode as GlobalCompositeOperation,
-  };
-
-  useSpriteAnimation(canvasRef, config);
-
-  const displaySize = size ?? logoConfig.frameWidth;
-
-  if (prefersReducedMotion) {
-    return (
-      <div
-        className={`animated-logo flex items-center justify-center ${className}`}
-        style={{ width: displaySize, height: displaySize }}
-      >
-        <div className="flex items-center justify-center w-full h-full rounded-2xl bg-glow-500/10 border border-glow-500/20">
-          <span className="text-3xl font-bold text-glow-600 dark:text-glow-400">
-            VK
-          </span>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <canvas
-      ref={canvasRef}
-      className={`animated-logo ${className}`}
-      style={{ width: displaySize, height: displaySize }}
-      aria-label={alt}
+    <img
+      src="/favicon.svg"
+      alt={alt}
       role="img"
+      width={size}
+      height={size}
+      className={`animated-logo ${className}`.trim()}
+      style={{ width: size, height: size }}
     />
   );
 }

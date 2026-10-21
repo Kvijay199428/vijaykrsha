@@ -2384,6 +2384,7 @@ from app.db import get_db
 from app.models import AdminUser, AdminSession, AuditEvent, AuditLog
 from app.models_rbac import Permission
 from app.api.deps import require_permission, assert_can_manage
+from app.security.session_events import publish_session_event
 from app.services.totp_service import (
     generate_secret, encrypt_secret, verify_totp,
     get_provisioning_uri, store_pending_secret, get_pending_secret,
@@ -2507,6 +2508,9 @@ async def totp_disable(
            meta={"target_username": user.username})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked", admin_id=str(user.id), reason="totp_disabled",
+    )
     return {"status": "totp_disabled"}
 
 
@@ -2544,6 +2548,9 @@ async def totp_reset(
            meta={"target_username": user.username, "action": "totp_reset"})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked", admin_id=str(user.id), reason="totp_reset",
+    )
     return {"status": "totp_reset"}
 ```
 
@@ -2865,6 +2872,7 @@ from app.db import get_db
 from app.models import AdminUser, AdminStatus, AuditEvent, AuditLog
 from app.models_rbac import AdminRole as AdminRoleModel, Permission
 from app.models_rbac import AdminPermission, AdminRolePermission
+from app.security.session_events import publish_session_event
 from app.api.deps import (
     get_current_admin,
     require_permission,
@@ -3250,6 +3258,11 @@ async def disable_user(
            meta={"target_username": user.username})
 
     await db.commit()
+    await publish_session_event(
+        "account_disabled",
+        admin_id=str(user.id),
+        reason="administrative_disable",
+    )
     return {"status": "disabled"}
 
 
@@ -3349,6 +3362,11 @@ async def revoke_sessions(
            meta={"target_username": user.username, "action": "sessions_revoked"})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked",
+        admin_id=str(user.id),
+        reason="administrative_revocation",
+    )
     return {"status": "sessions_revoked"}
 
 
@@ -3384,6 +3402,11 @@ async def reset_password(
            meta={"target_username": user.username})
 
     await db.commit()
+    await publish_session_event(
+        "session_revoked",
+        admin_id=str(user.id),
+        reason="password_reset",
+    )
     return {"status": "password_reset"}
 
 
@@ -3547,6 +3570,7 @@ async def list_permissions(
 
 ```python
 // File: backend\app\api\auth.py
+import asyncio
 import structlog
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -3569,7 +3593,9 @@ from app.security.passwords import hash_password, verify_password
 from app.security.password_policy import (
     PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH, validate_password_strength,
 )
-from app.security.sessions import create_session, revoke_session
+from app.security.sessions import (
+    create_session, revoke_session, revoke_session_by_id, get_session_by_id,
+)
 from app.security.encryption import new_encryption_keypair, decrypt_password
 from app.security.tokens import (
     create_access_token, create_refresh_token, rotate_refresh_token,
@@ -3577,6 +3603,10 @@ from app.security.tokens import (
     verify_access_token, verify_ws_ticket,
     create_exchange_code, verify_exchange_code,
     consume_exchange_code, TokenError, TokenReuseDetected,
+)
+from app.security.session_events import (
+    issue_session_ws_ticket, consume_session_ws_ticket,
+    register_connection, unregister_connection,
 )
 from app.security.rate_limit import (
     login_ip_limiter, login_user_limiter, otp_send_limiter,
@@ -3609,6 +3639,10 @@ router = APIRouter(prefix="/admin/api/auth", tags=["auth"])
 # caught by DirectAccessGuard (which requires X-Forwarded-By: pages-proxy —
 # a header browsers cannot set on a WebSocket handshake).
 ws_router = APIRouter(tags=["auth-ws"])
+
+# How often a live session socket revalidates against the database when no
+# event has arrived (and doubles as a keepalive for intermediaries).
+SESSION_WS_REVALIDATE_SECONDS = 45
 
 _DUMMY_PASSWORD_HASH = hash_password("::timing-equalizer::")
 
@@ -3786,7 +3820,7 @@ async def setup_create(body: SetupRequest, request: Request, db: AsyncSession = 
         ip, request.headers.get("user-agent"),
     )
 
-    token = await create_session(
+    token, _session = await create_session(
         db, admin.id, ip,
         request.headers.get("user-agent"),
         device_id=device.id,
@@ -4057,7 +4091,7 @@ async def login_otp_verify(body: LoginOtpVerifyRequest, request: Request, db: As
         return {"status": "totp_required", "challenge_id": str(challenge.id)}
 
     await consume_challenge(db, challenge.id)
-    token = await create_session(
+    token, _session = await create_session(
         db, admin.id, ip, ua, body.remember_me, device_id=device.id,
     )
     _audit(db, AuditEvent.otp_verified, admin_id=admin.id, ip=ip)
@@ -4129,7 +4163,7 @@ async def login_totp(body: LoginTotpRequest, request: Request, db: AsyncSession 
     )
 
     await consume_challenge(db, challenge.id)
-    token = await create_session(
+    token, _session = await create_session(
         db, admin.id, ip, ua, body.remember_me, device_id=device.id,
     )
     _audit(db, AuditEvent.totp_verified, admin_id=admin.id, ip=ip)
@@ -4261,6 +4295,12 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
         try:
             claims = verify_access_token(auth_header[7:])
             await block_access_token_jti(claims["jti"])
+            sid = claims.get("sid")
+            if sid:
+                # Revoke the server-side session the bearer token is bound to.
+                # The WS login flow does not carry a vks_session cookie, so
+                # this is the only handle on its session row.
+                await revoke_session_by_id(db, sid)
         except TokenError:
             pass
 
@@ -4286,6 +4326,45 @@ async def public_key():
     return PublicKeyResponse(key_id=key_id, public_key=public_pem)
 
 
+@router.post("/ws-ticket")
+async def ws_ticket(
+    request: Request,
+    deps: tuple = Depends(get_current_admin_with_session),
+    db: AsyncSession = Depends(get_db),
+):
+    """Issue a short-lived, single-use ticket for the session WebSocket.
+
+    Requires an authenticated admin with a live server-side session. The raw
+    ticket is returned exactly once and only its hash is stored server-side.
+    The browser cannot set an Authorization header on a native WebSocket, so
+    this avoids ever putting a bearer/refresh token in a URL.
+    """
+    admin, session = deps
+    if session is None:
+        # A bearer token issued before session anchoring (a legacy refresh
+        # token has no `sid`). Anchor it now so the socket has an authoritative
+        # session anchor and revocation still works by admin id.
+        ip = request.client.host if request.client else "unknown"
+        ua = request.headers.get("user-agent", "")
+        _st, session = await create_session(
+            db, admin.id, ip, ua or None, remember_me=True,
+        )
+
+    jti = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            claims = verify_access_token(auth_header[7:])
+            jti = claims.get("jti")
+        except TokenError:
+            pass
+
+    ticket = await issue_session_ws_ticket(str(admin.id), str(session.id), jti)
+    resp = JSONResponse(content={"ticket": ticket, "expires_in": 45})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @router.post("/exchange")
 async def exchange(body: ExchangeRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = request.client.host if request.client else "unknown"
@@ -4305,11 +4384,21 @@ async def exchange(body: ExchangeRequest, request: Request, db: AsyncSession = D
 
     role_level = await get_admin_role_level(db, admin)
 
+    # Establish the authoritative server-side session for the WS login flow.
+    # The random session token is not handed to the browser; the session row
+    # is the anchor for revocation and idle/absolute expiry, and its id is
+    # embedded in the access token as `sid`.
+    _session_token, session = await create_session(
+        db, admin.id, ip, ua or None, remember_me=True,
+    )
+    session_id = str(session.id)
+
     access_token = create_access_token(
         str(admin.id), admin.username, admin.role, role_level,
+        session_id=session_id,
     )
     refresh_token, _ = await create_refresh_token(
-        str(admin.id), remember_me=True,
+        str(admin.id), remember_me=True, session_id=session_id,
     )
 
     await log_security_event(
@@ -4340,7 +4429,7 @@ async def refresh(request: Request):
         raise HTTPException(401, "refresh_token_required")
 
     try:
-        new_refresh_token, user_id = await rotate_refresh_token(refresh_token)
+        new_refresh_token, user_id, session_id = await rotate_refresh_token(refresh_token)
     except TokenReuseDetected:
         raise HTTPException(401, "refresh_token_reused")
     except TokenError:
@@ -4353,9 +4442,17 @@ async def refresh(request: Request):
         if not admin or admin.status != AdminStatus.active:
             raise HTTPException(401, "admin_disabled")
 
+        # Refreshing must never revive a revoked or expired server-side
+        # session, and cannot extend past its absolute expiry.
+        if session_id:
+            session = await get_session_by_id(db, session_id)
+            if not session or str(session.admin_id) != str(admin.id):
+                raise HTTPException(401, "session_revoked")
+
         role_level = await get_admin_role_level(db, admin)
         access_token = create_access_token(
             str(admin.id), admin.username, admin.role, role_level,
+            session_id=session_id,
         )
 
     resp = JSONResponse(content={
@@ -4561,6 +4658,122 @@ async def forgot_reset(body: ForgotResetRequest, request: Request, db: AsyncSess
     await revoke_all_sessions(db, admin.id)
 
     return {"status": "ok"}
+
+
+@ws_router.websocket("/ws/admin-session")
+async def websocket_admin_session(websocket: WebSocket):
+    """Server-push session channel.
+
+    The socket is authorised by a single-use ticket (never a bearer/refresh
+    token in the URL), then revalidates the authoritative server-side session
+    before accepting. The socket carries notifications only; it never replaces
+    the HTTPS session/refresh endpoints and a dropped socket is not a logout.
+    """
+    ticket = websocket.query_params.get("ticket")
+    if not ticket:
+        await websocket.close(code=4401)
+        return
+
+    # Atomically validate-and-consume. Replays and expired tickets fail here.
+    ticket_data = await consume_session_ws_ticket(ticket)
+    if not ticket_data:
+        await websocket.close(code=4403)
+        return
+
+    admin_id = ticket_data.get("admin_id") or ""
+    session_id = ticket_data.get("session_id") or ""
+    if not admin_id or not session_id:
+        await websocket.close(code=4403)
+        return
+
+    from app.db import async_session as session_factory
+    from app.models import AdminUser as AdminUserModel
+    from sqlalchemy import select as sselect
+
+    # Revalidate the authoritative session + account status before accepting.
+    async with session_factory() as db:
+        session = await get_session_by_id(db, session_id)
+        if not session or str(session.admin_id) != str(admin_id):
+            await websocket.close(code=4401)
+            return
+        admin_row = (await db.execute(
+            sselect(AdminUserModel).where(AdminUserModel.id == session.admin_id)
+        )).scalar_one_or_none()
+        if not admin_row or admin_row.status != AdminStatus.active:
+            await websocket.close(code=4401)
+            return
+        expires_at = session.expires_at.isoformat() if session.expires_at else None
+
+    await websocket.accept()
+    register_connection(session_id, admin_id, websocket)
+
+    now = datetime.now(timezone.utc)
+    try:
+        await websocket.send_json({
+            "v": 1,
+            "type": "session_validated",
+            "server_time": now.isoformat(),
+            **({"expires_at": expires_at} if expires_at else {}),
+        })
+    except Exception:
+        unregister_connection(session_id, admin_id, websocket)
+        return
+
+    stop = asyncio.Event()
+
+    async def _revalidate_loop():
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=SESSION_WS_REVALIDATE_SECONDS)
+                return
+            except asyncio.TimeoutError:
+                pass
+            try:
+                async with session_factory() as db:
+                    live = await get_session_by_id(db, session_id)
+                    alive = live is not None and str(live.admin_id) == str(admin_id)
+            except Exception:
+                alive = True  # transient DB blip: do not kill a valid socket
+            if not alive:
+                try:
+                    await websocket.send_json({
+                        "v": 1,
+                        "type": "session_revoked",
+                        "reason": "revalidation_failed",
+                        "server_time": datetime.now(timezone.utc).isoformat(),
+                    })
+                    await websocket.close(code=4401)
+                except Exception:
+                    pass
+                return
+            try:
+                await websocket.send_json({
+                    "v": 1,
+                    "type": "session_validated",
+                    "server_time": datetime.now(timezone.utc).isoformat(),
+                })
+            except Exception:
+                return
+
+    revalidate_task = asyncio.create_task(_revalidate_loop())
+    try:
+        while True:
+            raw = await websocket.receive()
+            if raw.get("type") == "websocket.disconnect":
+                break
+            # Client->server messages are ignored; this channel is server-push.
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        stop.set()
+        revalidate_task.cancel()
+        unregister_connection(session_id, admin_id, websocket)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 ```
 
 ```python
@@ -4577,7 +4790,7 @@ from app.models import (
     AdminStatus, Device,
 )
 from app.models_rbac import AdminRole, AdminRolePermission, AdminPermission, Permission
-from app.security.sessions import get_session, touch_session
+from app.security.sessions import get_session, get_session_by_id, touch_session
 from app.security.tokens import (
     verify_access_token, is_access_token_blocked,
     TokenError,
@@ -4612,6 +4825,16 @@ async def _resolve_admin_from_jwt(request: Request, db: AsyncSession) -> AdminUs
     admin = result.scalar_one_or_none()
     if not admin or admin.status != AdminStatus.active:
         return None
+    # A token issued by the WebSocket login flow carries its server-side
+    # session id. Validate it so revocation/expiry is enforced independently
+    # of the JWT's own `exp` — an unexpired token with a revoked session must
+    # not be accepted.
+    sid = claims.get("sid")
+    if sid:
+        session = await get_session_by_id(db, sid)
+        if not session or str(session.admin_id) != str(admin.id):
+            return None
+        await touch_session(db, session)
     return admin
 
 
@@ -4669,7 +4892,18 @@ async def get_current_admin_with_session(
         admin = await _resolve_admin_from_jwt(request, db)
         if admin is None:
             raise HTTPException(status_code=401, detail="not_authenticated")
-        return admin, None
+        # Resolve the server-side session referenced by the bearer token so
+        # /session can report authoritative idle/absolute expiry metadata.
+        bearer = _extract_bearer_token(request)
+        if bearer:
+            try:
+                claims = verify_access_token(bearer)
+                sid = claims.get("sid")
+                if sid:
+                    session = await get_session_by_id(db, sid)
+            except TokenError:
+                session = None
+        return admin, session
 
     stmt = select(AdminUser).where(AdminUser.id == session.admin_id)
     result = await db.execute(stmt)
@@ -5246,6 +5480,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+import asyncio
 from app.config import get_settings
 from app.api import (
     auth, public_contact, admin_messages, admin_settings, admin_trash,
@@ -5254,8 +5489,11 @@ from app.api import (
 from app.security.middleware import RequestValidationMiddleware
 from app.security.csrf import CSRFMiddleware
 from app.security.rate_limit import close_redis
+from app.security.session_events import run_session_event_subscriber
 
 settings = get_settings()
+
+_session_event_stop = asyncio.Event()
 
 app = FastAPI(
     title="vijaykrsha.online API",
@@ -5375,12 +5613,14 @@ async def _trash_cleanup_loop():
 
 
 @app.on_event("startup")
-async def start_trash_cleanup():
+async def start_background_tasks():
     asyncio.create_task(_trash_cleanup_loop())
+    asyncio.create_task(run_session_event_subscriber(_session_event_stop))
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    _session_event_stop.set()
     await close_redis()
 ```
 
@@ -6104,6 +6344,7 @@ from app.models import (
     AdminUser, SecurityEvent, SecurityEventType, SecuritySeverity,
 )
 from app.config import get_settings
+from app.security.session_events import publish_session_event
 
 settings = get_settings()
 
@@ -6275,6 +6516,19 @@ async def get_device_by_token(
 
 
 async def revoke_device(db: AsyncSession, device_id: UUID) -> None:
+    # Capture the admins whose live sessions will be torn down so we can notify
+    # their sockets after the rows are revoked.
+    affected_admins = (
+        await db.execute(
+            select(AdminSession.admin_id)
+            .where(
+                AdminSession.device_id == device_id,
+                AdminSession.revoked_at.is_(None),
+            )
+            .distinct()
+        )
+    ).scalars().all()
+
     stmt = update(Device).where(Device.id == device_id).values(
         state=DeviceState.revoked,
         updated_at=datetime.now(timezone.utc),
@@ -6295,6 +6549,11 @@ async def revoke_device(db: AsyncSession, device_id: UUID) -> None:
         ).values(revoked_at=datetime.now(timezone.utc))
     )
     await db.commit()
+
+    for admin_id in affected_admins:
+        await publish_session_event(
+            "session_revoked", admin_id=str(admin_id), reason="device_revoked",
+        )
 
 
 async def block_device(db: AsyncSession, device_id: UUID) -> None:
@@ -6953,6 +7212,218 @@ def calculate_risk(signals: RiskSignals) -> RiskResult:
 ```
 
 ```python
+// File: backend\app\security\session_events.py
+"""Real-time session event infrastructure.
+
+Two responsibilities:
+
+1. A single-use, short-lived WebSocket ticket store (Redis-backed) so the
+   browser can authenticate a WSS handshake without putting a bearer or
+   refresh token in the URL.
+2. A cross-process event bus (Redis Pub/Sub) plus a per-worker in-process
+   registry of live session WebSockets. Redis is only the *notification*
+   mechanism — the database remains the source of truth for session validity.
+
+Nothing in an event payload is a credential.
+"""
+
+import asyncio
+import hashlib
+import json
+import secrets
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+import structlog
+
+from app.security.rate_limit import get_redis
+
+logger = structlog.get_logger()
+
+SESSION_EVENTS_CHANNEL = "session:events"
+SESSION_WS_TICKET_TTL_SECONDS = 45
+
+# Event types the server may publish. Terminal events tear the socket down.
+TERMINAL_EVENTS = frozenset({"session_revoked", "account_disabled", "session_expired"})
+
+# ── In-process registry ─────────────────────────────────────────────
+# session_id -> set of live WebSocket objects
+_connections: dict[str, set] = {}
+# admin_id -> set of session_ids
+_admin_index: dict[str, set[str]] = {}
+
+
+def register_connection(session_id: str, admin_id: str, ws: Any) -> None:
+    sid = str(session_id)
+    aid = str(admin_id)
+    _connections.setdefault(sid, set()).add(ws)
+    _admin_index.setdefault(aid, set()).add(sid)
+
+
+def unregister_connection(session_id: str, admin_id: str, ws: Any) -> None:
+    sid = str(session_id)
+    aid = str(admin_id)
+    sockets = _connections.get(sid)
+    if sockets is not None:
+        sockets.discard(ws)
+        if not sockets:
+            _connections.pop(sid, None)
+    session_ids = _admin_index.get(aid)
+    if session_ids is not None:
+        if sid not in _connections:
+            session_ids.discard(sid)
+        if not session_ids:
+            _admin_index.pop(aid, None)
+
+
+def active_connection_count() -> int:
+    return sum(len(s) for s in _connections.values())
+
+
+# ── Single-use tickets ──────────────────────────────────────────────
+def _ticket_key(ticket: str) -> str:
+    digest = hashlib.sha256(ticket.encode()).hexdigest()
+    return f"sessionws:ticket:{digest}"
+
+
+async def issue_session_ws_ticket(
+    admin_id: str,
+    session_id: Optional[str],
+    jti: Optional[str],
+) -> str:
+    """Create a cryptographically random ticket, storing only its hash."""
+    r = await get_redis()
+    ticket = secrets.token_urlsafe(32)
+    key = _ticket_key(ticket)
+    mapping = {
+        "admin_id": str(admin_id),
+        "session_id": str(session_id or ""),
+        "jti": str(jti or ""),
+    }
+    await r.hset(key, mapping=mapping)
+    await r.expire(key, SESSION_WS_TICKET_TTL_SECONDS)
+    return ticket
+
+
+_CONSUME_TICKET_LUA = """
+local data = redis.call('HGETALL', KEYS[1])
+if #data == 0 then
+  return {}
+end
+redis.call('DEL', KEYS[1])
+return data
+"""
+
+
+async def consume_session_ws_ticket(ticket: str) -> Optional[dict]:
+    """Atomically fetch-and-delete a ticket. Replay returns None."""
+    if not ticket:
+        return None
+    r = await get_redis()
+    key = _ticket_key(ticket)
+    try:
+        raw = await r.eval(_CONSUME_TICKET_LUA, 1, key)
+    except Exception:
+        logger.warning("session_ws_ticket_consume_failed")
+        return None
+    if not raw:
+        return None
+    # eval returns a flat [field, value, field, value, ...] list.
+    data = {raw[i]: raw[i + 1] for i in range(0, len(raw) - 1, 2)}
+    return data or None
+
+
+# ── Event bus ───────────────────────────────────────────────────────
+async def publish_session_event(
+    event_type: str,
+    admin_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    reason: Optional[str] = None,
+    expires_at: Optional[str] = None,
+) -> None:
+    """Publish a session event to every worker. Never raises."""
+    event = {
+        "v": 1,
+        "type": event_type,
+        "reason": reason,
+        "server_time": datetime.now(timezone.utc).isoformat(),
+        "admin_id": str(admin_id) if admin_id else None,
+        "session_id": str(session_id) if session_id else None,
+    }
+    if expires_at:
+        event["expires_at"] = expires_at
+    try:
+        r = await get_redis()
+        await r.publish(SESSION_EVENTS_CHANNEL, json.dumps(event))
+    except Exception:
+        logger.warning("session_event_publish_failed", event_type=event_type)
+
+
+def _client_payload(event: dict) -> dict:
+    """Strip internal routing fields before sending to a browser."""
+    return {
+        "v": event.get("v", 1),
+        "type": event.get("type"),
+        "reason": event.get("reason"),
+        "server_time": event.get("server_time"),
+        **({"expires_at": event["expires_at"]} if event.get("expires_at") else {}),
+    }
+
+
+async def _dispatch_local(event: dict) -> None:
+    event_type = event.get("type")
+    terminal = event_type in TERMINAL_EVENTS
+    payload = _client_payload(event)
+
+    targets: list = []
+    session_id = event.get("session_id")
+    admin_id = event.get("admin_id")
+    if session_id and str(session_id) in _connections:
+        targets.extend(_connections.get(str(session_id), set()))
+    elif admin_id:
+        for sid in _admin_index.get(str(admin_id), set()):
+            targets.extend(_connections.get(sid, set()))
+
+    for ws in list(targets):
+        try:
+            await ws.send_json(payload)
+            if terminal:
+                await ws.close(code=4401)
+        except Exception:
+            pass
+
+
+async def run_session_event_subscriber(stop_event: asyncio.Event) -> None:
+    """Per-worker subscriber. Reconnects with backoff if Redis drops."""
+    backoff = 1
+    while not stop_event.is_set():
+        try:
+            r = await get_redis()
+            pubsub = r.pubsub()
+            await pubsub.subscribe(SESSION_EVENTS_CHANNEL)
+            backoff = 1
+            async for message in pubsub.listen():
+                if stop_event.is_set():
+                    break
+                if message.get("type") != "message":
+                    continue
+                try:
+                    event = json.loads(message["data"])
+                except Exception:
+                    continue
+                await _dispatch_local(event)
+            await pubsub.unsubscribe(SESSION_EVENTS_CHANNEL)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("session_event_subscriber_error")
+        if stop_event.is_set():
+            break
+        await asyncio.sleep(backoff)
+        backoff = min(backoff * 2, 30)
+```
+
+```python
 // File: backend\app\security\sessions.py
 import hashlib
 import secrets
@@ -6962,6 +7433,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AdminSession, AdminUser
 from app.config import get_settings
+from app.security.session_events import publish_session_event
 
 settings = get_settings()
 
@@ -6982,7 +7454,7 @@ async def create_session(
     user_agent: str | None,
     remember_me: bool = False,
     device_id: UUID | None = None,
-) -> str:
+) -> tuple[str, AdminSession]:
     token, token_hash = create_session_token()
     idle = timedelta(minutes=settings.SESSION_IDLE_MINUTES)
     if remember_me:
@@ -6990,15 +7462,18 @@ async def create_session(
     else:
         absolute = timedelta(hours=2)
 
+    now = datetime.now(timezone.utc)
+
     existing = await db.execute(
         select(AdminSession).where(
             AdminSession.admin_id == admin_id,
             AdminSession.revoked_at.is_(None),
-            AdminSession.expires_at > datetime.now(timezone.utc),
+            AdminSession.expires_at > now,
         )
     )
     active_count = len(existing.scalars().all())
 
+    evicted_session_id: UUID | None = None
     if active_count >= settings.MAX_CONCURRENT_SESSIONS:
         oldest = await db.execute(
             select(AdminSession).where(
@@ -7008,9 +7483,9 @@ async def create_session(
         )
         oldest_session = oldest.scalar_one_or_none()
         if oldest_session:
-            oldest_session.revoked_at = datetime.now(timezone.utc)
+            oldest_session.revoked_at = now
+            evicted_session_id = oldest_session.id
 
-    now = datetime.now(timezone.utc)
     session = AdminSession(
         admin_id=admin_id,
         device_id=device_id,
@@ -7022,7 +7497,17 @@ async def create_session(
     )
     db.add(session)
     await db.commit()
-    return token
+
+    if evicted_session_id is not None:
+        # An over-limit session was dropped: tell its live socket immediately.
+        await publish_session_event(
+            "session_revoked",
+            admin_id=str(admin_id),
+            session_id=str(evicted_session_id),
+            reason="concurrent_session_limit",
+        )
+
+    return token, session
 
 
 async def get_session(db: AsyncSession, token: str) -> AdminSession | None:
@@ -7031,6 +7516,23 @@ async def get_session(db: AsyncSession, token: str) -> AdminSession | None:
         select(AdminSession)
         .where(
             AdminSession.session_hash == token_hash,
+            AdminSession.revoked_at.is_(None),
+            AdminSession.expires_at > datetime.now(timezone.utc),
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def get_session_by_id(db: AsyncSession, session_id: str | UUID) -> AdminSession | None:
+    try:
+        sid = session_id if isinstance(session_id, UUID) else UUID(str(session_id))
+    except (ValueError, TypeError):
+        return None
+    stmt = (
+        select(AdminSession)
+        .where(
+            AdminSession.id == sid,
             AdminSession.revoked_at.is_(None),
             AdminSession.expires_at > datetime.now(timezone.utc),
         )
@@ -7056,12 +7558,38 @@ async def touch_session(db: AsyncSession, session: AdminSession) -> None:
 
 async def revoke_session(db: AsyncSession, token: str) -> None:
     token_hash = _hash_session_token(token)
-    stmt = update(AdminSession).where(
-        AdminSession.session_hash == token_hash,
-        AdminSession.revoked_at.is_(None),
-    ).values(revoked_at=datetime.now(timezone.utc))
-    await db.execute(stmt)
+    row = (
+        await db.execute(
+            select(AdminSession).where(
+                AdminSession.session_hash == token_hash,
+                AdminSession.revoked_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        return
+    row.revoked_at = datetime.now(timezone.utc)
     await db.commit()
+    await publish_session_event(
+        "session_revoked",
+        admin_id=str(row.admin_id),
+        session_id=str(row.id),
+        reason="session_revoked",
+    )
+
+
+async def revoke_session_by_id(db: AsyncSession, session_id: str | UUID) -> None:
+    row = await get_session_by_id(db, session_id)
+    if not row:
+        return
+    row.revoked_at = datetime.now(timezone.utc)
+    await db.commit()
+    await publish_session_event(
+        "session_revoked",
+        admin_id=str(row.admin_id),
+        session_id=str(row.id),
+        reason="session_revoked_by_id",
+    )
 
 
 async def revoke_all_sessions(db: AsyncSession, admin_id: UUID) -> None:
@@ -7071,11 +7599,25 @@ async def revoke_all_sessions(db: AsyncSession, admin_id: UUID) -> None:
     ).values(revoked_at=datetime.now(timezone.utc))
     await db.execute(stmt)
     await db.commit()
+    await publish_session_event(
+        "session_revoked",
+        admin_id=str(admin_id),
+        reason="all_sessions_revoked",
+    )
 
 
 async def revoke_other_sessions(db: AsyncSession, admin_id: str | UUID, current_token: str) -> None:
     """Revoke every active session for the admin except the one holding current_token."""
     current_hash = _hash_session_token(current_token)
+    rows = (
+        await db.execute(
+            select(AdminSession.id).where(
+                AdminSession.admin_id == admin_id,
+                AdminSession.session_hash != current_hash,
+                AdminSession.revoked_at.is_(None),
+            )
+        )
+    ).scalars().all()
     stmt = update(AdminSession).where(
         AdminSession.admin_id == admin_id,
         AdminSession.session_hash != current_hash,
@@ -7083,6 +7625,13 @@ async def revoke_other_sessions(db: AsyncSession, admin_id: str | UUID, current_
     ).values(revoked_at=datetime.now(timezone.utc))
     await db.execute(stmt)
     await db.commit()
+    for sid in rows:
+        await publish_session_event(
+            "session_revoked",
+            admin_id=str(admin_id),
+            session_id=str(sid),
+            reason="other_sessions_revoked",
+        )
 ```
 
 ```python
@@ -7276,6 +7825,7 @@ async def create_refresh_token(
     admin_id: str,
     remember_me: bool = False,
     family: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> tuple[str, str]:
     r = await get_redis()
     token = secrets.token_urlsafe(48)
@@ -7286,14 +7836,20 @@ async def create_refresh_token(
     now = datetime.now(timezone.utc)
     expires_at = now + ttl
 
-    pipe = r.pipeline()
-    pipe.hset(f"refresh:{token_hash}", mapping={
+    mapping = {
         "user_id": str(admin_id),
         "family": family,
         "used": "0",
         "issued_at": int(now.timestamp()),
         "expires_at": int(expires_at.timestamp()),
-    })
+    }
+    if session_id:
+        # Bind the refresh family to its server-side session so refresh can
+        # never revive a revoked or expired session.
+        mapping["session_id"] = str(session_id)
+
+    pipe = r.pipeline()
+    pipe.hset(f"refresh:{token_hash}", mapping=mapping)
     pipe.expire(f"refresh:{token_hash}", int(ttl.total_seconds()))
     pipe.sadd(f"refresh_family:{family}", token_hash)
     pipe.expire(f"refresh_family:{family}", int(ttl.total_seconds()))
@@ -7302,7 +7858,7 @@ async def create_refresh_token(
     return token, family
 
 
-async def rotate_refresh_token(refresh_token: str) -> tuple[str, str]:
+async def rotate_refresh_token(refresh_token: str) -> tuple[str, str, Optional[str]]:
     r = await get_redis()
     token_hash = _hash_refresh_token(refresh_token)
     data = await r.hgetall(f"refresh:{token_hash}")
@@ -7321,6 +7877,7 @@ async def rotate_refresh_token(refresh_token: str) -> tuple[str, str]:
 
     user_id = data["user_id"]
     family = data["family"]
+    session_id = data.get("session_id") or None
     remember_me = (expires_at - datetime.fromtimestamp(int(data["issued_at"]), tz=timezone.utc)) > timedelta(hours=6)
 
     pipe = r.pipeline()
@@ -7328,8 +7885,10 @@ async def rotate_refresh_token(refresh_token: str) -> tuple[str, str]:
     pipe.expire(f"refresh:{token_hash}", 60)
     await pipe.execute()
 
-    new_token, _ = await create_refresh_token(user_id, remember_me=remember_me, family=family)
-    return new_token, user_id
+    new_token, _ = await create_refresh_token(
+        user_id, remember_me=remember_me, family=family, session_id=session_id,
+    )
+    return new_token, user_id, session_id
 
 
 async def _revoke_family(r, family: str) -> None:
@@ -8089,6 +8648,117 @@ def test_bulk_restore_not_shadowed_by_single_restore():
     _assert_resolves_to(trash_router, "/admin/api/trash/bulk/restore", "POST", "bulk_restore")
 ```
 
+```python
+// File: backend\tests\test_session_events.py
+import asyncio
+
+from app.security import session_events as se
+from app.security.sessions import get_session_by_id
+
+
+class FakeWS:
+    def __init__(self):
+        self.sent = []
+        self.closed = None
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
+
+    async def close(self, code=1000):
+        self.closed = code
+
+
+def test_client_payload_strips_internal_routing_fields():
+    payload = se._client_payload({
+        "v": 1,
+        "type": "session_validated",
+        "reason": "ok",
+        "server_time": "t",
+        "admin_id": "a",
+        "session_id": "s",
+    })
+    assert payload["type"] == "session_validated"
+    assert "admin_id" not in payload
+    assert "session_id" not in payload
+
+
+def test_client_payload_includes_expires_at_only_when_present():
+    assert "expires_at" not in se._client_payload({"type": "session_validated"})
+    payload = se._client_payload({"type": "session_expiring", "expires_at": "X"})
+    assert payload["expires_at"] == "X"
+
+
+def test_register_then_unregister_clears_indexes():
+    ws = FakeWS()
+    se.register_connection("sess-1", "admin-1", ws)
+    assert ws in se._connections["sess-1"]
+    assert "sess-1" in se._admin_index["admin-1"]
+
+    se.unregister_connection("sess-1", "admin-1", ws)
+    assert "sess-1" not in se._connections
+    assert "admin-1" not in se._admin_index
+
+
+def test_dispatch_routes_by_session_and_closes_on_terminal_event():
+    async def run():
+        ws = FakeWS()
+        se.register_connection("sess-2", "admin-2", ws)
+        try:
+            await se._dispatch_local({
+                "v": 1,
+                "type": "session_revoked",
+                "reason": "logout",
+                "server_time": "t",
+                "admin_id": "admin-2",
+                "session_id": "sess-2",
+            })
+            assert len(ws.sent) == 1
+            assert ws.sent[0]["type"] == "session_revoked"
+            assert ws.closed == 4401
+        finally:
+            se.unregister_connection("sess-2", "admin-2", ws)
+
+    asyncio.run(run())
+
+
+def test_dispatch_routes_by_admin_id_when_session_unknown():
+    async def run():
+        ws = FakeWS()
+        se.register_connection("sess-3", "admin-3", ws)
+        try:
+            # No session_id: fan out to every live session for the admin.
+            await se._dispatch_local({"type": "account_disabled", "admin_id": "admin-3"})
+            assert len(ws.sent) == 1
+            assert ws.closed == 4401  # account_disabled is terminal
+        finally:
+            se.unregister_connection("sess-3", "admin-3", ws)
+
+    asyncio.run(run())
+
+
+def test_dispatch_ignores_unrelated_admins():
+    async def run():
+        ws = FakeWS()
+        se.register_connection("sess-4", "admin-4", ws)
+        try:
+            await se._dispatch_local({"type": "session_revoked", "admin_id": "someone-else"})
+            assert ws.sent == []
+            assert ws.closed is None
+        finally:
+            se.unregister_connection("sess-4", "admin-4", ws)
+
+    asyncio.run(run())
+
+
+def test_get_session_by_id_invalid_uuid_returns_none():
+    # Must short-circuit before touching the database session.
+    assert asyncio.run(get_session_by_id(None, "not-a-uuid")) is None
+
+
+def test_consume_empty_ticket_returns_none():
+    assert asyncio.run(se.consume_session_ws_ticket("")) is None
+```
+
 ```yaml
 # File: docker-compose.dev.yml
 services:
@@ -8603,6 +9273,15 @@ map $http_origin $vks_trusted_origin {
     "https://vijaykrsha-website.pages.dev" $http_origin;
 }
 
+# Redact query strings from access logs. The session WebSocket carries its
+# single-use ticket in the query string (?ticket=...); the ticket is short-lived
+# and hashed at rest, so there is no reason to persist it in plaintext logs.
+# $uri is the request path without the query string.
+log_format vks_redacted '$remote_addr - $remote_user [$time_local] '
+                        '"$request_method $uri $server_protocol" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent"';
+
 upstream vks_backend_prod {
     server backend-prod:8000;
     keepalive 32;
@@ -8611,6 +9290,8 @@ upstream vks_backend_prod {
 server {
     listen 80;
     server_name vega-api.vijaykrsha.online;
+
+    access_log /var/log/nginx/access.log vks_redacted;
 
     # Do not advertise the gateway version.
     server_tokens off;
@@ -9212,7 +9893,7 @@ export default function DeleteMessageDialog({
 
 ```tsx
 // File: src\components\admin\ProtectedRoute.tsx
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { Skeleton } from "../ui/skeleton";
@@ -9332,24 +10013,18 @@ function AdminFrameSkeleton() {
 }
 
 export default function ProtectedRoute() {
-  const { isAuthenticated, refreshAuth } = useAuth();
+  const { status, refreshAuth } = useAuth();
   const location = useLocation();
-  const [checking, setChecking] = useState(true);
 
   // Session bootstrap lives here — the only mount point for every protected
   // admin page — instead of inside AuthProvider, so public routes and the
   // admin login page never probe the session endpoint.
   useEffect(() => {
-    let cancelled = false;
-    refreshAuth().finally(() => {
-      if (!cancelled) setChecking(false);
-    });
-    return () => {
-      cancelled = true;
-    };
+    void refreshAuth();
   }, [refreshAuth]);
 
-  if (checking) {
+  // "Not checked yet" must never be rendered as "logged out".
+  if (status === "initializing") {
     return (
       <div role="status" aria-label="Checking session">
         <AdminFrameSkeleton />
@@ -9357,7 +10032,36 @@ export default function ProtectedRoute() {
     );
   }
 
-  if (!isAuthenticated) {
+  // A transient network/server failure is recoverable — show a retry instead
+  // of falsely bouncing the user to the login screen.
+  if (status === "error") {
+    return (
+      <div className="admin-theme flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+        <div className="neu-flat w-full max-w-sm space-y-4 rounded-2xl p-6 text-center">
+          <h1 className="text-lg font-semibold">Couldn’t reach the server</h1>
+          <p className="text-sm text-muted-foreground">
+            We couldn’t verify your session. This is usually temporary — check
+            your connection and try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refreshAuth()}
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            Retry
+          </button>
+          <a
+            href="/vega/admin/login"
+            className="block text-xs text-muted-foreground hover:underline"
+          >
+            Return to sign in
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (status !== "authenticated") {
     return (
       <Navigate
         to="/vega/admin/login"
@@ -13678,12 +14382,27 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { ROUTES } from "@/lib/routes";
-import { apiFetch, setAccessToken } from "@/lib/adminApi";
+import {
+  apiFetch,
+  setAccessToken,
+  getAccessToken,
+  bootstrapAuth,
+  refreshAccessToken,
+  fetchAdminSession,
+} from "@/lib/adminApi";
 import { fetchPublicKey, encryptPassword } from "@/lib/crypto";
+import {
+  SessionMonitor,
+  SESSION_MONITOR_ENABLED,
+  type SessionEvent,
+  type WssStatus,
+} from "@/lib/sessionMonitor";
 
 interface LoginResult {
   status: "second_factor_required";
@@ -13717,10 +14436,27 @@ export interface AdminIdentity {
   role_level?: number | null;
 }
 
+/**
+ * Explicit authentication lifecycle. "initializing" must never be treated as
+ * "logged out" — the app is still deciding.
+ */
+export type AuthStatus = "initializing" | "authenticated" | "anonymous" | "error";
+
+interface SessionPayload {
+  id: string;
+  username: string;
+  display_name?: string;
+  role: string;
+  role_level?: number | null;
+  session?: { expires_at?: string | null } | null;
+}
+
 interface AuthContextType {
+  status: AuthStatus;
   isAuthenticated: boolean;
   admin: AdminIdentity | null;
   sessionExpiresAt: string | null;
+  wssStatus: WssStatus;
   refreshAuth: () => Promise<boolean>;
   login: (
     username: string,
@@ -13766,19 +14502,38 @@ function parseAuthError(response: Response, data: unknown, fallback: string): Er
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [status, setStatus] = useState<AuthStatus>("initializing");
   const [admin, setAdmin] = useState<AdminIdentity | null>(null);
   const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
+  const [wssStatus, setWssStatus] = useState<WssStatus>("disconnected");
 
-  const refreshAuth = useCallback(async (): Promise<boolean> => {
-    try {
-      const response = await apiFetch(ROUTES.ADMINAPIAUTHSESSION, {
-        credentials: "include",
-        redirectOn401: false,
-      });
-      if (!response.ok) throw new Error("not authenticated");
-      const data = await response.json();
-      setIsAuthenticated(true);
+  const statusRef = useRef<AuthStatus>("initializing");
+  const mountedRef = useRef(true);
+  const monitorRef = useRef<SessionMonitor | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      monitorRef.current?.disconnect();
+      monitorRef.current = null;
+    };
+  }, []);
+
+  const updateStatus = useCallback((next: AuthStatus) => {
+    statusRef.current = next;
+    if (mountedRef.current) setStatus(next);
+  }, []);
+
+  const clearAuth = useCallback(() => {
+    setAccessToken(null);
+    setAdmin(null);
+    setSessionExpiresAt(null);
+    updateStatus("anonymous");
+  }, [updateStatus]);
+
+  const applySession = useCallback(
+    (data: SessionPayload) => {
       setAdmin({
         id: data.id,
         username: data.username,
@@ -13787,14 +14542,136 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role_level: data.role_level,
       });
       setSessionExpiresAt(data.session?.expires_at ?? null);
-      return true;
-    } catch {
-      setIsAuthenticated(false);
-      setAdmin(null);
-      setSessionExpiresAt(null);
-      return false;
+      updateStatus("authenticated");
+    },
+    [updateStatus]
+  );
+
+  /**
+   * Single-flight authentication bootstrap.
+   *
+   * Cold load (no in-memory token): refresh FIRST, then call /session — this
+   * removes the predictable 401 → refresh → 200 sequence. Warm load (token
+   * already in memory): call /session directly.
+   */
+  const refreshAuth = useCallback((): Promise<boolean> => {
+    return bootstrapAuth(async () => {
+      const wasAuthenticated = statusRef.current === "authenticated";
+      if (!wasAuthenticated) updateStatus("initializing");
+
+      try {
+        if (!getAccessToken()) {
+          const refreshed = await refreshAccessToken();
+          if (refreshed === "network_error") {
+            // Inconclusive: preserve an existing session, otherwise expose a
+            // recoverable error rather than a false logout.
+            if (!wasAuthenticated) updateStatus("error");
+            return wasAuthenticated;
+          }
+          if (refreshed === "invalid_session") {
+            clearAuth();
+            return false;
+          }
+        }
+
+        let res = await fetchAdminSession();
+
+        if (res.status === 401) {
+          // At most one refresh-and-retry for this bootstrap.
+          const refreshed = await refreshAccessToken();
+          if (refreshed === "network_error") {
+            if (!wasAuthenticated) updateStatus("error");
+            return wasAuthenticated;
+          }
+          if (refreshed === "invalid_session") {
+            clearAuth();
+            return false;
+          }
+          res = await fetchAdminSession();
+        }
+
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            clearAuth();
+            return false;
+          }
+          // Transient server failure (5xx): recoverable.
+          if (!wasAuthenticated) updateStatus("error");
+          return wasAuthenticated;
+        }
+
+        const data = (await res.json()) as SessionPayload;
+        applySession(data);
+        return true;
+      } catch {
+        // Network failure or missing token: not a confirmed logout.
+        if (!wasAuthenticated) updateStatus("error");
+        return wasAuthenticated;
+      }
+    });
+  }, [applySession, clearAuth, updateStatus]);
+
+  const handleSessionEvent = useCallback(
+    (event: SessionEvent) => {
+      switch (event.type) {
+        case "session_revoked":
+        case "account_disabled":
+        case "session_expired":
+          monitorRef.current?.disconnect();
+          setAccessToken(null);
+          clearAuth();
+          window.location.replace("/vega/admin/login");
+          break;
+        case "reauth_required":
+          // Revalidate over HTTPS; the monitor reconnects with a fresh ticket.
+          void refreshAuth();
+          break;
+        case "session_expiring":
+          if (event.expires_at) setSessionExpiresAt(event.expires_at);
+          break;
+        default:
+          break;
+      }
+    },
+    [clearAuth, refreshAuth]
+  );
+
+  // Real-time session monitoring — started only after an HTTPS session is
+  // established, and torn down on logout. A dropped socket never logs out.
+  useEffect(() => {
+    if (status !== "authenticated" || !SESSION_MONITOR_ENABLED) {
+      monitorRef.current?.disconnect();
+      monitorRef.current = null;
+      if (status !== "authenticated") setWssStatus("disconnected");
+      return;
     }
-  }, []);
+    const monitor = new SessionMonitor({
+      onStatus: setWssStatus,
+      onEvent: handleSessionEvent,
+    });
+    monitorRef.current = monitor;
+    void monitor.connect();
+    return () => {
+      monitor.disconnect();
+      if (monitorRef.current === monitor) monitorRef.current = null;
+    };
+  }, [status, handleSessionEvent]);
+
+  // Browser lifecycle: when a tab regains visibility after sleep/background,
+  // revalidate over HTTPS. This silently refreshes an expired access token
+  // before any page request can 401, and picks up server-side revocations.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (
+        document.visibilityState === "visible" &&
+        statusRef.current === "authenticated"
+      ) {
+        void refreshAuth();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [refreshAuth]);
 
   const login = useCallback(
     async (
@@ -13847,32 +14724,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw parseAuthError(response, data, "Token exchange failed");
       }
 
-      setAccessToken(data.access_token);
-      setIsAuthenticated(true);
-      setAdmin(data.admin);
-      return { access_token: data.access_token, admin: data.admin };
+      // Validate before committing any state.
+      const token = (data as { access_token?: unknown }).access_token;
+      const adminData = (data as { admin?: unknown }).admin;
+      if (typeof token !== "string" || token.length === 0 || !adminData) {
+        throw new Error("invalid_exchange_response");
+      }
+
+      setAccessToken(token);
+      setAdmin(adminData as AdminIdentity);
+      updateStatus("authenticated");
+      return { access_token: token, admin: adminData as AdminIdentity };
     },
-    []
+    [updateStatus]
   );
 
   const logout = useCallback(async () => {
-    await apiFetch(ROUTES.ADMINAPIAUTHLOGOUT, {
-      method: "POST",
-      credentials: "include",
-    });
-    setAccessToken(null);
-    setIsAuthenticated(false);
-    setAdmin(null);
-    setSessionExpiresAt(null);
+    try {
+      await apiFetch(ROUTES.ADMINAPIAUTHLOGOUT, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Even if the server call fails, tear down local state.
+    }
+    monitorRef.current?.disconnect();
+    clearAuth();
     window.location.replace("/vega/admin/login");
-  }, []);
+  }, [clearAuth]);
 
   return (
     <AuthContext.Provider
       value={{
-        isAuthenticated,
+        status,
+        isAuthenticated: status === "authenticated",
         admin,
         sessionExpiresAt,
+        wssStatus,
         refreshAuth,
         login,
         exchangeForTokens,
@@ -14748,8 +15636,23 @@ export interface ApiFetchOptions extends RequestInit {
   skipAutoRefresh?: boolean;
 }
 
+/**
+ * Outcome of an access-token renewal attempt.
+ *
+ * - `refreshed`       a new access token is now in memory.
+ * - `invalid_session` the server definitively rejected the refresh cookie
+ *                     (401/403 or a malformed body). The caller should treat
+ *                     the user as logged out.
+ * - `network_error`   the request could not reach the server, or the server
+ *                     returned a transient (5xx) failure. This is NOT a
+ *                     confirmed logout — the caller should surface a
+ *                     recoverable error instead of clearing auth state.
+ */
+export type RefreshResult = "refreshed" | "invalid_session" | "network_error";
+
 let accessToken: string | null = null;
-let refreshing: Promise<boolean> | null = null;
+let refreshing: Promise<RefreshResult> | null = null;
+let bootstrapping: Promise<boolean> | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
@@ -14774,6 +15677,8 @@ function buildHeaders(init: RequestInit): Headers {
       headers.set("Content-Type", "application/json");
     }
   }
+  // Always read the live token so a request that follows a refresh carries the
+  // fresh Authorization header instead of a stale, captured one.
   if (accessToken) {
     headers.set("Authorization", `Bearer ${accessToken}`);
   }
@@ -14795,29 +15700,101 @@ async function doFetch(url: string, init: RequestInit): Promise<Response> {
   });
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+/**
+ * Renew the in-memory access token using the httpOnly refresh cookie.
+ *
+ * Single-flight: concurrent callers share one in-flight request so token
+ * rotation cannot race. The refresh endpoint is intentionally called with raw
+ * `fetch` (never `apiFetch`) so it can never recursively trigger another
+ * refresh.
+ */
+export async function refreshAccessToken(): Promise<RefreshResult> {
   if (refreshing) return refreshing;
-  refreshing = (async () => {
+
+  refreshing = (async (): Promise<RefreshResult> => {
+    let res: Response;
     try {
-      const res = await fetch(ROUTES.ADMINAPIAUTHREFRESH, {
+      res = await fetch(ROUTES.ADMINAPIAUTHREFRESH, {
         method: "POST",
         credentials: "include", // sends the httpOnly refresh_token cookie
+        cache: "no-store",
       });
-      if (!res.ok) {
-        accessToken = null;
-        return false;
-      }
-      const data = await res.json();
-      accessToken = data.access_token;
-      return true;
     } catch {
-      accessToken = null;
-      return false;
-    } finally {
-      refreshing = null;
+      // Offline / DNS / TLS failure: not proof of logout.
+      return "network_error";
     }
-  })();
+
+    if (res.status === 401 || res.status === 403) {
+      accessToken = null;
+      return "invalid_session";
+    }
+    if (!res.ok) {
+      // 5xx / gateway error: transient, keep the caller in a recoverable state.
+      return "network_error";
+    }
+
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      return "network_error";
+    }
+
+    if (
+      !data ||
+      typeof data !== "object" ||
+      typeof (data as { access_token?: unknown }).access_token !== "string" ||
+      ((data as { access_token: string }).access_token).length === 0
+    ) {
+      accessToken = null;
+      return "invalid_session";
+    }
+
+    accessToken = (data as { access_token: string }).access_token;
+    return "refreshed";
+  })().finally(() => {
+    refreshing = null;
+  });
+
   return refreshing;
+}
+
+/**
+ * Run the one-time authentication bootstrap. Multiple callers (React Strict
+ * Mode double-effects, several components mounting together) share a single
+ * execution so refresh-token rotation happens exactly once.
+ */
+export function bootstrapAuth(run: () => Promise<boolean>): Promise<boolean> {
+  if (bootstrapping) return bootstrapping;
+
+  const current = run().finally(() => {
+    if (bootstrapping === current) {
+      bootstrapping = null;
+    }
+  });
+
+  bootstrapping = current;
+  return current;
+}
+
+/**
+ * Fetch the authoritative admin session. Requires an access token: this must
+ * never be the first authenticated call on a cold load (that is what produced
+ * the avoidable 401 + refresh + retry sequence).
+ */
+export async function fetchAdminSession(): Promise<Response> {
+  if (!accessToken) {
+    throw new Error("ACCESS_TOKEN_MISSING");
+  }
+  return fetch(ROUTES.ADMINAPIAUTHSESSION, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+  });
 }
 
 /**
@@ -14839,8 +15816,8 @@ export async function apiFetch(
     url !== ROUTES.ADMINAPIAUTHLOGIN &&
     url !== ROUTES.ADMINAPIAUTHREFRESH
   ) {
-    const ok = await refreshAccessToken();
-    if (ok) {
+    const result = await refreshAccessToken();
+    if (result === "refreshed") {
       response = await doFetch(url, init);
     }
   }
@@ -15027,6 +16004,7 @@ export const ROUTES = {
   ADMINAPIAUTHSESSION: `${API}/admin/api/auth/session`,
   ADMINAPIAUTHREFRESH: `${API}/admin/api/auth/refresh`,
   ADMINAPIAUTHEXCHANGE: `${API}/admin/api/auth/exchange`,
+  ADMINAPIAUTHWSTICKET: `${API}/admin/api/auth/ws-ticket`,
   ADMINAPIAUTHPUBLICKEY: `${API}/admin/api/auth/public-key`,
   ADMINAPISETUPREQUIRED: `${API}/admin/api/auth/setup-required`,
   ADMINAPISETUPCREATE: `${API}/admin/api/auth/setup-create`,
@@ -15083,6 +16061,258 @@ export const ROUTES = {
   ADMINAPITRASHBULKDELETE: `${API}/admin/api/trash/bulk/delete`,
   ADMINAPITRASHEMPTY: `${API}/admin/api/trash/empty`,
 } as const;
+```
+
+```typescript
+// File: src\lib\sessionMonitor.ts
+import { ROUTES } from "@/lib/routes";
+import { apiFetch } from "@/lib/adminApi";
+import { site } from "@/config/site";
+
+export type WssStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
+
+export type SessionEventType =
+  | "session_validated"
+  | "session_expiring"
+  | "session_revoked"
+  | "account_disabled"
+  | "session_expired"
+  | "reauth_required"
+  | "server_shutdown";
+
+export interface SessionEvent {
+  v: number;
+  type: SessionEventType;
+  reason?: string;
+  server_time?: string;
+  expires_at?: string;
+}
+
+export interface SessionMonitorCallbacks {
+  onStatus?: (status: WssStatus) => void;
+  onEvent: (event: SessionEvent) => void;
+}
+
+export const SESSION_MONITOR_ENABLED =
+  import.meta.env.VITE_SESSION_MONITOR !== "false";
+
+const EVENT_TYPES: ReadonlySet<string> = new Set<SessionEventType>([
+  "session_validated",
+  "session_expiring",
+  "session_revoked",
+  "account_disabled",
+  "session_expired",
+  "reauth_required",
+  "server_shutdown",
+]);
+
+// Terminal events mean the session is gone; stop reconnecting entirely.
+const TERMINAL_EVENTS: ReadonlySet<SessionEventType> = new Set<SessionEventType>([
+  "session_revoked",
+  "account_disabled",
+  "session_expired",
+]);
+
+const BASE_BACKOFF_MS = 1_000;
+const MAX_BACKOFF_MS = 30_000;
+
+function backoffDelay(attempt: number): number {
+  const capped = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** attempt);
+  const jitter = capped * 0.2 * (Math.random() * 2 - 1);
+  return Math.max(BASE_BACKOFF_MS, Math.round(capped + jitter));
+}
+
+function parseEvent(raw: unknown): SessionEvent | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.type !== "string" || !EVENT_TYPES.has(obj.type)) return null;
+  return {
+    v: typeof obj.v === "number" ? obj.v : 1,
+    type: obj.type as SessionEventType,
+    reason: typeof obj.reason === "string" ? obj.reason : undefined,
+    server_time: typeof obj.server_time === "string" ? obj.server_time : undefined,
+    expires_at: typeof obj.expires_at === "string" ? obj.expires_at : undefined,
+  };
+}
+
+/**
+ * Real-time session monitor.
+ *
+ * The WSS channel is a NOTIFICATION mechanism only — it never replaces the
+ * authoritative HTTPS session/refresh endpoints. A dropped socket therefore
+ * never logs a user out on its own; reconnects always revalidate over HTTPS.
+ *
+ * The browser's native WebSocket API cannot set an Authorization header, so
+ * each connection first requests a short-lived, single-use ticket over the
+ * authenticated HTTPS API. No bearer or refresh token is ever placed in a URL.
+ */
+export class SessionMonitor {
+  private ws: WebSocket | null = null;
+  private status: WssStatus = "disconnected";
+  private stopped = false;
+  private attempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly callbacks: SessionMonitorCallbacks;
+
+  constructor(callbacks: SessionMonitorCallbacks) {
+    this.callbacks = callbacks;
+  }
+
+  getStatus(): WssStatus {
+    return this.status;
+  }
+
+  private setStatus(status: WssStatus) {
+    if (this.status === status) return;
+    this.status = status;
+    this.callbacks.onStatus?.(status);
+  }
+
+  async connect(): Promise<void> {
+    if (this.stopped) this.stopped = false;
+    if (!SESSION_MONITOR_ENABLED) return;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return; // already connected / connecting — never open duplicates
+    }
+    await this.open();
+  }
+
+  private async open(): Promise<void> {
+    if (this.stopped) return;
+
+    this.setStatus(this.attempt === 0 ? "connecting" : "reconnecting");
+
+    let ticket: string;
+    try {
+      // apiFetch adds the bearer token + CSRF header and retries once after a
+      // silent refresh. redirectOn401 is disabled so a definitive 401 is
+      // surfaced here (as reauth_required) rather than bouncing the page.
+      const res = await apiFetch(ROUTES.ADMINAPIAUTHWSTICKET, {
+        method: "POST",
+        redirectOn401: false,
+      });
+      if (res.status === 401 || res.status === 403) {
+        // The HTTPS credential no longer authorizes a ticket. Ask the app to
+        // revalidate/refresh over HTTPS; do not spin the socket.
+        this.emit({ v: 1, type: "reauth_required", reason: "ws_ticket_unauthorized" });
+        this.scheduleReconnect();
+        return;
+      }
+      if (!res.ok) {
+        this.scheduleReconnect();
+        return;
+      }
+      const data: unknown = await res.json();
+      const t = (data as { ticket?: unknown })?.ticket;
+      if (typeof t !== "string" || t.length === 0) {
+        this.scheduleReconnect();
+        return;
+      }
+      ticket = t;
+    } catch {
+      this.scheduleReconnect();
+      return;
+    }
+
+    if (this.stopped) return;
+
+    const url = `${site.api.wsBaseUrl}/ws/admin-session?ticket=${encodeURIComponent(ticket)}`;
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(url);
+    } catch {
+      this.scheduleReconnect();
+      return;
+    }
+    this.ws = socket;
+
+    socket.onopen = () => {
+      if (this.ws !== socket) return;
+      this.attempt = 0;
+      this.setStatus("connected");
+    };
+
+    socket.onmessage = (e) => {
+      if (this.ws !== socket) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(e.data);
+      } catch {
+        return; // ignore malformed payloads
+      }
+      const event = parseEvent(parsed);
+      if (!event) return;
+      this.emit(event);
+      if (TERMINAL_EVENTS.has(event.type)) {
+        this.stopPermanently();
+      } else if (event.type === "reauth_required") {
+        // Revalidate over HTTPS, then reconnect with a fresh ticket.
+        this.scheduleReconnect();
+      }
+    };
+
+    socket.onclose = () => {
+      if (this.ws !== socket) return;
+      this.ws = null;
+      if (this.stopped) {
+        this.setStatus("disconnected");
+        return;
+      }
+      this.scheduleReconnect();
+    };
+
+    socket.onerror = () => {
+      // onclose follows and drives the retry; nothing else to do here.
+    };
+  }
+
+  private emit(event: SessionEvent) {
+    this.callbacks.onEvent(event);
+  }
+
+  private scheduleReconnect() {
+    if (this.stopped || this.reconnectTimer) return;
+    this.setStatus("reconnecting");
+    const delay = backoffDelay(this.attempt);
+    this.attempt += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.open();
+    }, delay);
+  }
+
+  private stopPermanently() {
+    this.stopped = true;
+    this.closeSocket();
+    this.setStatus("disconnected");
+  }
+
+  private closeSocket() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      try {
+        this.ws.close();
+      } catch {
+        // already closing
+      }
+      this.ws = null;
+    }
+  }
+
+  disconnect(): void {
+    this.stopped = true;
+    this.attempt = 0;
+    this.closeSocket();
+    this.setStatus("disconnected");
+  }
+}
 ```
 
 ```typescript
@@ -20434,7 +21664,13 @@ export default function Contact() {
     honeypot: "", // bots fill this; humans never see it
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Nesting: dragenter/dragleave fire again for every child the pointer
+  // crosses (icon, text, the hidden input). A plain boolean flickers as the
+  // highlight drops and re-adds on each boundary, so we count entries and
+  // only clear the visual state once the pointer has left the zone entirely.
+  const dragDepthRef = useRef(0);
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
@@ -20516,6 +21752,20 @@ export default function Contact() {
     };
   }, []);
 
+  // A file dropped anywhere except the dropzone otherwise makes the browser
+  // navigate to (open) that file, which looks like the page broke. Swallow the
+  // default drag/drop behaviour document-wide; the dropzone runs its own
+  // handler and stops propagation before this matters.
+  useEffect(() => {
+    const blockDrag = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", blockDrag);
+    window.addEventListener("drop", blockDrag);
+    return () => {
+      window.removeEventListener("dragover", blockDrag);
+      window.removeEventListener("drop", blockDrag);
+    };
+  }, []);
+
   const setField = (field: string, value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
@@ -20550,6 +21800,43 @@ export default function Contact() {
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
     setFileWarnings([]);
+  };
+
+  // Only react to actual file drags — dragging selected text or a link over
+  // the zone should not arm the drop highlight.
+  const dragHasFiles = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    // preventDefault here is what marks the zone as a valid drop target; drop
+    // never fires without it.
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = 0;
+    setIsDragging(false);
+    // Route dropped files through the same validator the file picker uses, so
+    // type/size/dedupe/max-file rules and their warning messages stay identical.
+    const dropped = Array.from(e.dataTransfer?.files ?? []);
+    if (dropped.length > 0) addFiles(dropped);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -20629,6 +21916,8 @@ export default function Contact() {
       honeypot: "",
     });
     setFiles([]);
+    dragDepthRef.current = 0;
+    setIsDragging(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     setCaptchaToken(null);
     resetTurnstile(turnstileWidgetId.current);
@@ -20869,7 +22158,15 @@ export default function Contact() {
                   </label>
                   <label
                     htmlFor="contact-documents"
-                    className="group flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-cream-300 dark:border-night-600 bg-cream-50/70 dark:bg-night-900/60 px-5 py-6 text-center transition-all duration-200 hover:border-glow-500/60 hover:bg-glow-500/5"
+                    onDragEnter={handleDragEnter}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`group flex cursor-pointer flex-col items-center justify-center rounded-xl border px-5 py-6 text-center transition-all duration-200 ${
+                      isDragging
+                        ? "border-glow-500 bg-glow-500/10 ring-2 ring-glow-500/20"
+                        : "border-dashed border-cream-300 dark:border-night-600 bg-cream-50/70 dark:bg-night-900/60 hover:border-glow-500/60 hover:bg-glow-500/5"
+                    }`}
                   >
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-glow-500/10 text-glow-500 transition-transform duration-200 group-hover:scale-105">
                       <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={1.7}>
@@ -20878,10 +22175,12 @@ export default function Contact() {
                       </svg>
                     </span>
                     <span className="mt-3 text-sm font-medium text-night-800 dark:text-cream-100">
-                      Add documents
+                      {isDragging ? "Drop files here" : "Add documents"}
                     </span>
                     <span className="mt-1 text-xs text-night-800/45 dark:text-cream-100/45">
-                      PDF, DOC, XLS, TXT or images · up to 25MB each, max {MAX_FILES} files
+                      {isDragging
+                        ? `Release to attach · up to 25MB each, max ${MAX_FILES} files`
+                        : `PDF, DOC, XLS, TXT or images · drag & drop or click · up to 25MB each, max ${MAX_FILES} files`}
                     </span>
                     <input
                       id="contact-documents"

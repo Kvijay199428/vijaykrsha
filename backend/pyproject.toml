@@ -28,6 +28,17 @@ dev = [
     "pytest-asyncio",
     "httpx",
 ]
+# Offline compression benchmark only (benchmarks/compression_bench.py). These are
+# NEVER runtime dependencies: the API ships uncompressed and neither br nor zstd
+# is used on the request path. Kept separate from `dev` because python-snappy
+# needs a system libsnappy and would otherwise break plain test installs.
+bench = [
+    "zopfli",
+    "lz4",
+    "python-snappy",
+    "brotli",
+    "zstandard",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

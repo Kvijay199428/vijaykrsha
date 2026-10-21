@@ -201,6 +201,32 @@ def deploy_docker(host, env, clean=False):
 
     commands = [
         (f"mkdir -p {REMOTE_DIR}", "Ensuring directory exists"),
+        # extractall() only adds/overwrites: any file deleted locally would
+        # survive on the remote and get baked into images by COPY . . (stale
+        # public/logo sprite sheet, old fevicon.zip, removed videos, ...).
+        # Prune every remote file that is not in the fresh zip first.
+        # Protected paths are remote-only state the zip never carries
+        # (.git, node_modules, signing keys, env files, logs).
+        (
+            "python3 - <<'PY'\n"
+            "import zipfile, os\n"
+            f"names = set(zipfile.ZipFile('{REMOTE_ZIP}').namelist())\n"
+            f"root = '{REMOTE_DIR}'\n"
+            "protect = ('.git/', 'node_modules/', '.keys/', 'jws_keys/', 'logs/', 'env/.env')\n"
+            "removed = 0\n"
+            "for dirpath, dirs, files in os.walk(root):\n"
+            "    prefix = os.path.relpath(dirpath, root)\n"
+            "    prefix = '' if prefix == '.' else prefix.replace(os.sep, '/') + '/'\n"
+            "    for f in files:\n"
+            "        rel = prefix + f\n"
+            "        if rel in names or any(rel.startswith(p) for p in protect):\n"
+            "            continue\n"
+            "        os.remove(os.path.join(dirpath, f))\n"
+            "        removed += 1\n"
+            "print(f'stale files removed: {removed}')\n"
+            "PY",
+            "Pruning stale remote files",
+        ),
         (f"python3 -c \"import zipfile; zipfile.ZipFile('{REMOTE_ZIP}','r').extractall('{REMOTE_DIR}')\"", "Extracting files"),
         (f"rm -f {REMOTE_ZIP}", "Cleaning up zip"),
         # Build BEFORE migrating: compose run uses the existing image, so a

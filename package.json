@@ -13,13 +13,19 @@
     "deploy:both": "python deploy.py --target both",
     "deploy:docker:clean": "python deploy.py --target docker --clean",
     "deploy:cf": "python deploy.py --target cloudflare",
-    "build:cf": "python cloudflare.py"
+    "build:cf": "python cloudflare.py",
+    "verify:compress": "node scripts/verify-precompressed.mjs",
+    "precompress:icons": "node scripts/precompress-icons.mjs",
+    "check:encoding": "node scripts/check-encoding.mjs",
+    "bench:compress": "python benchmarks/compression_bench.py"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "lucide-react": "^1.32.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.1"
+    "react-router-dom": "^7.6.1",
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.7",
@@ -28,6 +34,7 @@
     "@vitejs/plugin-react": "^4.5.2",
     "tailwindcss": "^4.1.7",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vite-plugin-compression2": "^2.5.3"
   }
 }
