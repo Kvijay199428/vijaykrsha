@@ -30,7 +30,9 @@ export type AppSlide = {
 };
 
 /** Frame shape for an app's screenshot slider. */
-export type AppSlideAspect = "video" | "portrait" | "square";
+export type AppSlideRatio = "HORIZONTAL" | "PORTRAIT" | "SQUARE" | "CLASSIC" | "CINEMA";
+/** How images sit inside the frame. Defaults to "BLUR". */
+export type AppSlideFit = "BLUR" | "COVER" | "CONTAIN";
 
 export type AppEntry = {
   title: string;
@@ -42,8 +44,10 @@ export type AppEntry = {
   techStack: readonly string[];
   logo?: string;
   screenshots?: readonly AppSlide[];
-  /** Defaults to "video" when omitted. */
-  slideAspect?: AppSlideAspect;
+  /** Defaults to "HORIZONTAL" (16:9) when omitted. */
+  slideRatio?: AppSlideRatio;
+  /** Defaults to "BLUR" when omitted. */
+  slideFit?: AppSlideFit;
   link: { label: string; url: string };
   tags: readonly string[];
 };
@@ -369,7 +373,8 @@ export const site = {
           caption: "Preview documents, images, video and audio in the browser",
         },
       ],
-      slideAspect: "video",
+      slideRatio: "HORIZONTAL",
+      slideFit: "BLUR",
       link: { label: "Download APK", url: "https://github.com/Kvijay199428/VEGA-SHARE/releases/download/v1.0.1/vega-share-1.0.1.apk" },
       tags: ["Android", "WiFi", "File Transfer", "Browser", "HTTPS"],
     },
@@ -458,7 +463,8 @@ export const site = {
           caption: "About — version, build and developer",
         },
       ],
-      slideAspect: "portrait",
+      slideRatio: "PORTRAIT",
+      slideFit: "BLUR",
       link: {
         label: "Download APK",
         url: "https://github.com/Kvijay199428/vega-sting/releases/download/v3.0.0/vega-sting-stable-3.0.0.apk",
