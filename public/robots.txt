@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vijaykrsha.online/sitemap.xml
+
+User-agent: *
+Allow: /
+
+Sitemap: https://apps.vijaykrsha.online/sitemap-apps.xml
