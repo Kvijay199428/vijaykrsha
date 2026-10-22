@@ -125,7 +125,7 @@ export default function Apps() {
                   <Slideshow
                     mode="AUTO"
                     interval={5000}
-                    ratio={app.slideRatio ?? "HORIZONTAL"}
+                    ratio="HORIZONTAL"
                     fit={app.slideFit ?? "BLUR"}
                     label={`${app.title} screenshots`}
                     slides={app.screenshots.map((s) => ({

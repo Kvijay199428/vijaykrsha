@@ -463,7 +463,7 @@ export const site = {
           caption: "About — version, build and developer",
         },
       ],
-      slideRatio: "PORTRAIT",
+      slideRatio: "HORIZONTAL",
       slideFit: "BLUR",
       link: {
         label: "Download APK",
